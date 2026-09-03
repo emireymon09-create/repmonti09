@@ -1,9 +1,10 @@
 # Amelia App — Project Handoff
 
-**This is the first deployed piece of a larger "Family Hub" ecosystem.**
-It is a standalone app, in its own repo, its own Supabase project, its
-own Vercel deploy — not a module inside something bigger. Read this
-before touching the repo.
+**This is the first piece of a larger "Family Hub" ecosystem.**
+Its own directory, its own Vercel deploy, its own URL — but **not** its
+own database. As of ADR 0001 every app in the house shares one Supabase
+project. Read `CLAUDE.md` at the repo root first; it is the entry point
+for every session and outranks this file.
 
 ---
 
@@ -13,34 +14,47 @@ Emilio is building a self-hosted home system with several pieces.
 This app — **Amelia** — is the first one being built and deployed.
 
 ```
+┌─────────────────────┐      ┌─────────────────────┐
+│  AMELIA APP          │      │  THE HUB             │
+│  (this directory)    │      │  27" wall HMI        │
+│  baby tracking       │      │  calendar · meals ·  │
+│                      │      │  chores · irrigation │
+│  own Vercel deploy   │      │  own Vercel deploy   │
+└─────────────────────┘      └─────────────────────┘
+           │                            │
+           │  anon key + user JWT, RLS enforced
+           ▼                            ▼
 ┌─────────────────────────────────────────────────────┐
-│  THE HUB (not started yet)                            │
-│  Lives on a 27" touchscreen (living room HMI)          │
-│  Will eventually hold: shared calendar, meal plan/     │
-│  pantry, grocery list, chores, irrigation control,     │
-│  and whatever else gets built later                    │
-│  Separate Supabase project + separate Vercel deploy     │
+│  SUPABASE CLOUD — ONE project for the whole house      │
+│  schemas: core · baby · calendar · meals · chores ·    │
+│           home · ops                                   │
+│  Amelia's tables live under `baby`                     │
 └─────────────────────────────────────────────────────┘
-
+           ▲                            ▲
+           │ service_role               │ outbound only —
+           │ (Hub server only)          │ the house dials out,
+           │                            │ the cloud never dials in
 ┌─────────────────────────────────────────────────────┐
-│  AMELIA APP (this repo — building now)                 │
-│  Baby tracking only: feedings, diaper changes,          │
-│  breastfeeding, sleep, growth, doctor appointments      │
-│  Own Supabase project + own Vercel deploy               │
-└─────────────────────────────────────────────────────┘
-           ▲
-           │ HTTPS, derived data only, NEVER video
-┌─────────────────────────────────────────────────────┐
-│  NUC (local, at home)                                  │
-│  HAOS + Home Assistant + Frigate (OpenVINO detector)    │
-│  Reolink Argus 3 Pro camera — RTSP local only,          │
-│  P2P/cloud disabled on the camera itself                │
+│  THE HOUSE — two boxes, not one                        │
+│                                                        │
+│  NUC — vision/visor, the HMI, meal-prep BPM, house     │
+│        control, Brother QL-600 label printer           │
+│                                                        │
+│  HA Green — Home Assistant: sensors, automations,      │
+│        Frigate, Reolink Argus 3 Pro (RTSP local only,  │
+│        P2P/cloud disabled on the camera), Aqara via    │
+│        ZBT-1, HomeKit bridge. At littleneighborssj.com │
 └─────────────────────────────────────────────────────┘
 ```
 
-**Hard rule carried through the whole project:** camera video never
-leaves the NUC. Only derived events (sleep start/end, sound alerts)
-get pushed to this app's `/api/ingest` endpoint.
+> **Open question (FAMILY_HUB.md §4.2):** which of the two boxes derives
+> sleep events and calls `/api/ingest` is not decided yet. Earlier
+> versions of this file described a single NUC running everything —
+> that was wrong.
+
+**Hard rule carried through the whole project:** camera video, images
+and audio never leave the house. Only derived events (sleep start/end,
+sound alerts) get pushed out.
 
 **Doctor appointments** are logged in this app as a simple input.
 Syncing them out to a real shared calendar (CalDAV → iCloud) is
@@ -55,8 +69,10 @@ whenever that sync gets built.
 - **Local git repo initialized** on `main`, scaffold committed.
   No remote configured yet.
 - **No GitHub repo yet.**
-- **No cloud Supabase project yet.** Only running locally via
-  `supabase start` (Docker).
+- **No cloud Supabase project — and this app must not create one.**
+  Per ADR 0001 the cloud database is shared and the Hub agent creates
+  it. Local development runs against `supabase start` (Docker) as
+  before.
 - **No Vercel deployment yet.**
 - The app runs and is testable on Emilio's machine right now via the
   local Supabase stack.
@@ -128,35 +144,58 @@ database) — useful for quickly showing the design, not for real use.
 
 ---
 
-## Next steps to actually start the repo
+## Next steps
 
-1. **Init git locally:**
-   ```bash
-   cd amelia-app
-   git init
-   git add .
-   git commit -m "Initial scaffold: schema, auth, dashboard, ingest endpoint"
-   ```
-   Add a `.gitignore` first (node_modules, .env.local, .next) —
-   not currently in this scaffold, create one before the first commit.
+1. ~~Init git locally~~ — done, `main`, `.gitignore` in place.
+2. **Keep building UI locally** against `supabase start`. Nothing in
+   the backend change blocks this, and it is the right thing to be
+   doing before Amelia arrives.
+3. **Do not create a GitHub repo for this directory on its own.** The
+   monorepo (ADR 0003) is the Hub agent's phase 0; this directory
+   becomes `apps/amelia` inside it. A standalone repo now would just
+   have to be unpicked.
+4. **Do not create a cloud Supabase project.** ADR 0001. The shared one
+   is the Hub's to create.
 
-2. **Create the GitHub repo**, push this up.
+### What changes when the shared backend lands (phase 2)
 
-3. **Keep developing locally** against the local Supabase stack
-   (`supabase start`) until the app does what's needed.
+Not action items yet — the Hub agent drives this. Listed so nothing
+here gets built in a direction that has to be undone:
 
-4. **Cloud deploy, when ready** (not yet): create a real Supabase
-   project, run the same migration there, create a Vercel project
-   from the GitHub repo, set the four env vars in Vercel's dashboard,
-   deploy.
+- Tables move under a `baby` schema. Queries become
+  `supabase.schema('baby').from('feedings')`.
+- Every table gains a direct `household_id` column, and RLS switches
+  from `is_baby_family_member(baby_id)` to `core.is_member(household_id)`.
+  **So: don't add new tables that scope through a `baby_id` join.**
+- `babies` becomes a `core.people` row of kind `child`;
+  `families` / `family_members` are replaced by `core.households` /
+  `core.members` with roles (`owner`, `parent`, `caregiver`, `kid`,
+  `viewer`).
+- Migrations move to `packages/db/migrations`, numbered by the Hub
+  agent. This app stops owning SQL. Propose a migration, don't number
+  one.
+- Row types come from generated `packages/db/types`, replacing the
+  hand-written types in the page components.
+- Design tokens move to `packages/ui`. The palette is already
+  consolidated in `components/ui.tsx` rather than scattered as inline
+  hex, so this is a move rather than a rewrite — but per
+  `CONVENTIONS.md` §3 the current styling is explicitly *not* the
+  pattern to copy.
+- Retraction: house convention is `voided_at` / `voided_by`, not
+  deletes. See the mis-tap note below.
 
-## Security posture (carry forward into the new repo)
+## Security posture
 
-- RLS on every table, no exceptions, from the first migration
+- RLS on every table, no exceptions, in the same migration that
+  creates the table
 - `service_role` key only ever touched server-side
   (`lib/supabaseAdmin.ts`, `/api/ingest`) — never imported into a
-  `'use client'` file
-- NUC authenticates to `/api/ingest` via its own device secret, never
-  a real user login
-- 2FA on Supabase account + Vercel account + GitHub account, once
-  those exist
+  `'use client'` file. **Note:** `CLAUDE.md` §3.4 says the service key
+  lives on the *Hub server only*, which this app's `/api/ingest`
+  currently contradicts. Flagged as an open question — either ingest
+  moves to `apps/hub`, or the rule needs a carve-out.
+- Devices authenticate with their own **hashed per-device token** from
+  `core.devices`, with an idempotency key on the event — replacing the
+  single shared `NUC_DEVICE_SECRET` this app uses today (ADR 0005).
+  Not yet implemented; nothing calls the endpoint.
+- 2FA on Supabase / Vercel / GitHub accounts, once those exist
