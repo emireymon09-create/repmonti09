@@ -1,0 +1,20 @@
+project_id = "amelia-app"
+
+[api]
+enabled = true
+port = 54321
+
+[db]
+port = 54322
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = true
+# Local dev only — no real email sending, confirmations auto-pass
+enable_confirmations = false
+
+[auth.email]
+enable_signup = true

@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Amelia — Preview</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Archivo:wght@400;500;600;700&display=swap');
+  :root{
+    --ink:#EDE6D6; --ink-dim:#C9BFA9; --bg:#211D1B; --bg-raised:#2B2523;
+    --bg-card:#332B27; --guajillo:#8C3B2E; --guajillo-bright:#B14C3A;
+    --marigold:#E8A33D; --line: rgba(237,230,214,0.10);
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Archivo',sans-serif;min-height:100vh;-webkit-font-smoothing:antialiased;}
+  h1{font-family:'Fraunces',serif;font-weight:700;}
+  .app{max-width:480px;margin:0 auto;padding:28px 20px;}
+  .banner{background:var(--bg-raised);border:1px solid var(--line);border-radius:12px;padding:10px 14px;font-size:12px;color:var(--marigold);margin-bottom:20px;}
+  .eyebrow{color:var(--marigold);font-size:12px;text-transform:uppercase;letter-spacing:0.12em;font-weight:600;margin-bottom:4px;}
+  h1{font-size:30px;margin:0 0 24px;}
+  .card{background:var(--bg-card);border:1px solid var(--line);border-radius:16px;padding:16px 18px;margin-bottom:12px;}
+  .label{font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:var(--ink-dim);}
+  .value{font-size:20px;font-weight:600;font-family:'Fraunces',serif;margin:2px 0 12px;}
+  .row{display:flex;gap:8px;}
+  button.action{flex:1;padding:10px 0;border-radius:10px;border:none;background:var(--guajillo);color:var(--ink);font-weight:600;font-size:13px;cursor:pointer;}
+  button.action:hover{background:var(--guajillo-bright);}
+  button.action.ghost{background:none;border:1px solid var(--line);color:var(--ink-dim);flex:0 0 auto;padding:10px 14px;}
+  button.action.ghost:hover{color:var(--ink);}
+  .log{margin-top:8px;font-size:12px;color:var(--ink-dim);max-height:110px;overflow-y:auto;}
+  .log div{padding:3px 0;border-bottom:1px solid var(--line);}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="banner">Preview mode — data here is temporary, not the real database. Real version runs locally via Docker + Supabase.</div>
+  <div class="eyebrow" id="date">—</div>
+  <h1>Amelia</h1>
+
+  <div class="card">
+    <div class="label">Last feeding</div>
+    <div class="value" id="last-feeding">—</div>
+    <div class="row">
+      <button class="action" onclick="logFeeding('Bottle')">Bottle</button>
+      <button class="action" onclick="logFeeding('Solid')">Solid</button>
+      <button class="action ghost" onclick="undo('feedings')">Undo</button>
+    </div>
+    <div class="log" id="feeding-log"></div>
+  </div>
+
+  <div class="card">
+    <div class="label">Breastfeeding</div>
+    <div class="value" id="last-nursing">—</div>
+    <div class="row">
+      <button class="action" onclick="logNursing('Left')">Left</button>
+      <button class="action" onclick="logNursing('Right')">Right</button>
+      <button class="action ghost" onclick="undo('nursing')">Undo</button>
+    </div>
+    <div class="log" id="nursing-log"></div>
+  </div>
+
+  <div class="card">
+    <div class="label">Last diaper</div>
+    <div class="value" id="last-diaper">—</div>
+    <div class="row">
+      <button class="action" onclick="logDiaper('Wet')">Wet</button>
+      <button class="action" onclick="logDiaper('Dirty')">Dirty</button>
+      <button class="action" onclick="logDiaper('Both')">Both</button>
+      <button class="action ghost" onclick="undo('diapers')">Undo</button>
+    </div>
+    <div class="log" id="diaper-log"></div>
+  </div>
+
+  <div class="card">
+    <div class="label">Doctor appointments</div>
+    <div class="value" id="next-appt">Nothing scheduled</div>
+    <div style="display:flex;gap:6px;">
+      <input id="appt-title" placeholder="e.g. 2-month checkup" style="flex:1;background:var(--bg);border:1px solid var(--line);border-radius:8px;color:var(--ink);padding:8px;font-size:13px;">
+      <input id="appt-date" type="date" style="background:var(--bg);border:1px solid var(--line);border-radius:8px;color:var(--ink);padding:8px;font-size:13px;">
+      <button class="action" style="flex:0 0 auto;padding:8px 14px;" onclick="addAppt()">Add</button>
+    </div>
+    <div class="log" id="appt-log"></div>
+  </div>
+</div>
+
+<script>
+let state = { feedings: [], diapers: [], nursing: [], appointments: [] };
+const STORAGE_KEY = 'amelia-preview';
+
+async function load(){
+  try{
+    const res = await window.storage.get(STORAGE_KEY, false);
+    if(res && res.value) state = JSON.parse(res.value);
+  }catch(e){}
+  if(!state.nursing) state.nursing = [];
+  if(!state.appointments) state.appointments = [];
+  render();
+}
+async function save(){
+  try{ await window.storage.set(STORAGE_KEY, JSON.stringify(state), false); }catch(e){}
+}
+
+function logFeeding(type){
+  state.feedings.unshift({ type, time: new Date().toISOString() });
+  save(); render();
+}
+function logNursing(side){
+  state.nursing.unshift({ type: side, time: new Date().toISOString() });
+  save(); render();
+}
+function logDiaper(type){
+  state.diapers.unshift({ type, time: new Date().toISOString() });
+  save(); render();
+}
+function addAppt(){
+  const title = document.getElementById('appt-title').value.trim();
+  const date = document.getElementById('appt-date').value;
+  if(!title || !date) return;
+  state.appointments.push({ title, date });
+  document.getElementById('appt-title').value='';
+  document.getElementById('appt-date').value='';
+  save(); render();
+}
+function undo(key){
+  state[key].shift();
+  save(); render();
+}
+
+function fmt(t){ return new Date(t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); }
+
+function render(){
+  document.getElementById('date').textContent = new Date().toLocaleDateString(undefined,{weekday:'long', month:'long', day:'numeric'});
+
+  document.getElementById('last-feeding').textContent = state.feedings[0] ? fmt(state.feedings[0].time) : '—';
+  document.getElementById('feeding-log').innerHTML = state.feedings.slice(0,5).map(f=>`<div>${f.type} — ${fmt(f.time)}</div>`).join('');
+
+  document.getElementById('last-nursing').textContent = state.nursing[0] ? `${state.nursing[0].type} — ${fmt(state.nursing[0].time)}` : '—';
+  document.getElementById('nursing-log').innerHTML = state.nursing.slice(0,5).map(n=>`<div>${n.type} — ${fmt(n.time)}</div>`).join('');
+
+  document.getElementById('last-diaper').textContent = state.diapers[0] ? fmt(state.diapers[0].time) : '—';
+  document.getElementById('diaper-log').innerHTML = state.diapers.slice(0,5).map(d=>`<div>${d.type} — ${fmt(d.time)}</div>`).join('');
+
+  const sortedAppts = [...state.appointments].sort((a,b)=> new Date(a.date) - new Date(b.date));
+  document.getElementById('next-appt').textContent = sortedAppts[0] ? `${sortedAppts[0].title} — ${new Date(sortedAppts[0].date).toLocaleDateString(undefined,{month:'short',day:'numeric'})}` : 'Nothing scheduled';
+  document.getElementById('appt-log').innerHTML = sortedAppts.map(a=>`<div>${a.title} — ${new Date(a.date).toLocaleDateString(undefined,{month:'short',day:'numeric'})}</div>`).join('');
+}
+
+load();
+</script>
+</body>
+</html>
