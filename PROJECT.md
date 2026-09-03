@@ -114,9 +114,29 @@ units and the change since the previous visit.
 
 **`/appointments`:** upcoming and past, add form, tap to mark done.
 
-**Shared bits:** `lib/format.ts` (time/unit formatting, unit-tested),
-`lib/useBaby.ts` (auth guard + current baby), `components/ui.tsx`
-(palette and controls, so the pages can't drift apart)
+**Built to the Hub conventions, not around them.** The UI is a Family
+Hub surface first and a standalone app second:
+
+- `app/globals.css` — every size, color and radius is a token. The
+  27" wall screen is the primary target (`CONVENTIONS.md` §3), so the
+  scale tokens re-point above 1180px and the *same components* render
+  as a one-handed phone column or as a display readable across the
+  living room. Tap targets are 52px on a phone and 84px on the wall,
+  against a 44px floor.
+- `lib/tokens.ts` — the token set, shaped to move to `packages/ui`.
+  No hex anywhere else in the app.
+- `lib/db.ts` — the only door to the database. Pages never build a
+  query, so the phase-2 move to `schema('baby')` + `household_id` is
+  an edit to one file. Anon key under RLS only.
+- `lib/types.ts` — one place for row shapes, standing in for the
+  generated `packages/db/types`.
+- `lib/format.ts` — times render in `America/Los_Angeles` regardless
+  of the viewer's clock, relative under a day and absolute past it.
+  Unit-tested under four system timezones.
+- `lib/useBaby.ts` — auth guard + current baby; the place the
+  caregiver role check lands in phase 2.
+- Dashboard has a **Today** timeline, merged client-side from this
+  app's tables. It is shaped to become one read of `core.activity`.
 
 **`/api/ingest`:** the one endpoint the NUC will call to push sleep
 sessions and monitor events. Authenticates with a shared device
@@ -176,11 +196,11 @@ here gets built in a direction that has to be undone:
   one.
 - Row types come from generated `packages/db/types`, replacing the
   hand-written types in the page components.
-- Design tokens move to `packages/ui`. The palette is already
-  consolidated in `components/ui.tsx` rather than scattered as inline
-  hex, so this is a move rather than a rewrite — but per
-  `CONVENTIONS.md` §3 the current styling is explicitly *not* the
-  pattern to copy.
+- Design tokens move to `packages/ui` — a file move, since
+  `lib/tokens.ts` + `app/globals.css` already hold every value and no
+  component carries a hex or a raw px.
+- The **Today** timeline switches from the client-side merge in
+  `lib/db.ts` to a single read of `core.activity`.
 - Retraction: house convention is `voided_at` / `voided_by`, not
   deletes. See the mis-tap note below.
 

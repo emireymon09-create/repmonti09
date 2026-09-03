@@ -1,0 +1,320 @@
+/* ==========================================================================
+   Amelia — global stylesheet
+
+   CONVENTIONS.md §3 is the spec for this file:
+     · the 27" wall screen is the PRIMARY target — touch, readable from
+       across the room, no hover-only affordances, tap targets >= 44px
+     · phones are secondary; everything works one-handed
+     · design tokens, no hardcoded hex in components
+
+   Every size below is a token. The `wall` media query re-points the
+   scale tokens instead of restyling components, so the same markup
+   renders as a phone column or as a room-readable display.
+   ========================================================================== */
+
+:root {
+  /* --- color (mirrors lib/tokens.ts) --- */
+  --c-bg: #211D1B;
+  --c-surface: #332B27;
+  --c-surface-raised: #3D342F;
+  --c-line: rgba(237, 230, 214, 0.12);
+  --c-text: #EDE6D6;
+  --c-muted: #C9BFA9;
+  --c-accent: #E8A33D;
+  --c-action: #8C3B2E;
+  --c-live: #5C8A6B;
+  --c-danger: #C4574A;
+
+  /* --- type scale: phone --- */
+  --t-label: 11px;
+  --t-meta: 12px;
+  --t-body: 15px;
+  --t-value: 17px;
+  --t-title: 26px;
+  --t-name: 30px;
+  --t-clock: 32px;
+
+  /* --- space + geometry: phone --- */
+  --s-1: 2px;
+  --s-2: 6px;
+  --s-3: 8px;
+  --s-4: 12px;
+  --s-5: 16px;
+  --s-6: 24px;
+  --r-card: 16px;
+  --r-control: 12px;
+  --tap: 52px;          /* >= 44px floor, sized for one-handed use */
+  --measure: 520px;     /* the phone column */
+  --col-gap: 12px;
+  --cols: 1;
+
+  color-scheme: dark;
+}
+
+/* The wall screen. Same components, bigger everything, more columns. */
+@media (min-width: 1180px) {
+  :root {
+    --t-label: 15px;
+    --t-meta: 17px;
+    --t-body: 21px;
+    --t-value: 27px;
+    --t-title: 40px;
+    --t-name: 54px;
+    --t-clock: 68px;
+
+    --s-1: 3px;
+    --s-2: 8px;
+    --s-3: 12px;
+    --s-4: 18px;
+    --s-5: 24px;
+    --s-6: 36px;
+    --r-card: 22px;
+    --r-control: 16px;
+    --tap: 84px;        /* hit from a standing position, not a fingertip */
+    --measure: 1500px;
+    --col-gap: 20px;
+    --cols: 3;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Kiosk browser on an always-on display: never rubber-band, never
+   select text on a tap, never show a highlight flash. */
+body {
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* --------------------------------------------------------------- layout */
+
+.page {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: var(--s-5) var(--s-5) calc(var(--s-6) * 2);
+}
+
+/* The dashboard's card grid. One column on a phone, three on the wall. */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+  gap: var(--col-gap);
+  align-items: start;
+}
+
+/* A card that should span the full width of the grid on the wall. */
+.grid > .span-all { grid-column: 1 / -1; }
+
+.stack { display: flex; flex-direction: column; gap: var(--s-3); }
+.row { display: flex; gap: var(--s-3); }
+.row-tight { display: flex; gap: var(--s-3); margin-top: var(--s-3); }
+.between { display: flex; align-items: center; justify-content: space-between; }
+.spread { display: flex; align-items: flex-start; gap: var(--s-4); }
+.grow { flex: 1; min-width: 0; }
+
+/* --------------------------------------------------------------- surfaces */
+
+.card {
+  background: var(--c-surface);
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-card);
+  padding: var(--s-4) var(--s-5);
+}
+
+/* A session in progress. The only place a colored edge is spent — it is
+   the one thing that has to read from across the room. */
+.card.is-live { border-color: var(--c-live); }
+.card.is-past { opacity: 0.65; }
+
+/* --------------------------------------------------------------- type */
+
+.label {
+  font-size: var(--t-label);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--c-muted);
+  margin-bottom: var(--s-1);
+}
+
+.value { font-size: var(--t-value); font-weight: 600; }
+.meta { font-size: var(--t-meta); color: var(--c-muted); margin-top: var(--s-1); }
+.empty { font-size: var(--t-body); color: var(--c-muted); }
+.title { font-size: var(--t-title); margin: 0 0 var(--s-5); font-weight: 700; }
+.eyebrow {
+  font-size: var(--t-meta);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--c-accent);
+  margin: 0;
+}
+.name { font-size: var(--t-name); margin: var(--s-1) 0 var(--s-1); font-weight: 700; }
+.age { color: var(--c-muted); font-size: var(--t-body); margin: 0 0 var(--s-5); }
+.strike { text-decoration: line-through; }
+.note { font-size: var(--t-meta); color: var(--c-muted); margin: var(--s-3) 0 0; }
+
+/* Digits that sit in a column or count upward must not jitter. */
+.clock {
+  font-size: var(--t-clock);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.05;
+}
+.side { color: var(--c-live); font-weight: 600; text-transform: capitalize; font-size: var(--t-body); }
+.stopwatch { display: flex; align-items: baseline; gap: var(--s-3); flex-wrap: wrap; }
+
+/* --------------------------------------------------------------- controls */
+
+.btn {
+  flex: 1;
+  min-height: var(--tap);
+  padding: var(--s-3) var(--s-4);
+  border-radius: var(--r-control);
+  border: none;
+  background: var(--c-action);
+  color: var(--c-text);
+  font-weight: 600;
+  font-size: var(--t-body);
+  font-family: inherit;
+  cursor: pointer;
+}
+.btn:disabled { opacity: 0.45; cursor: default; }
+.btn.quiet { background: var(--c-surface-raised); border: 1px solid var(--c-line); }
+.btn.live { background: var(--c-live); }
+
+.input {
+  width: 100%;
+  min-height: var(--tap);
+  padding: var(--s-3) var(--s-4);
+  border-radius: var(--r-control);
+  border: 1px solid var(--c-line);
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-family: inherit;
+  /* 16px floor stops iOS zooming the page on focus. */
+  font-size: max(16px, var(--t-body));
+}
+.input.narrow { width: 6.5em; flex: none; text-align: center; }
+
+.linkish {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--c-accent);
+  font-size: var(--t-body);
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.pill {
+  background: none;
+  border: 1px solid var(--c-line);
+  color: var(--c-accent);
+  border-radius: 999px;
+  padding: var(--s-3) var(--s-4);
+  min-height: 44px;
+  font-size: var(--t-body);
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.check {
+  flex: none;
+  width: var(--tap);
+  height: var(--tap);
+  border-radius: var(--r-control);
+  border: 1px solid var(--c-line);
+  background: none;
+  color: var(--c-text);
+  font-size: var(--t-value);
+  cursor: pointer;
+}
+.check.is-done { border-color: var(--c-live); background: var(--c-live); }
+
+/* --------------------------------------------------------------- nav */
+
+.nav { display: flex; align-items: center; gap: var(--s-2); margin-bottom: var(--s-5); flex-wrap: wrap; }
+.tab {
+  padding: var(--s-3) var(--s-4);
+  min-height: 44px;
+  border-radius: 999px;
+  font-size: var(--t-body);
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--c-muted);
+  background: none;
+  border: 1px solid var(--c-line);
+  font-family: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+.tab[aria-current="page"] { background: var(--c-accent); border-color: var(--c-accent); color: var(--c-bg); }
+.signout {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--c-muted);
+  font-size: var(--t-meta);
+  font-family: inherit;
+  cursor: pointer;
+  padding: var(--s-3);
+  min-height: 44px;
+}
+
+/* --------------------------------------------------------------- feedback */
+
+.banner {
+  border-radius: var(--r-control);
+  padding: var(--s-3) var(--s-4);
+  margin-bottom: var(--s-4);
+  font-size: var(--t-body);
+}
+.banner.error { background: rgba(196, 87, 74, 0.18); border: 1px solid var(--c-danger); }
+.banner.ok { background: rgba(92, 138, 107, 0.18); border: 1px solid var(--c-live); }
+
+.gain-up { font-size: var(--t-meta); color: var(--c-live); margin-top: var(--s-1); }
+.gain-down { font-size: var(--t-meta); color: var(--c-accent); margin-top: var(--s-1); }
+
+/* --------------------------------------------------------------- today feed */
+
+.feed { display: flex; flex-direction: column; }
+.feed-item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-4);
+  padding: var(--s-3) 0;
+  border-bottom: 1px solid var(--c-line);
+}
+.feed-item:last-child { border-bottom: none; }
+.feed-time {
+  font-variant-numeric: tabular-nums;
+  color: var(--c-muted);
+  font-size: var(--t-meta);
+  flex: none;
+  width: 7.5em;
+}
+.feed-what { font-size: var(--t-body); }
+
+/* --------------------------------------------------------------- login */
+
+.auth { max-width: 380px; margin: 0 auto; padding: calc(var(--s-6) * 2) var(--s-5); }

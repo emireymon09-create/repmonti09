@@ -1,53 +1,32 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { createClient } from '@/lib/supabaseClient'
 import { useBaby } from '@/lib/useBaby'
 import { NoBaby } from '@/components/NoBaby'
-import { Banner, Btn, Card, Label, Nav, Page, inputStyle, theme } from '@/components/ui'
-import { toLocalInputValue } from '@/lib/format'
-
-type ApptType = 'checkup' | 'vaccine' | 'sick_visit' | 'other'
-
-type Appointment = {
-  id: string
-  title: string
-  appointment_type: ApptType | null
-  scheduled_at: string
-  doctor_name: string | null
-  notes: string | null
-  completed: boolean
-}
-
-const TYPE_LABELS: Record<ApptType, string> = {
-  checkup: 'Checkup',
-  vaccine: 'Vaccine',
-  sick_visit: 'Sick visit',
-  other: 'Other',
-}
+import { Banner, Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
+import { addAppointment, listAppointments, setAppointmentCompleted } from '@/lib/db'
+import { APPOINTMENT_TYPE_LABELS } from '@/lib/types'
+import type { AppointmentType, DoctorAppointment } from '@/lib/types'
+import { apptWhen, fromHouseholdInputValue, toHouseholdInputValue } from '@/lib/format'
 
 export default function AppointmentsPage() {
-  const supabase = createClient()
   const { baby, userId, loading } = useBaby()
 
-  const [rows, setRows] = useState<Appointment[]>([])
+  const [rows, setRows] = useState<DoctorAppointment[]>([])
   const [showForm, setShowForm] = useState(false)
   const [title, setTitle] = useState('')
-  const [type, setType] = useState<ApptType>('checkup')
-  const [when, setWhen] = useState(() => toLocalInputValue(new Date()))
+  const [type, setType] = useState<AppointmentType>('checkup')
+  const [when, setWhen] = useState(() => toHouseholdInputValue())
   const [doctor, setDoctor] = useState('')
   const [notes, setNotes] = useState('')
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   const refresh = useCallback(async (babyId: string) => {
-    const { data } = await supabase
-      .from('doctor_appointments')
-      .select('id, title, appointment_type, scheduled_at, doctor_name, notes, completed')
-      .eq('baby_id', babyId)
-      .order('scheduled_at', { ascending: true })
-    setRows((data ?? []) as Appointment[])
-  }, [supabase])
+    const { data, error } = await listAppointments(babyId)
+    if (error) setErr(`Couldn't load appointments — ${error}`)
+    setRows(data)
+  }, [])
 
   useEffect(() => { if (baby) refresh(baby.id) }, [baby, refresh])
 
@@ -59,39 +38,33 @@ export default function AppointmentsPage() {
 
     setErr(null)
     setBusy(true)
-    // datetime-local has no timezone; new Date() reads it as local time,
-    // which is what we want before storing it as UTC.
-    const { error } = await supabase.from('doctor_appointments').insert({
-      baby_id: baby.id,
+    const { error } = await addAppointment(baby.id, userId, {
       title: title.trim(),
       appointment_type: type,
-      scheduled_at: new Date(when).toISOString(),
+      // The input shows household wall-clock time; store the UTC instant.
+      scheduled_at: fromHouseholdInputValue(when),
       doctor_name: doctor.trim() || null,
       notes: notes.trim() || null,
-      logged_by: userId,
     })
     setBusy(false)
 
-    if (error) { setErr(`Couldn't save — ${error.message}`); return }
+    if (error) { setErr(`Couldn't save — ${error}`); return }
     setTitle(''); setDoctor(''); setNotes(''); setType('checkup')
-    setWhen(toLocalInputValue(new Date()))
+    setWhen(toHouseholdInputValue())
     setShowForm(false)
     refresh(baby.id)
   }
 
-  async function toggleCompleted(appt: Appointment) {
+  async function toggleCompleted(appt: DoctorAppointment) {
     if (!baby || busy) return
     setBusy(true)
-    const { error } = await supabase
-      .from('doctor_appointments')
-      .update({ completed: !appt.completed })
-      .eq('id', appt.id)
+    const { error } = await setAppointmentCompleted(appt.id, !appt.completed)
     setBusy(false)
-    if (error) { setErr(`Couldn't update — ${error.message}`); return }
+    if (error) { setErr(`Couldn't update — ${error}`); return }
     refresh(baby.id)
   }
 
-  if (loading) return <Page><p style={{ color: theme.muted }}>Loading…</p></Page>
+  if (loading) return <Page><p className="empty">Loading…</p></Page>
   if (!baby) return <Page><Nav /><NoBaby /></Page>
 
   const now = Date.now()
@@ -103,12 +76,9 @@ export default function AppointmentsPage() {
   return (
     <Page>
       <Nav />
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '0 0 16px' }}>
-        <h1 style={{ fontSize: 26, margin: 0 }}>Doctor</h1>
-        <button
-          onClick={() => setShowForm((v) => !v)}
-          style={{ background: 'none', border: `1px solid ${theme.line}`, color: theme.accent, borderRadius: 999, padding: '8px 14px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
-        >
+      <div className="between">
+        <h1 className="title">Doctor</h1>
+        <button className="pill" onClick={() => { setShowForm((v) => !v); setErr(null) }}>
           {showForm ? 'Cancel' : '+ Add'}
         </button>
       </div>
@@ -119,23 +89,26 @@ export default function AppointmentsPage() {
         <Card>
           <form onSubmit={save}>
             <Label>New appointment</Label>
-            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. 2-month checkup"
-              style={{ ...inputStyle, margin: '8px 0' }} />
-            <select value={type} onChange={(e) => setType(e.target.value as ApptType)} style={{ ...inputStyle, marginBottom: 8 }}>
-              {(Object.keys(TYPE_LABELS) as ApptType[]).map((key) => (
-                <option key={key} value={key}>{TYPE_LABELS[key]}</option>
-              ))}
-            </select>
-            <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)}
-              style={{ ...inputStyle, marginBottom: 8 }} />
-            <input value={doctor} onChange={(e) => setDoctor(e.target.value)} placeholder="Doctor (optional)"
-              style={{ ...inputStyle, marginBottom: 8 }} />
-            <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes (optional)"
-              style={{ ...inputStyle, marginBottom: 10 }} />
-            <div style={{ display: 'flex' }}>
+            <div className="stack">
+              <input className="input" value={title} onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. 2-month checkup" aria-label="Title" />
+              <select className="input" value={type} aria-label="Appointment type"
+                onChange={(e) => setType(e.target.value as AppointmentType)}>
+                {(Object.keys(APPOINTMENT_TYPE_LABELS) as AppointmentType[]).map((key) => (
+                  <option key={key} value={key}>{APPOINTMENT_TYPE_LABELS[key]}</option>
+                ))}
+              </select>
+              <input className="input" type="datetime-local" value={when}
+                onChange={(e) => setWhen(e.target.value)} aria-label="Date and time" />
+              <input className="input" value={doctor} onChange={(e) => setDoctor(e.target.value)}
+                placeholder="Doctor (optional)" aria-label="Doctor" />
+              <input className="input" value={notes} onChange={(e) => setNotes(e.target.value)}
+                placeholder="Notes (optional)" aria-label="Notes" />
+            </div>
+            <div className="row-tight">
               <Btn type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save appointment'}</Btn>
             </div>
-            <p style={{ fontSize: 12, color: theme.muted, marginBottom: 0 }}>
+            <p className="note">
               Stored here only. Syncing to the shared calendar is the Hub&rsquo;s job later.
             </p>
           </form>
@@ -143,20 +116,24 @@ export default function AppointmentsPage() {
       )}
 
       <Label>Upcoming</Label>
-      <div style={{ marginTop: 8 }}>
+      <Grid>
         {upcoming.length === 0 ? (
-          <Card><div style={{ color: theme.muted }}>Nothing scheduled.</div></Card>
+          <Card><div className="empty">Nothing scheduled.</div></Card>
         ) : (
-          upcoming.map((appt) => <ApptCard key={appt.id} appt={appt} onToggle={toggleCompleted} busy={busy} />)
+          upcoming.map((appt) => (
+            <ApptCard key={appt.id} appt={appt} onToggle={toggleCompleted} busy={busy} />
+          ))
         )}
-      </div>
+      </Grid>
 
       {past.length > 0 && (
         <>
           <Label>Past</Label>
-          <div style={{ marginTop: 8 }}>
-            {past.map((appt) => <ApptCard key={appt.id} appt={appt} onToggle={toggleCompleted} busy={busy} past />)}
-          </div>
+          <Grid>
+            {past.map((appt) => (
+              <ApptCard key={appt.id} appt={appt} onToggle={toggleCompleted} busy={busy} past />
+            ))}
+          </Grid>
         </>
       )}
     </Page>
@@ -164,37 +141,28 @@ export default function AppointmentsPage() {
 }
 
 function ApptCard({ appt, onToggle, busy, past }: {
-  appt: Appointment
-  onToggle: (appt: Appointment) => void
+  appt: DoctorAppointment
+  onToggle: (appt: DoctorAppointment) => void
   busy: boolean
   past?: boolean
 }) {
   return (
-    <Card style={past ? { opacity: 0.65 } : undefined}>
-      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 17, fontWeight: 600, textDecoration: appt.completed ? 'line-through' : 'none' }}>
-            {appt.title}
-          </div>
-          <div style={{ fontSize: 13, color: theme.muted, marginTop: 2 }}>
-            {new Date(appt.scheduled_at).toLocaleString(undefined, {
-              weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-            })}
-            {appt.appointment_type ? ` · ${TYPE_LABELS[appt.appointment_type]}` : ''}
+    <Card past={past}>
+      <div className="spread">
+        <div className="grow">
+          <div className={appt.completed ? 'value strike' : 'value'}>{appt.title}</div>
+          <div className="meta">
+            {apptWhen(appt.scheduled_at)}
+            {appt.appointment_type ? ` · ${APPOINTMENT_TYPE_LABELS[appt.appointment_type]}` : ''}
             {appt.doctor_name ? ` · ${appt.doctor_name}` : ''}
           </div>
-          {appt.notes && <div style={{ fontSize: 13, color: theme.muted, marginTop: 6 }}>{appt.notes}</div>}
+          {appt.notes && <div className="meta">{appt.notes}</div>}
         </div>
         <button
+          className={appt.completed ? 'check is-done' : 'check'}
           onClick={() => onToggle(appt)}
           disabled={busy}
           aria-label={appt.completed ? 'Mark as not done' : 'Mark as done'}
-          style={{
-            flex: 'none', width: 44, height: 44, borderRadius: 12, cursor: 'pointer',
-            border: `1px solid ${appt.completed ? theme.live : theme.line}`,
-            background: appt.completed ? theme.live : 'transparent',
-            color: theme.text, fontSize: 18,
-          }}
         >
           ✓
         </button>
