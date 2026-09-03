@@ -1,150 +1,727 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Amelia — Preview</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Amelia</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Archivo:wght@400;500;600;700&display=swap');
-  :root{
-    --ink:#EDE6D6; --ink-dim:#C9BFA9; --bg:#211D1B; --bg-raised:#2B2523;
-    --bg-card:#332B27; --guajillo:#8C3B2E; --guajillo-bright:#B14C3A;
-    --marigold:#E8A33D; --line: rgba(237,230,214,0.10);
+html, body { margin: 0; }
+img { max-width: 100%; }
+
+  /* ------------------------------------------------------------------
+     The app's palette is fixed in components/ui.tsx — warm near-black,
+     cream, amber, rust, sage. It is deliberately single-theme (a screen
+     you look at in a dark nursery at 3am), so this page commits to the
+     same world rather than following the host theme.
+     ------------------------------------------------------------------ */
+  :root {
+    --ground: #171413;   /* the desk the phone sits on — a shade under the app */
+    --bg:     #211D1B;
+    --card:   #332B27;
+    --cardhi: #3D342F;
+    --line:   rgba(237, 230, 214, 0.12);
+    --text:   #EDE6D6;
+    --muted:  #C9BFA9;
+    --accent: #E8A33D;
+    --action: #8C3B2E;
+    --live:   #5C8A6B;
+    --danger: #C4574A;
+
+    --app-font: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --frame-font: "IBM Plex Sans", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
   }
-  *{box-sizing:border-box;}
-  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Archivo',sans-serif;min-height:100vh;-webkit-font-smoothing:antialiased;}
-  h1{font-family:'Fraunces',serif;font-weight:700;}
-  .app{max-width:480px;margin:0 auto;padding:28px 20px;}
-  .banner{background:var(--bg-raised);border:1px solid var(--line);border-radius:12px;padding:10px 14px;font-size:12px;color:var(--marigold);margin-bottom:20px;}
-  .eyebrow{color:var(--marigold);font-size:12px;text-transform:uppercase;letter-spacing:0.12em;font-weight:600;margin-bottom:4px;}
-  h1{font-size:30px;margin:0 0 24px;}
-  .card{background:var(--bg-card);border:1px solid var(--line);border-radius:16px;padding:16px 18px;margin-bottom:12px;}
-  .label{font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:var(--ink-dim);}
-  .value{font-size:20px;font-weight:600;font-family:'Fraunces',serif;margin:2px 0 12px;}
-  .row{display:flex;gap:8px;}
-  button.action{flex:1;padding:10px 0;border-radius:10px;border:none;background:var(--guajillo);color:var(--ink);font-weight:600;font-size:13px;cursor:pointer;}
-  button.action:hover{background:var(--guajillo-bright);}
-  button.action.ghost{background:none;border:1px solid var(--line);color:var(--ink-dim);flex:0 0 auto;padding:10px 14px;}
-  button.action.ghost:hover{color:var(--ink);}
-  .log{margin-top:8px;font-size:12px;color:var(--ink-dim);max-height:110px;overflow-y:auto;}
-  .log div{padding:3px 0;border-bottom:1px solid var(--line);}
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--text);
+    font-family: var(--frame-font);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 34px 20px 56px;
+    display: flex;
+    flex-direction: column;
+    gap: 26px;
+  }
+
+  /* ---- frame chrome: quiet, so the app is the subject ---- */
+  .head { display: flex; flex-direction: column; gap: 8px; max-width: 60ch; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0;
+  }
+
+  .lede { margin: 0; font-size: 15px; line-height: 1.55; color: var(--muted); }
+  .lede strong { color: var(--text); font-weight: 500; }
+
+  .stage { display: flex; justify-content: center; }
+
+  .phone {
+    width: 100%;
+    max-width: 392px;
+    border: 1px solid var(--line);
+    border-radius: 30px;
+    padding: 9px;
+    background: #0E0C0B;
+    box-shadow: 0 26px 60px -24px rgba(0, 0, 0, 0.85);
+  }
+
+  .screen {
+    height: 700px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-radius: 22px;
+    background: var(--bg);
+    font-family: var(--app-font);
+  }
+
+  .notes {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 18px 28px;
+    border-top: 1px solid var(--line);
+    padding-top: 22px;
+  }
+  .note { display: flex; flex-direction: column; gap: 5px; }
+  .note dt {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .note dd { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--muted); }
+  .note code {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--text);
+  }
+
+  /* On a phone the frame is just noise — the app is already this size. */
+  @media (max-width: 640px) {
+    .wrap { padding: 20px 14px 34px; gap: 20px; }
+    .phone { border: none; border-radius: 0; padding: 0; background: none; box-shadow: none; max-width: none; }
+    .screen { height: auto; min-height: 78vh; border-radius: 16px; }
+  }
+
+  /* ==================================================================
+     Below: a faithful port of components/ui.tsx and the three pages.
+     Class names prefixed a- so nothing collides with the frame above.
+     ================================================================== */
+
+  .a-page { max-width: 520px; margin: 0 auto; padding: 16px 16px 48px; }
+
+  .a-nav { display: flex; align-items: center; gap: 6px; margin-bottom: 18px; }
+  .a-tab {
+    padding: 8px 14px; border-radius: 999px; font-size: 14px; font-weight: 600;
+    background: none; color: var(--muted); border: 1px solid var(--line);
+    cursor: pointer; font-family: inherit;
+  }
+  .a-tab[aria-current="page"] { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+  .a-signout {
+    margin-left: auto; background: none; border: none; color: var(--muted);
+    font-size: 13px; cursor: pointer; padding: 8px; font-family: inherit;
+  }
+
+  .a-date {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--accent); margin: 0;
+  }
+  .a-name { font-size: 30px; margin: 4px 0 2px; font-weight: 700; }
+  .a-age { color: var(--muted); font-size: 14px; margin: 0 0 18px; }
+  .a-h1 { font-size: 26px; margin: 0 0 16px; font-weight: 700; }
+
+  .a-card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+    padding: 14px 16px; margin-bottom: 12px;
+  }
+  .a-card.is-live { border-color: var(--live); }
+  .a-card.is-past { opacity: 0.65; }
+
+  .a-label {
+    font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 2px;
+  }
+  .a-value { font-size: 17px; font-weight: 600; }
+  .a-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .a-sub-13 { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .a-empty { color: var(--muted); font-size: 15px; }
+
+  .a-stopwatch { display: flex; align-items: baseline; gap: 10px; }
+  .a-clock { font-size: 32px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .a-side { color: var(--live); font-weight: 600; text-transform: capitalize; }
+
+  .a-row { display: flex; gap: 8px; margin-top: 10px; }
+
+  .a-btn {
+    flex: 1; min-height: 52px; padding: 10px 12px; border-radius: 12px;
+    border: none; background: var(--action); color: var(--text);
+    font-weight: 600; font-size: 15px; cursor: pointer; font-family: inherit;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .a-btn.quiet { background: var(--cardhi); border: 1px solid var(--line); }
+  .a-btn.live { background: var(--live); }
+
+  .a-input {
+    width: 100%; min-height: 46px; padding: 10px 12px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text);
+    font-size: 16px; font-family: inherit;
+  }
+  .a-input.ml { width: 76px; flex: none; min-height: 52px; text-align: center; }
+  .a-input.grow { flex: 1; }
+  .a-stack { display: flex; flex-direction: column; gap: 8px; }
+
+  .a-banner {
+    border-radius: 12px; padding: 10px 14px; margin-bottom: 12px; font-size: 14px;
+  }
+  .a-banner.ok { background: rgba(92, 138, 107, 0.18); border: 1px solid var(--live); }
+  .a-banner.error { background: rgba(196, 87, 74, 0.18); border: 1px solid var(--danger); }
+
+  .a-link {
+    color: var(--accent); font-size: 14px; font-weight: 600;
+    background: none; border: none; padding: 0; cursor: pointer; font-family: inherit;
+  }
+
+  .a-head-row { display: flex; align-items: center; justify-content: space-between; margin: 0 0 16px; }
+  .a-pill {
+    background: none; border: 1px solid var(--line); color: var(--accent);
+    border-radius: 999px; padding: 8px 14px; font-size: 14px; font-weight: 600;
+    cursor: pointer; font-family: inherit;
+  }
+  .a-toggle {
+    background: none; border: none; color: var(--accent); font-size: 13px;
+    font-weight: 600; cursor: pointer; padding: 0; font-family: inherit;
+  }
+  .a-form-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+
+  .a-gain-up { font-size: 13px; color: var(--live); margin-top: 2px; }
+  .a-gain-down { font-size: 13px; color: var(--accent); margin-top: 2px; }
+
+  .a-appt { display: flex; gap: 12px; align-items: flex-start; }
+  .a-appt-body { flex: 1; min-width: 0; }
+  .a-done {
+    flex: none; width: 44px; height: 44px; border-radius: 12px; cursor: pointer;
+    border: 1px solid var(--line); background: none; color: var(--text); font-size: 18px;
+  }
+  .a-done.is-done { border-color: var(--live); background: var(--live); }
+  .a-strike { text-decoration: line-through; }
+
+  .a-foot { font-size: 12px; color: var(--muted); margin: 0; }
+
+  button:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
 </style>
 </head>
 <body>
-<div class="app">
-  <div class="banner">Preview mode — data here is temporary, not the real database. Real version runs locally via Docker + Supabase.</div>
-  <div class="eyebrow" id="date">—</div>
-  <h1>Amelia</h1>
 
-  <div class="card">
-    <div class="label">Last feeding</div>
-    <div class="value" id="last-feeding">—</div>
-    <div class="row">
-      <button class="action" onclick="logFeeding('Bottle')">Bottle</button>
-      <button class="action" onclick="logFeeding('Solid')">Solid</button>
-      <button class="action ghost" onclick="undo('feedings')">Undo</button>
+<div class="wrap">
+  <header class="head">
+    <p class="eyebrow">amelia-app · interactive preview</p>
+    <p class="lede">
+      The three screens as built — <strong>Today</strong>, <strong>Growth</strong>,
+      <strong>Doctor</strong>. The timers run, the buttons work, the unit conversion
+      is the real one. Sample data only: nothing here touches Supabase, and nothing
+      is saved.
+    </p>
+  </header>
+
+  <div class="stage">
+    <div class="phone">
+      <div class="screen" id="app"></div>
     </div>
-    <div class="log" id="feeding-log"></div>
   </div>
 
-  <div class="card">
-    <div class="label">Breastfeeding</div>
-    <div class="value" id="last-nursing">—</div>
-    <div class="row">
-      <button class="action" onclick="logNursing('Left')">Left</button>
-      <button class="action" onclick="logNursing('Right')">Right</button>
-      <button class="action ghost" onclick="undo('nursing')">Undo</button>
+  <dl class="notes">
+    <div class="note">
+      <dt>Try this first</dt>
+      <dd>Tap <em>Right</em> under Breastfeeding. The stopwatch runs live; stop it and the card remembers the side, the length, and offers the other side next time.</dd>
     </div>
-    <div class="log" id="nursing-log"></div>
-  </div>
-
-  <div class="card">
-    <div class="label">Last diaper</div>
-    <div class="value" id="last-diaper">—</div>
-    <div class="row">
-      <button class="action" onclick="logDiaper('Wet')">Wet</button>
-      <button class="action" onclick="logDiaper('Dirty')">Dirty</button>
-      <button class="action" onclick="logDiaper('Both')">Both</button>
-      <button class="action ghost" onclick="undo('diapers')">Undo</button>
+    <div class="note">
+      <dt>Growth reads in lb / oz</dt>
+      <dd>What the pediatrician says out loud. It converts to the kg the database stores, and the sample rows show the normal first-week weight dip.</dd>
     </div>
-    <div class="log" id="diaper-log"></div>
-  </div>
-
-  <div class="card">
-    <div class="label">Doctor appointments</div>
-    <div class="value" id="next-appt">Nothing scheduled</div>
-    <div style="display:flex;gap:6px;">
-      <input id="appt-title" placeholder="e.g. 2-month checkup" style="flex:1;background:var(--bg);border:1px solid var(--line);border-radius:8px;color:var(--ink);padding:8px;font-size:13px;">
-      <input id="appt-date" type="date" style="background:var(--bg);border:1px solid var(--line);border-radius:8px;color:var(--ink);padding:8px;font-size:13px;">
-      <button class="action" style="flex:0 0 auto;padding:8px 14px;" onclick="addAppt()">Add</button>
+    <div class="note">
+      <dt>To run it for real</dt>
+      <dd><code>npm install</code> then <code>npm run dev</code>, against <code>supabase start</code>.</dd>
     </div>
-    <div class="log" id="appt-log"></div>
-  </div>
+  </dl>
 </div>
 
 <script>
-let state = { feedings: [], diapers: [], nursing: [], appointments: [] };
-const STORAGE_KEY = 'amelia-preview';
+(function () {
+  'use strict';
 
-async function load(){
-  try{
-    const res = await window.storage.get(STORAGE_KEY, false);
-    if(res && res.value) state = JSON.parse(res.value);
-  }catch(e){}
-  if(!state.nursing) state.nursing = [];
-  if(!state.appointments) state.appointments = [];
+  // ---- lib/format.ts, ported verbatim -----------------------------------
+  function clockTime(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+  function timeAgo(iso, now) {
+    if (!iso) return 'never';
+    var diff = now - new Date(iso).getTime();
+    if (diff < 60000) return 'just now';
+    var mins = Math.floor(diff / 60000);
+    if (mins < 60) return mins + 'm ago';
+    var hrs = Math.floor(mins / 60), rem = mins % 60;
+    if (hrs < 24) return rem ? hrs + 'h ' + rem + 'm ago' : hrs + 'h ago';
+    var days = Math.floor(hrs / 24);
+    return days === 1 ? 'yesterday' : days + 'd ago';
+  }
+  function elapsed(startIso, now) {
+    var secs = Math.max(0, Math.floor((now - new Date(startIso).getTime()) / 1000));
+    var h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), s = secs % 60;
+    var pad = function (n) { return String(n).padStart(2, '0'); };
+    return h > 0 ? h + ':' + pad(m) + ':' + pad(s) : m + ':' + pad(s);
+  }
+  function durationBetween(a, b) {
+    var mins = Math.round((new Date(b).getTime() - new Date(a).getTime()) / 60000);
+    if (mins < 1) return 'under a minute';
+    if (mins < 60) return mins + ' min';
+    var h = Math.floor(mins / 60), m = mins % 60;
+    return m ? h + 'h ' + m + 'm' : h + 'h';
+  }
+  var LB_PER_KG = 2.20462;
+  function kgToLbOz(kg) {
+    var total = kg * LB_PER_KG;
+    var lb = Math.floor(total);
+    var oz = Math.round((total - lb) * 16);
+    if (oz === 16) { lb += 1; oz = 0; }
+    return lb + ' lb ' + oz + ' oz';
+  }
+  function cmToIn(cm) { return (cm / 2.54).toFixed(1) + ' in'; }
+  function ageFrom(birthDate, now) {
+    if (!birthDate) return null;
+    var born = new Date(birthDate + 'T00:00:00');
+    var days = Math.floor((now.getTime() - born.getTime()) / 86400000);
+    if (days < 0) return null;
+    if (days < 14) return days + ' day' + (days === 1 ? '' : 's') + ' old';
+    if (days < 60) return Math.floor(days / 7) + ' weeks old';
+    return Math.floor(days / 30.44) + ' months old';
+  }
+
+  // ---- sample data, seeded relative to page load ------------------------
+  var T = Date.now();
+  var MIN = 60000, HOUR = 60 * MIN, DAY = 24 * HOUR;
+  var iso = function (ms) { return new Date(ms).toISOString(); };
+  var dateOnly = function (ms) { return new Date(ms).toISOString().slice(0, 10); };
+  var lbOzToKg = function (lb, oz) { return (lb + oz / 16) / LB_PER_KG; };
+
+  var uid = 0;
+  var nextId = function () { uid += 1; return 'id' + uid; };
+
+  var state = {
+    tab: 'today',
+    baby: { name: 'Amelia', birth_date: dateOnly(T - 6 * DAY) },
+    feedings: [{ fed_at: iso(T - 3 * HOUR - 5 * MIN), feeding_type: 'bottle', amount_ml: 90 }],
+    diapers: [{ changed_at: iso(T - 40 * MIN), diaper_type: 'wet' }],
+    nursing: [{ id: nextId(), side: 'left', started_at: iso(T - 2 * HOUR - 32 * MIN), ended_at: iso(T - 2 * HOUR - 14 * MIN) }],
+    sleep: [{ id: nextId(), started_at: iso(T - 2 * HOUR - 25 * MIN), ended_at: iso(T - 35 * MIN), source: 'nuc_derived' }],
+    growth: [
+      { id: nextId(), measured_at: dateOnly(T - 6 * DAY), weight_kg: +lbOzToKg(7, 4).toFixed(3), height_cm: 49.5, notes: 'Birth weight' },
+      { id: nextId(), measured_at: dateOnly(T - 1 * DAY), weight_kg: +lbOzToKg(7, 1).toFixed(3), height_cm: 50.0, notes: 'First pediatrician visit' }
+    ],
+    appts: [
+      { id: nextId(), title: '2-week checkup', appointment_type: 'checkup', scheduled_at: iso(T + 8 * DAY), doctor_name: 'Dr. Reyes', notes: null, completed: false },
+      { id: nextId(), title: 'Newborn screening', appointment_type: 'other', scheduled_at: iso(T - 4 * DAY), doctor_name: 'Dr. Reyes', notes: 'Heel prick, results by mail', completed: true }
+    ],
+    imperial: true,
+    showApptForm: false,
+    flash: null,
+    error: null
+  };
+
+  var TYPE_LABELS = { checkup: 'Checkup', vaccine: 'Vaccine', sick_visit: 'Sick visit', other: 'Other' };
+
+  var app = document.getElementById('app');
+  var flashTimer = null;
+
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+
+  function confirmFlash(msg) {
+    state.flash = msg;
+    state.error = null;
+    if (flashTimer) clearTimeout(flashTimer);
+    flashTimer = setTimeout(function () { state.flash = null; render(); }, 2500);
+  }
+
+  // ---- derived state ---------------------------------------------------
+  function activeNursing() { return state.nursing.find(function (n) { return !n.ended_at; }) || null; }
+  function lastNursing() { return state.nursing.filter(function (n) { return n.ended_at; }).sort(byStartDesc)[0] || null; }
+  function activeSleep() { return state.sleep.find(function (s) { return !s.ended_at; }) || null; }
+  function lastSleep() { return state.sleep.filter(function (s) { return s.ended_at; }).sort(byStartDesc)[0] || null; }
+  function byStartDesc(a, b) { return new Date(b.started_at) - new Date(a.started_at); }
+  function lastFeeding() {
+    return state.feedings.slice().sort(function (a, b) { return new Date(b.fed_at) - new Date(a.fed_at); })[0] || null;
+  }
+  function lastDiaper() {
+    return state.diapers.slice().sort(function (a, b) { return new Date(b.changed_at) - new Date(a.changed_at); })[0] || null;
+  }
+  function nextAppt() {
+    var now = Date.now();
+    return state.appts
+      .filter(function (a) { return !a.completed && new Date(a.scheduled_at).getTime() >= now; })
+      .sort(function (a, b) { return new Date(a.scheduled_at) - new Date(b.scheduled_at); })[0] || null;
+  }
+
+  // ---- markup helpers --------------------------------------------------
+  function nav() {
+    var tabs = [['today', 'Today'], ['growth', 'Growth'], ['doctor', 'Doctor']];
+    return '<div class="a-nav">' + tabs.map(function (t) {
+      var on = state.tab === t[0];
+      return '<button class="a-tab" data-tab="' + t[0] + '"' + (on ? ' aria-current="page"' : '') + '>' + t[1] + '</button>';
+    }).join('') + '<button class="a-signout" data-noop="1">Sign out</button></div>';
+  }
+
+  function banners() {
+    var out = '';
+    if (state.error) out += '<div class="a-banner error" role="status">' + esc(state.error) + '</div>';
+    else if (state.flash) out += '<div class="a-banner ok" role="status">' + esc(state.flash) + '</div>';
+    return out;
+  }
+
+  function ago(isoStr) { return '<span data-ago="' + isoStr + '"></span>'; }
+  function stopwatch(isoStr) { return '<span class="a-clock" data-elapsed="' + isoStr + '"></span>'; }
+
+  function apptWhen(a) {
+    return new Date(a.scheduled_at).toLocaleString([], {
+      weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+    });
+  }
+
+  // ---- Today -----------------------------------------------------------
+  function renderToday() {
+    var now = Date.now();
+    var an = activeNursing(), ln = lastNursing();
+    var as = activeSleep(), ls = lastSleep();
+    var lf = lastFeeding(), ld = lastDiaper(), na = nextAppt();
+    var age = ageFrom(state.baby.birth_date, new Date(now));
+    var suggested = ln ? (ln.side === 'left' ? 'right' : 'left') : null;
+
+    var h = '';
+    h += '<p class="a-date">' + new Date(now).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' }) + '</p>';
+    h += '<h1 class="a-name">' + esc(state.baby.name) + '</h1>';
+    h += age ? '<p class="a-age">' + age + '</p>' : '<div style="height:18px"></div>';
+    h += banners();
+
+    // Breastfeeding
+    h += '<div class="a-card' + (an ? ' is-live' : '') + '">';
+    h += '<div class="a-label">Breastfeeding</div>';
+    if (an) {
+      h += '<div class="a-stopwatch">' + stopwatch(an.started_at) + '<span class="a-side">' + an.side + ' side</span></div>';
+      h += '<div class="a-row"><button class="a-btn live" data-act="stop-nursing">Stop nursing</button></div>';
+    } else {
+      h += '<div class="a-value">' + (ln
+        ? ago(ln.ended_at) + ' · ' + ln.side + ' · ' + durationBetween(ln.started_at, ln.ended_at)
+        : 'No sessions yet') + '</div>';
+      if (suggested) h += '<div class="a-sub">Start on the ' + suggested + ' next</div>';
+      h += '<div class="a-row">'
+        + '<button class="a-btn' + (suggested === 'left' ? '' : ' quiet') + '" data-act="nurse" data-side="left">Left</button>'
+        + '<button class="a-btn' + (suggested === 'right' ? '' : ' quiet') + '" data-act="nurse" data-side="right">Right</button>'
+        + '</div>';
+    }
+    h += '</div>';
+
+    // Feeding
+    h += '<div class="a-card"><div class="a-label">Last feeding</div>';
+    h += '<div class="a-value">' + (lf
+      ? clockTime(lf.fed_at) + ' · ' + lf.feeding_type + (lf.amount_ml ? ' · ' + lf.amount_ml + ' ml' : '')
+      : '—') + '</div>';
+    if (lf) h += '<div class="a-sub">' + ago(lf.fed_at) + '</div>';
+    h += '<div class="a-row">'
+      + '<input class="a-input ml" id="ml" inputmode="numeric" placeholder="ml" aria-label="Bottle amount in ml">'
+      + '<button class="a-btn" data-act="bottle">Bottle</button>'
+      + '<button class="a-btn quiet" data-act="solid">Solid</button>'
+      + '</div></div>';
+
+    // Diapers
+    h += '<div class="a-card"><div class="a-label">Last diaper</div>';
+    h += '<div class="a-value">' + (ld ? clockTime(ld.changed_at) + ' · ' + ld.diaper_type : '—') + '</div>';
+    if (ld) h += '<div class="a-sub">' + ago(ld.changed_at) + '</div>';
+    h += '<div class="a-row">'
+      + '<button class="a-btn" data-act="diaper" data-kind="wet">Wet</button>'
+      + '<button class="a-btn" data-act="diaper" data-kind="dirty">Dirty</button>'
+      + '<button class="a-btn" data-act="diaper" data-kind="both">Both</button>'
+      + '</div></div>';
+
+    // Sleep
+    h += '<div class="a-card' + (as ? ' is-live' : '') + '"><div class="a-label">Sleep</div>';
+    if (as) {
+      h += '<div class="a-stopwatch">' + stopwatch(as.started_at)
+        + '<span class="a-side">' + (as.source === 'nuc_derived' ? 'detected' : 'asleep') + '</span></div>';
+      h += '<div class="a-row"><button class="a-btn live" data-act="stop-sleep">She&rsquo;s awake</button></div>';
+    } else {
+      h += '<div class="a-value">' + (ls
+        ? durationBetween(ls.started_at, ls.ended_at) + ' · woke ' + ago(ls.ended_at)
+        : 'No sleep logged yet') + '</div>';
+      h += '<div class="a-row"><button class="a-btn" data-act="start-sleep">Start sleep</button></div>';
+    }
+    h += '</div>';
+
+    // Next appointment
+    h += '<div class="a-card"><div class="a-label">Next appointment</div>';
+    if (na) {
+      h += '<div class="a-value">' + esc(na.title) + '</div>';
+      h += '<div class="a-sub-13">' + apptWhen(na) + (na.doctor_name ? ' · ' + esc(na.doctor_name) : '') + '</div>';
+    } else {
+      h += '<div class="a-empty">Nothing scheduled</div>';
+    }
+    h += '<div style="margin-top:10px"><button class="a-link" data-tab="doctor">All appointments →</button></div></div>';
+
+    return h;
+  }
+
+  // ---- Growth ----------------------------------------------------------
+  function renderGrowth() {
+    var h = '<h1 class="a-h1">Growth</h1>' + banners();
+
+    h += '<div class="a-card"><div class="a-form-head"><div class="a-label">New measurement</div>'
+      + '<button class="a-toggle" data-act="units">' + (state.imperial ? 'lb / in' : 'kg / cm') + '</button></div>';
+    h += '<div class="a-stack">';
+    h += '<input class="a-input" id="g-date" type="date" value="' + dateOnly(Date.now()) + '">';
+    if (state.imperial) {
+      h += '<div class="a-row" style="margin-top:0">'
+        + '<input class="a-input grow" id="g-lb" inputmode="decimal" placeholder="lb" aria-label="Weight, pounds">'
+        + '<input class="a-input grow" id="g-oz" inputmode="decimal" placeholder="oz" aria-label="Weight, ounces">'
+        + '<input class="a-input grow" id="g-in" inputmode="decimal" placeholder="in" aria-label="Height, inches">'
+        + '</div>';
+    } else {
+      h += '<div class="a-row" style="margin-top:0">'
+        + '<input class="a-input grow" id="g-kg" inputmode="decimal" placeholder="kg" aria-label="Weight, kilograms">'
+        + '<input class="a-input grow" id="g-cm" inputmode="decimal" placeholder="cm" aria-label="Height, centimetres">'
+        + '</div>';
+    }
+    h += '<input class="a-input" id="g-notes" placeholder="Notes (optional)">';
+    h += '</div><div class="a-row"><button class="a-btn" data-act="save-growth">Save measurement</button></div></div>';
+
+    var rows = state.growth.slice().sort(function (a, b) { return b.measured_at.localeCompare(a.measured_at); });
+    if (!rows.length) {
+      h += '<div class="a-card"><div class="a-empty">No measurements recorded yet.</div></div>';
+      return h;
+    }
+
+    rows.forEach(function (row, i) {
+      var prev = rows[i + 1];
+      var gain = (prev && row.weight_kg != null && prev.weight_kg != null) ? row.weight_kg - prev.weight_kg : null;
+      h += '<div class="a-card">';
+      h += '<div class="a-label">' + new Date(row.measured_at + 'T00:00:00')
+        .toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' }) + '</div>';
+      h += '<div class="a-value">';
+      if (row.weight_kg != null) h += kgToLbOz(row.weight_kg) + ' (' + row.weight_kg.toFixed(2) + ' kg)';
+      if (row.weight_kg != null && row.height_cm != null) h += ' · ';
+      if (row.height_cm != null) h += cmToIn(row.height_cm) + ' (' + row.height_cm.toFixed(1) + ' cm)';
+      h += '</div>';
+      if (gain !== null) {
+        h += '<div class="' + (gain >= 0 ? 'a-gain-up' : 'a-gain-down') + '">'
+          + (gain >= 0 ? '+' : '−') + kgToLbOz(Math.abs(gain)) + ' since last visit</div>';
+      }
+      if (row.notes) h += '<div class="a-sub-13" style="margin-top:6px">' + esc(row.notes) + '</div>';
+      h += '</div>';
+    });
+    return h;
+  }
+
+  // ---- Doctor ----------------------------------------------------------
+  function renderDoctor() {
+    var now = Date.now();
+    var h = '<div class="a-head-row"><h1 class="a-h1" style="margin:0">Doctor</h1>'
+      + '<button class="a-pill" data-act="toggle-appt">' + (state.showApptForm ? 'Cancel' : '+ Add') + '</button></div>';
+    h += banners();
+
+    if (state.showApptForm) {
+      var d = new Date(now + 7 * DAY);
+      var pad = function (n) { return String(n).padStart(2, '0'); };
+      var local = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+      h += '<div class="a-card"><div class="a-label">New appointment</div><div class="a-stack" style="margin-top:8px">';
+      h += '<input class="a-input" id="ap-title" placeholder="e.g. 2-month checkup">';
+      h += '<select class="a-input" id="ap-type">'
+        + Object.keys(TYPE_LABELS).map(function (k) { return '<option value="' + k + '">' + TYPE_LABELS[k] + '</option>'; }).join('')
+        + '</select>';
+      h += '<input class="a-input" id="ap-when" type="datetime-local" value="' + local + '">';
+      h += '<input class="a-input" id="ap-doc" placeholder="Doctor (optional)">';
+      h += '<input class="a-input" id="ap-notes" placeholder="Notes (optional)">';
+      h += '</div><div class="a-row"><button class="a-btn" data-act="save-appt">Save appointment</button></div>';
+      h += '<p class="a-foot">Stored here only. Syncing to the shared calendar is the Hub&rsquo;s job later.</p></div>';
+    }
+
+    var sorted = state.appts.slice().sort(function (a, b) { return new Date(a.scheduled_at) - new Date(b.scheduled_at); });
+    var upcoming = sorted.filter(function (a) { return !a.completed && new Date(a.scheduled_at).getTime() >= now; });
+    var past = sorted.filter(function (a) { return a.completed || new Date(a.scheduled_at).getTime() < now; }).reverse();
+
+    h += '<div class="a-label">Upcoming</div><div style="margin-top:8px">';
+    h += upcoming.length ? upcoming.map(function (a) { return apptCard(a, false); }).join('')
+      : '<div class="a-card"><div class="a-empty">Nothing scheduled.</div></div>';
+    h += '</div>';
+
+    if (past.length) {
+      h += '<div class="a-label">Past</div><div style="margin-top:8px">'
+        + past.map(function (a) { return apptCard(a, true); }).join('') + '</div>';
+    }
+    return h;
+  }
+
+  function apptCard(a, isPast) {
+    var h = '<div class="a-card' + (isPast ? ' is-past' : '') + '"><div class="a-appt"><div class="a-appt-body">';
+    h += '<div class="a-value' + (a.completed ? ' a-strike' : '') + '">' + esc(a.title) + '</div>';
+    h += '<div class="a-sub-13">' + apptWhen(a)
+      + (a.appointment_type ? ' · ' + TYPE_LABELS[a.appointment_type] : '')
+      + (a.doctor_name ? ' · ' + esc(a.doctor_name) : '') + '</div>';
+    if (a.notes) h += '<div class="a-sub-13" style="margin-top:6px">' + esc(a.notes) + '</div>';
+    h += '</div><button class="a-done' + (a.completed ? ' is-done' : '') + '" data-act="toggle-done" data-id="' + a.id
+      + '" aria-label="' + (a.completed ? 'Mark as not done' : 'Mark as done') + '">✓</button></div></div>';
+    return h;
+  }
+
+  // ---- render + tick ---------------------------------------------------
+  function render() {
+    var body = state.tab === 'growth' ? renderGrowth() : state.tab === 'doctor' ? renderDoctor() : renderToday();
+    app.innerHTML = '<div class="a-page">' + nav() + body + '</div>';
+    tick();
+  }
+
+  function tick() {
+    var now = Date.now();
+    app.querySelectorAll('[data-elapsed]').forEach(function (el) {
+      el.textContent = elapsed(el.getAttribute('data-elapsed'), now);
+    });
+    app.querySelectorAll('[data-ago]').forEach(function (el) {
+      el.textContent = timeAgo(el.getAttribute('data-ago'), now);
+    });
+  }
+
+  // ---- actions ---------------------------------------------------------
+  function num(v) {
+    var t = String(v == null ? '' : v).trim();
+    if (t === '') return null;
+    var n = Number(t);
+    return isFinite(n) ? n : NaN;
+  }
+  function val(id) { var el = document.getElementById(id); return el ? el.value : ''; }
+
+  var ACTIONS = {
+    nurse: function (el) {
+      state.nursing.push({ id: nextId(), side: el.getAttribute('data-side'), started_at: new Date().toISOString(), ended_at: null });
+      confirmFlash('Nursing (' + el.getAttribute('data-side') + ') logged');
+    },
+    'stop-nursing': function () {
+      var a = activeNursing();
+      if (a) a.ended_at = new Date().toISOString();
+      confirmFlash('Nursing end logged');
+    },
+    'start-sleep': function () {
+      state.sleep.push({ id: nextId(), started_at: new Date().toISOString(), ended_at: null, source: 'manual' });
+      confirmFlash('Sleep start logged');
+    },
+    'stop-sleep': function () {
+      var a = activeSleep();
+      if (a) a.ended_at = new Date().toISOString();
+      confirmFlash('Sleep end logged');
+    },
+    bottle: function () {
+      var ml = num(val('ml'));
+      if (ml !== null && (isNaN(ml) || ml <= 0)) { state.error = 'Bottle amount has to be a number of ml.'; return; }
+      state.feedings.push({ fed_at: new Date().toISOString(), feeding_type: 'bottle', amount_ml: ml });
+      confirmFlash('Bottle logged');
+    },
+    solid: function () {
+      state.feedings.push({ fed_at: new Date().toISOString(), feeding_type: 'solid', amount_ml: null });
+      confirmFlash('Solid logged');
+    },
+    diaper: function (el) {
+      var kind = el.getAttribute('data-kind');
+      state.diapers.push({ changed_at: new Date().toISOString(), diaper_type: kind });
+      confirmFlash('Diaper (' + kind + ') logged');
+    },
+    units: function () { state.imperial = !state.imperial; },
+    'save-growth': function () {
+      var weightKg = null, heightCm = null;
+      if (state.imperial) {
+        var lb = num(val('g-lb')), oz = num(val('g-oz')), inch = num(val('g-in'));
+        if ([lb, oz, inch].some(function (v) { return v !== null && isNaN(v); })) {
+          state.error = 'Weight and height have to be numbers.'; return;
+        }
+        if (lb !== null || oz !== null) weightKg = ((lb || 0) + (oz || 0) / 16) / LB_PER_KG;
+        if (inch !== null) heightCm = inch * 2.54;
+      } else {
+        var kg = num(val('g-kg')), cm = num(val('g-cm'));
+        if ([kg, cm].some(function (v) { return v !== null && isNaN(v); })) {
+          state.error = 'Weight and height have to be numbers.'; return;
+        }
+        weightKg = kg; heightCm = cm;
+      }
+      if (weightKg === null && heightCm === null) { state.error = 'Enter a weight, a height, or both.'; return; }
+      state.growth.push({
+        id: nextId(),
+        measured_at: val('g-date') || dateOnly(Date.now()),
+        weight_kg: weightKg === null ? null : +weightKg.toFixed(3),
+        height_cm: heightCm === null ? null : +heightCm.toFixed(1),
+        notes: val('g-notes').trim() || null
+      });
+      confirmFlash('Measurement saved');
+    },
+    'toggle-appt': function () { state.showApptForm = !state.showApptForm; state.error = null; },
+    'save-appt': function () {
+      var title = val('ap-title').trim();
+      if (!title) { state.error = 'Give the appointment a title.'; return; }
+      var when = val('ap-when');
+      if (!when) { state.error = 'Pick a date and time.'; return; }
+      state.appts.push({
+        id: nextId(), title: title, appointment_type: val('ap-type'),
+        scheduled_at: new Date(when).toISOString(),
+        doctor_name: val('ap-doc').trim() || null,
+        notes: val('ap-notes').trim() || null,
+        completed: false
+      });
+      state.showApptForm = false;
+      confirmFlash('Appointment saved');
+    },
+    'toggle-done': function (el) {
+      var id = el.getAttribute('data-id');
+      var a = state.appts.find(function (x) { return x.id === id; });
+      if (a) a.completed = !a.completed;
+    }
+  };
+
+  app.addEventListener('click', function (e) {
+    var el = e.target.closest('[data-act], [data-tab], [data-noop]');
+    if (!el) return;
+    if (el.hasAttribute('data-noop')) return;
+
+    if (el.hasAttribute('data-tab')) {
+      state.tab = el.getAttribute('data-tab');
+      state.error = null;
+      render();
+      app.scrollTop = 0;
+      return;
+    }
+    var fn = ACTIONS[el.getAttribute('data-act')];
+    if (!fn) return;
+    state.error = null;
+    fn(el);
+    render();
+  });
+
   render();
-}
-async function save(){
-  try{ await window.storage.set(STORAGE_KEY, JSON.stringify(state), false); }catch(e){}
-}
-
-function logFeeding(type){
-  state.feedings.unshift({ type, time: new Date().toISOString() });
-  save(); render();
-}
-function logNursing(side){
-  state.nursing.unshift({ type: side, time: new Date().toISOString() });
-  save(); render();
-}
-function logDiaper(type){
-  state.diapers.unshift({ type, time: new Date().toISOString() });
-  save(); render();
-}
-function addAppt(){
-  const title = document.getElementById('appt-title').value.trim();
-  const date = document.getElementById('appt-date').value;
-  if(!title || !date) return;
-  state.appointments.push({ title, date });
-  document.getElementById('appt-title').value='';
-  document.getElementById('appt-date').value='';
-  save(); render();
-}
-function undo(key){
-  state[key].shift();
-  save(); render();
-}
-
-function fmt(t){ return new Date(t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); }
-
-function render(){
-  document.getElementById('date').textContent = new Date().toLocaleDateString(undefined,{weekday:'long', month:'long', day:'numeric'});
-
-  document.getElementById('last-feeding').textContent = state.feedings[0] ? fmt(state.feedings[0].time) : '—';
-  document.getElementById('feeding-log').innerHTML = state.feedings.slice(0,5).map(f=>`<div>${f.type} — ${fmt(f.time)}</div>`).join('');
-
-  document.getElementById('last-nursing').textContent = state.nursing[0] ? `${state.nursing[0].type} — ${fmt(state.nursing[0].time)}` : '—';
-  document.getElementById('nursing-log').innerHTML = state.nursing.slice(0,5).map(n=>`<div>${n.type} — ${fmt(n.time)}</div>`).join('');
-
-  document.getElementById('last-diaper').textContent = state.diapers[0] ? fmt(state.diapers[0].time) : '—';
-  document.getElementById('diaper-log').innerHTML = state.diapers.slice(0,5).map(d=>`<div>${d.type} — ${fmt(d.time)}</div>`).join('');
-
-  const sortedAppts = [...state.appointments].sort((a,b)=> new Date(a.date) - new Date(b.date));
-  document.getElementById('next-appt').textContent = sortedAppts[0] ? `${sortedAppts[0].title} — ${new Date(sortedAppts[0].date).toLocaleDateString(undefined,{month:'short',day:'numeric'})}` : 'Nothing scheduled';
-  document.getElementById('appt-log').innerHTML = sortedAppts.map(a=>`<div>${a.title} — ${new Date(a.date).toLocaleDateString(undefined,{month:'short',day:'numeric'})}</div>`).join('');
-}
-
-load();
+  setInterval(tick, 1000);
+})();
 </script>
 </body>
 </html>
