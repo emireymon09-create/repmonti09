@@ -52,7 +52,8 @@ whenever that sync gets built.
 
 ## Current status (as of right now)
 
-- **No git repo yet.** This is a local folder only.
+- **Local git repo initialized** on `main`, scaffold committed.
+  No remote configured yet.
 - **No GitHub repo yet.**
 - **No cloud Supabase project yet.** Only running locally via
   `supabase start` (Docker).
@@ -79,8 +80,27 @@ whenever that sync gets built.
 
 **Auth:** Supabase Auth, email/password, via `/login`
 
-**Dashboard (`/dashboard`):** log feeding, breastfeeding (left/right),
-diaper changes, doctor appointments — shows last-logged time for each
+**Dashboard (`/dashboard`)** — the 3am screen. Every control is a
+52px-min touch target, and every write surfaces its error instead of
+failing silently:
+- Breastfeeding: start/stop with a live stopwatch, tracks left/right,
+  and suggests the side that wasn't used last
+- Bottle (with optional ml) and solids
+- Diapers: wet / dirty / both
+- Sleep: start/stop with a live stopwatch; a session the NUC opened via
+  `/api/ingest` shows as "detected" and can be closed by hand
+- Next upcoming appointment
+
+**`/growth`:** add and list measurements. Entry defaults to lb/oz + in
+(what the pediatrician's office says out loud) and converts to the
+metric the DB stores; a toggle switches to kg/cm. Each row shows both
+units and the change since the previous visit.
+
+**`/appointments`:** upcoming and past, add form, tap to mark done.
+
+**Shared bits:** `lib/format.ts` (time/unit formatting, unit-tested),
+`lib/useBaby.ts` (auth guard + current baby), `components/ui.tsx`
+(palette and controls, so the pages can't drift apart)
 
 **`/api/ingest`:** the one endpoint the NUC will call to push sleep
 sessions and monitor events. Authenticates with a shared device
@@ -94,13 +114,14 @@ database) — useful for quickly showing the design, not for real use.
 
 ## What's NOT built yet
 
-- Sleep session UI (table + ingest endpoint exist, no dashboard view)
-- Growth measurements UI (table exists, no page)
 - The actual NUC-side HA automation that calls `/api/ingest`
 - Retry-queue logic on the HA side for when the NUC has no internet
   (data still logs fine locally in HA either way — this is only about
   keeping the cloud copy in sync once connectivity returns)
-- Real visual design (current styling is a placeholder)
+- Editing or deleting a logged entry. `feedings` and `diaper_changes`
+  have no update/delete RLS policy, so a mis-tap at 3am is permanent
+  until a `0002` migration adds one — worth doing before real use
+- Real visual design (current styling is functional, not designed)
 - PWA manifest/service worker for installable offline behavior
 - Anything related to calendar, meal planning, chores, irrigation —
   those belong to the Hub, a separate future project, not this repo
