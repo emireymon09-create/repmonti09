@@ -27,7 +27,7 @@ import {
 import type {
   ActivityEntry, AppointmentType, Baby, DiaperChange, DiaperType,
   DoctorAppointment, Feeding, FeedingType, GrowthMeasurement,
-  NursingSession, Result, Side, SleepSession, WithPending,
+  NursingSession, PumpingSession, PumpSide, Result, Side, SleepSession, WithPending,
 } from '@/lib/types'
 
 /** Phase 2: 'baby'. Supabase must expose it under API Settings → Exposed schemas. */
@@ -248,6 +248,38 @@ export function endSleep(sessionId: string): Promise<Result<null>> {
     kind: 'update', table: 'sleep_sessions', id: sessionId,
     patch: { ended_at: new Date().toISOString() },
   })
+}
+
+// --------------------------------------------------------------- pumping
+
+/**
+ * Expressed milk. Deliberately independent of birth_date — the "she's
+ * here" gate on the dashboard is about the baby-tracking screens, not
+ * this one, since building a stash typically starts weeks before birth.
+ */
+export async function recentPumping(babyId: string, limit = 20): Promise<Result<PumpingSession[]>> {
+  const { data: rows, error } = await data()
+    .from('pumping_sessions').select('id, pumped_at, side, amount_ml, notes')
+    .eq('baby_id', babyId).order('pumped_at', { ascending: false }).limit(limit)
+  if (error) return fail([] as PumpingSession[], error)
+  return ok((rows ?? []) as PumpingSession[])
+}
+
+export function logPumping(
+  babyId: string, userId: string | null, side: PumpSide, amountMl: number | null, notes: string | null,
+): Promise<Result<null>> {
+  return write('Pumping', {
+    kind: 'insert', table: 'pumping_sessions',
+    row: {
+      id: newId(), ...scope(babyId, userId),
+      side, amount_ml: amountMl, notes, pumped_at: new Date().toISOString(),
+    },
+  })
+}
+
+/** Total ml pumped across the given rows — the running "stash" figure. */
+export function totalPumped(rows: PumpingSession[]): number {
+  return rows.reduce((sum, r) => sum + (r.amount_ml ?? 0), 0)
 }
 
 // --------------------------------------------------------------- growth

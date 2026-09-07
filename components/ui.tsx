@@ -11,6 +11,7 @@
  * Destined for `packages/ui` when the monorepo lands.
  */
 
+import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabaseClient'
@@ -65,13 +66,16 @@ export function Banner({ kind, children }: { kind: 'error' | 'ok'; children: Rea
 
 const TABS = [
   { href: '/dashboard', label: 'Today' },
+  { href: '/pumping', label: 'Milk' },
   { href: '/growth', label: 'Growth' },
   { href: '/appointments', label: 'Doctor' },
+  { href: '/history', label: 'History' },
 ]
 
 export function Nav() {
   const pathname = usePathname()
   const router = useRouter()
+  const [menuOpen, setMenuOpen] = useState(false)
 
   async function signOut() {
     await createClient().auth.signOut()
@@ -90,7 +94,29 @@ export function Nav() {
           {tab.label}
         </Link>
       ))}
-      <button className="signout" onClick={signOut}>Sign out</button>
+      <div
+        className="nav-settings"
+        onBlur={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node)) setMenuOpen(false)
+        }}
+      >
+        <button
+          className="gear"
+          aria-label="Settings"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((v) => !v)}
+        >
+          {'\u2699'}
+        </button>
+        {menuOpen && (
+          <div className="nav-menu" role="menu">
+            <button role="menuitem" className="nav-menu-item" onClick={signOut}>
+              Sign out
+            </button>
+          </div>
+        )}
+      </div>
     </nav>
   )
 }

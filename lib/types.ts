@@ -13,6 +13,7 @@ export type FeedingType = 'bottle' | 'nursing' | 'solid'
 export type DiaperType = 'wet' | 'dirty' | 'both'
 export type Side = 'left' | 'right'
 export type SleepSource = 'manual' | 'nuc_derived'
+export type PumpSide = 'left' | 'right' | 'both'
 export type AppointmentType = 'checkup' | 'vaccine' | 'sick_visit' | 'other'
 
 export type Baby = {
@@ -47,6 +48,14 @@ export type SleepSession = {
   started_at: string
   ended_at: string | null
   source: SleepSource
+}
+
+export type PumpingSession = {
+  id: string
+  pumped_at: string
+  side: PumpSide
+  amount_ml: number | null
+  notes: string | null
 }
 
 export type GrowthMeasurement = {

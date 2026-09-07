@@ -143,6 +143,17 @@ export function cmToIn(cm: number): string {
   return `${(cm / 2.54).toFixed(1)} in`
 }
 
+export const ML_PER_FL_OZ = 29.5735
+
+/** Pump output is read in oz at the pump; the database stores ml. */
+export function mlToFlOz(ml: number): string {
+  return `${(ml / ML_PER_FL_OZ).toFixed(1)} oz`
+}
+
+export function flOzToMl(oz: number): number {
+  return oz * ML_PER_FL_OZ
+}
+
 /** "6 days old" / "5 weeks old" / "3 months old" — null before birth. */
 export function ageFrom(birthDate: string | null | undefined, now: Date = new Date()): string | null {
   if (!birthDate) return null
