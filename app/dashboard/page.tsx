@@ -6,9 +6,9 @@ import { useBaby } from '@/lib/useBaby'
 import { NoBaby } from '@/components/NoBaby'
 import { Banner, Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
 import {
-  buildActivity, endNursing, endSleep, logDiaper, logFeeding, mergePending,
-  nextAppointment, pendingWrites, predictNextFeeding, predictNextNap,
-  recentDiapers, recentFeedings, recentNursing, recentSleep, startNursing, startSleep,
+  addGrowth, buildActivity, endNursing, endSleep, logDiaper, logFeeding, mergePending,
+  nextAppointment, pendingWrites, predictNextFeeding, predictNextNap, recentDiapers,
+  recentFeedings, recentNursing, recentSleep, recordBirth, startNursing, startSleep,
 } from '@/lib/db'
 import { useSync } from '@/lib/useSync'
 import { SyncBar } from '@/components/SyncStatus'
@@ -17,8 +17,8 @@ import type {
   NursingSession, Side, SleepSession, WithPending,
 } from '@/lib/types'
 import {
-  ageFrom, apptWhen, clockTime, dueRelative, durationBetween, elapsed, longDate,
-  startOfHouseholdDay, timeAgo,
+  ageFrom, apptWhen, clockTime, dueRelative, durationBetween, elapsed, householdToday,
+  lbOzToKg, longDate, startOfHouseholdDay, timeAgo,
 } from '@/lib/format'
 
 /** Newest first, after queued rows have been folded in out of order. */
@@ -29,7 +29,7 @@ function sortDesc<T extends Record<string, unknown>>(rows: T[], key: keyof T): T
 }
 
 export default function Dashboard() {
-  const { baby, userId, loading } = useBaby()
+  const { baby, userId, loading, refreshBaby } = useBaby()
 
   const [feedings, setFeedings] = useState<WithPending<Feeding>[]>([])
   const [diapers, setDiapers] = useState<WithPending<DiaperChange>[]>([])
@@ -38,6 +38,11 @@ export default function Dashboard() {
   const [appt, setAppt] = useState<DoctorAppointment | null>(null)
   const [today, setToday] = useState<ActivityEntry[]>([])
 
+  const [birthDate, setBirthDate] = useState(() => householdToday())
+  const [birthLb, setBirthLb] = useState('')
+  const [birthOz, setBirthOz] = useState('')
+  const [birthIn, setBirthIn] = useState('')
+  const [birthBusy, setBirthBusy] = useState(false)
   const [bottleMl, setBottleMl] = useState('')
   const [err, setErr] = useState<string | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
@@ -122,6 +127,35 @@ export default function Dashboard() {
   const feedingPrediction = predictNextFeeding(feedings, nursing)
   const napPrediction = predictNextNap(sleep)
 
+  async function onBirth(e: React.FormEvent) {
+    e.preventDefault()
+    if (!baby || birthBusy) return
+    setBirthBusy(true)
+    setErr(null)
+
+    const { error } = await recordBirth(baby.id, birthDate)
+    if (error) {
+      setErr(`Couldn't save — ${error}`)
+      setBirthBusy(false)
+      return
+    }
+
+    const lb = birthLb.trim() === '' ? null : Number(birthLb)
+    const oz = birthOz.trim() === '' ? null : Number(birthOz)
+    const inch = birthIn.trim() === '' ? null : Number(birthIn)
+    if (lb !== null || oz !== null || inch !== null) {
+      await addGrowth(baby.id, userId, {
+        measured_at: birthDate,
+        weight_kg: (lb !== null || oz !== null) ? Number(lbOzToKg(lb ?? 0, oz ?? 0).toFixed(3)) : null,
+        height_cm: inch !== null ? Number((inch * 2.54).toFixed(1)) : null,
+        notes: 'Birth weight',
+      })
+    }
+
+    await refreshBaby()
+    setBirthBusy(false)
+  }
+
   function onBottle() {
     const raw = bottleMl.trim()
     const ml = raw === '' ? null : Number(raw)
@@ -138,6 +172,47 @@ export default function Dashboard() {
 
   if (loading) return <Page><p className="empty">Loading…</p></Page>
   if (!baby) return <Page><Nav /><NoBaby /></Page>
+
+  if (!baby.birth_date) {
+    return (
+      <Page>
+        <Nav />
+        <p className="eyebrow">{longDate(now)}</p>
+        <h1 className="name">Expecting {baby.name}</h1>
+        {err && <Banner kind="error">{err}</Banner>}
+        <Card>
+          <Label>Not born yet</Label>
+          <p className="meta">
+            Logging, the feeding clock, growth tracking — all of it turns on the
+            moment you save her birth date below. Nothing before that is lost;
+            it just starts counting from here.
+          </p>
+          <form onSubmit={onBirth}>
+            <div className="stack">
+              <div>
+                <label className="label" htmlFor="birth-date">Birth date</label>
+                <input id="birth-date" className="input" type="date" value={birthDate}
+                  onChange={(e) => setBirthDate(e.target.value)} max={householdToday()} required />
+              </div>
+              <div className="row">
+                <input className="input" value={birthLb} onChange={(e) => setBirthLb(e.target.value)}
+                  inputMode="decimal" placeholder="lb (optional)" aria-label="Birth weight, pounds" />
+                <input className="input" value={birthOz} onChange={(e) => setBirthOz(e.target.value)}
+                  inputMode="decimal" placeholder="oz" aria-label="Birth weight, ounces" />
+                <input className="input" value={birthIn} onChange={(e) => setBirthIn(e.target.value)}
+                  inputMode="decimal" placeholder="in (optional)" aria-label="Birth height, inches" />
+              </div>
+            </div>
+            <div className="row-tight">
+              <Btn type="submit" disabled={birthBusy}>
+                {birthBusy ? 'Saving…' : 'She\u2019s here! \uD83C\uDF89'}
+              </Btn>
+            </div>
+          </form>
+        </Card>
+      </Page>
+    )
+  }
 
   const age = ageFrom(baby.birth_date, new Date(now))
   const suggested: Side | null = lastNursing

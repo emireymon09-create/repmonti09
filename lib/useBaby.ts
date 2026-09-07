@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabaseClient'
 import { currentBaby } from '@/lib/db'
@@ -40,5 +40,12 @@ export function useBaby() {
     return () => { cancelled = true }
   }, [router])
 
-  return { baby, userId, loading }
+  // Re-reads just the baby row — for the moment `birth_date` actually
+  // changes (the "she's here" action) without re-running the auth check.
+  const refreshBaby = useCallback(async () => {
+    const { data } = await currentBaby()
+    setBaby(data)
+  }, [])
+
+  return { baby, userId, loading, refreshBaby }
 }

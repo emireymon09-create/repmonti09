@@ -137,6 +137,19 @@ export async function currentBaby(): Promise<Result<Baby | null>> {
   return ok((rows && rows.length ? rows[0] : null) as Baby | null)
 }
 
+/**
+ * The one-time "she's here" action. Everything else on the dashboard —
+ * age, the feeding clock, growth curves — is derived from this single
+ * column, so setting it is what actually starts the app tracking her
+ * instead of counting down to her.
+ */
+export function recordBirth(babyId: string, birthDate: string): Promise<Result<null>> {
+  return write('Birth date', {
+    kind: 'update', table: 'babies', id: babyId,
+    patch: { birth_date: birthDate },
+  })
+}
+
 // --------------------------------------------------------------- feedings
 
 export async function recentFeedings(babyId: string, limit = 20): Promise<Result<Feeding[]>> {
