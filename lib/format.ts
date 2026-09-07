@@ -106,6 +106,22 @@ export function durationBetween(startIso: string, endIso: string): string {
   return m ? `${h}h ${m}m` : `${h}h`
 }
 
+/**
+ * A predicted clock time, read against now: "due in 45m" · "10m
+ * overdue" · "due now". Signed on purpose — a predicted feeding or nap
+ * that's already passed is exactly the thing worth surfacing.
+ */
+export function dueRelative(targetIso: string | null, now: number = Date.now()): string | null {
+  if (!targetIso) return null
+  const diffMin = Math.round((new Date(targetIso).getTime() - now) / 60_000)
+  if (Math.abs(diffMin) < 1) return 'due now'
+  const mins = Math.abs(diffMin)
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  const span = h > 0 ? `${h}h ${m}m` : `${m}m`
+  return diffMin > 0 ? `due in ${span}` : `${span} overdue`
+}
+
 // --------------------------------------------------------------- units
 
 export const LB_PER_KG = 2.20462

@@ -7,8 +7,8 @@ import { NoBaby } from '@/components/NoBaby'
 import { Banner, Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
 import {
   buildActivity, endNursing, endSleep, logDiaper, logFeeding, mergePending,
-  nextAppointment, pendingWrites, recentDiapers, recentFeedings, recentNursing,
-  recentSleep, startNursing, startSleep,
+  nextAppointment, pendingWrites, predictNextFeeding, predictNextNap,
+  recentDiapers, recentFeedings, recentNursing, recentSleep, startNursing, startSleep,
 } from '@/lib/db'
 import { useSync } from '@/lib/useSync'
 import { SyncBar } from '@/components/SyncStatus'
@@ -17,7 +17,7 @@ import type {
   NursingSession, Side, SleepSession, WithPending,
 } from '@/lib/types'
 import {
-  ageFrom, apptWhen, clockTime, durationBetween, elapsed, longDate,
+  ageFrom, apptWhen, clockTime, dueRelative, durationBetween, elapsed, longDate,
   startOfHouseholdDay, timeAgo,
 } from '@/lib/format'
 
@@ -119,6 +119,8 @@ export default function Dashboard() {
   const lastSleep = sleep.find((s) => s.ended_at) ?? null
   const lastFeeding = feedings[0] ?? null
   const lastDiaper = diapers[0] ?? null
+  const feedingPrediction = predictNextFeeding(feedings, nursing)
+  const napPrediction = predictNextNap(sleep)
 
   function onBottle() {
     const raw = bottleMl.trim()
@@ -204,6 +206,11 @@ export default function Dashboard() {
           </div>
           {lastFeeding && <div className="meta">{timeAgo(lastFeeding.fed_at, now)}</div>}
           {lastFeeding?.pending && <div className="pending-tag">Not synced yet</div>}
+          {feedingPrediction.dueAt && (
+            <div className="meta">
+              Next feeding {clockTime(feedingPrediction.dueAt)} · {dueRelative(feedingPrediction.dueAt, now)}
+            </div>
+          )}
           <div className="row-tight">
             <input
               className="input narrow"
@@ -264,6 +271,11 @@ export default function Dashboard() {
                   ? `${durationBetween(lastSleep.started_at, lastSleep.ended_at!)} · woke ${timeAgo(lastSleep.ended_at, now)}`
                   : 'No sleep logged yet'}
               </div>
+              {napPrediction.dueAt && (
+                <div className="meta">
+                  Next nap ~{clockTime(napPrediction.dueAt)} · {dueRelative(napPrediction.dueAt, now)}
+                </div>
+              )}
               <div className="row-tight">
                 <Btn disabled={busy}
                   onClick={() => run('Sleep start', () => startSleep(baby.id, userId))}>

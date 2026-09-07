@@ -340,3 +340,65 @@ export function buildActivity(
     .filter((e) => new Date(e.at).getTime() >= since)
     .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
 }
+
+// --------------------------------------------------------------- predictions
+
+export type SchedulePrediction = {
+  lastAt: string | null
+  avgIntervalMinutes: number | null
+  dueAt: string | null
+}
+
+/**
+ * Predicts when the next feeding is due from the gaps between the most
+ * recent feeding events — bottles, solids, and nursing starts, combined.
+ * Only the newest few gaps are averaged (not the whole history) since
+ * the interval drifts as a baby grows; that also means it self-corrects
+ * within a day or two of a growth spurt or schedule change.
+ */
+export function predictNextFeeding(
+  feedings: Feeding[], nursing: NursingSession[], sampleSize = 6,
+): SchedulePrediction {
+  const events = [
+    ...feedings.map((f) => f.fed_at),
+    ...nursing.map((n) => n.started_at),
+  ].sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
+
+  if (events.length === 0) return { lastAt: null, avgIntervalMinutes: null, dueAt: null }
+  const lastAt = events[0]
+  if (events.length < 2) return { lastAt, avgIntervalMinutes: null, dueAt: null }
+
+  const sample = events.slice(0, sampleSize + 1)
+  const gaps = sample.slice(0, -1).map((at, i) =>
+    (new Date(at).getTime() - new Date(sample[i + 1]).getTime()) / 60_000,
+  )
+  const avg = gaps.reduce((a, b) => a + b, 0) / gaps.length
+  const dueAt = new Date(new Date(lastAt).getTime() + avg * 60_000).toISOString()
+  return { lastAt, avgIntervalMinutes: Math.round(avg), dueAt }
+}
+
+/**
+ * Predicts the next nap from the gaps between waking up and the next
+ * sleep session starting — the baby's typical awake window. Only
+ * meaningful while awake; the dashboard only shows it when there's no
+ * session in progress.
+ */
+export function predictNextNap(sleep: SleepSession[], sampleSize = 6): SchedulePrediction {
+  const finished = sleep
+    .filter((s): s is SleepSession & { ended_at: string } => s.ended_at != null)
+    .sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime())
+
+  if (finished.length === 0) return { lastAt: null, avgIntervalMinutes: null, dueAt: null }
+  const lastAt = finished[0].ended_at
+  if (finished.length < 2) return { lastAt, avgIntervalMinutes: null, dueAt: null }
+
+  const sample = finished.slice(0, sampleSize + 1)
+  const gaps = sample.slice(0, -1)
+    .map((s, i) => (new Date(s.started_at).getTime() - new Date(sample[i + 1].ended_at).getTime()) / 60_000)
+    .filter((mins) => mins > 0)
+
+  if (gaps.length === 0) return { lastAt, avgIntervalMinutes: null, dueAt: null }
+  const avg = gaps.reduce((a, b) => a + b, 0) / gaps.length
+  const dueAt = new Date(new Date(lastAt).getTime() + avg * 60_000).toISOString()
+  return { lastAt, avgIntervalMinutes: Math.round(avg), dueAt }
+}
