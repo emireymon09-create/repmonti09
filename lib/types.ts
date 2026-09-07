@@ -67,8 +67,15 @@ export type DoctorAppointment = {
   completed: boolean
 }
 
-/** Uniform result so every caller surfaces failures the same way. */
-export type Result<T> = { data: T; error: string | null }
+/**
+ * Uniform result so every caller surfaces failures the same way.
+ * `queued` means the write is on this device and not yet on the server —
+ * never report it as saved.
+ */
+export type Result<T> = { data: T; error: string | null; queued?: boolean }
+
+/** A row that exists only in the offline queue so far. */
+export type WithPending<T> = T & { pending?: boolean }
 
 /**
  * One entry in the day's timeline.

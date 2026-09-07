@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useBaby } from '@/lib/useBaby'
 import { NoBaby } from '@/components/NoBaby'
 import { Banner, Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
+import { SyncStatus } from '@/components/SyncStatus'
 import { addAppointment, listAppointments, setAppointmentCompleted } from '@/lib/db'
 import { APPOINTMENT_TYPE_LABELS } from '@/lib/types'
 import type { AppointmentType, DoctorAppointment } from '@/lib/types'
@@ -20,6 +21,7 @@ export default function AppointmentsPage() {
   const [doctor, setDoctor] = useState('')
   const [notes, setNotes] = useState('')
   const [err, setErr] = useState<string | null>(null)
+  const [saved, setSaved] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   const refresh = useCallback(async (babyId: string) => {
@@ -38,7 +40,7 @@ export default function AppointmentsPage() {
 
     setErr(null)
     setBusy(true)
-    const { error } = await addAppointment(baby.id, userId, {
+    const { error, queued } = await addAppointment(baby.id, userId, {
       title: title.trim(),
       appointment_type: type,
       // The input shows household wall-clock time; store the UTC instant.
@@ -49,6 +51,7 @@ export default function AppointmentsPage() {
     setBusy(false)
 
     if (error) { setErr(`Couldn't save — ${error}`); return }
+    setSaved(queued ? 'Saved on this device — will sync when you\u2019re back online' : 'Appointment saved')
     setTitle(''); setDoctor(''); setNotes(''); setType('checkup')
     setWhen(toHouseholdInputValue())
     setShowForm(false)
@@ -83,7 +86,9 @@ export default function AppointmentsPage() {
         </button>
       </div>
 
+      <SyncStatus />
       {err && <Banner kind="error">{err}</Banner>}
+      {saved && !err && <Banner kind="ok">{saved}</Banner>}
 
       {showForm && (
         <Card>

@@ -6,25 +6,35 @@ import { useBaby } from '@/lib/useBaby'
 import { NoBaby } from '@/components/NoBaby'
 import { Banner, Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
 import {
-  buildActivity, endNursing, endSleep, logDiaper, logFeeding, nextAppointment,
-  recentDiapers, recentFeedings, recentNursing, recentSleep, startNursing, startSleep,
+  buildActivity, endNursing, endSleep, logDiaper, logFeeding, mergePending,
+  nextAppointment, pendingWrites, recentDiapers, recentFeedings, recentNursing,
+  recentSleep, startNursing, startSleep,
 } from '@/lib/db'
+import { useSync } from '@/lib/useSync'
+import { SyncBar } from '@/components/SyncStatus'
 import type {
   ActivityEntry, DiaperChange, DiaperType, DoctorAppointment, Feeding,
-  NursingSession, Side, SleepSession,
+  NursingSession, Side, SleepSession, WithPending,
 } from '@/lib/types'
 import {
   ageFrom, apptWhen, clockTime, durationBetween, elapsed, longDate,
   startOfHouseholdDay, timeAgo,
 } from '@/lib/format'
 
+/** Newest first, after queued rows have been folded in out of order. */
+function sortDesc<T extends Record<string, unknown>>(rows: T[], key: keyof T): T[] {
+  return rows.slice().sort(
+    (a, b) => new Date(String(b[key])).getTime() - new Date(String(a[key])).getTime(),
+  )
+}
+
 export default function Dashboard() {
   const { baby, userId, loading } = useBaby()
 
-  const [feedings, setFeedings] = useState<Feeding[]>([])
-  const [diapers, setDiapers] = useState<DiaperChange[]>([])
-  const [nursing, setNursing] = useState<NursingSession[]>([])
-  const [sleep, setSleep] = useState<SleepSession[]>([])
+  const [feedings, setFeedings] = useState<WithPending<Feeding>[]>([])
+  const [diapers, setDiapers] = useState<WithPending<DiaperChange>[]>([])
+  const [nursing, setNursing] = useState<WithPending<NursingSession>[]>([])
+  const [sleep, setSleep] = useState<WithPending<SleepSession>[]>([])
   const [appt, setAppt] = useState<DoctorAppointment | null>(null)
   const [today, setToday] = useState<ActivityEntry[]>([])
 
@@ -51,33 +61,55 @@ export default function Dashboard() {
   }
 
   const refresh = useCallback(async (babyId: string) => {
-    const [f, d, n, s, a] = await Promise.all([
+    const [f, d, n, s, a, queued] = await Promise.all([
       recentFeedings(babyId), recentDiapers(babyId),
       recentNursing(babyId), recentSleep(babyId), nextAppointment(babyId),
+      pendingWrites(),
     ])
 
+    // Offline reads fail; that is expected and the sync bar already
+    // says so, so don't also shout an error over the top of it.
     const firstError = [f, d, n, s, a].find((r) => r.error)?.error
-    if (firstError) setErr(`Couldn't load today — ${firstError}`)
+    if (firstError && navigator.onLine) setErr(`Couldn't load today — ${firstError}`)
 
-    setFeedings(f.data)
-    setDiapers(d.data)
-    setNursing(n.data)
-    setSleep(s.data)
+    // Anything still queued is folded in and marked, so a tap made with
+    // no signal is visible rather than apparently lost.
+    const mFeedings = mergePending(f.data, 'feedings', queued)
+    const mDiapers = mergePending(d.data, 'diaper_changes', queued)
+    const mNursing = mergePending(n.data, 'nursing_sessions', queued)
+    const mSleep = mergePending(s.data, 'sleep_sessions', queued)
+
+    setFeedings(sortDesc(mFeedings, 'fed_at'))
+    setDiapers(sortDesc(mDiapers, 'changed_at'))
+    setNursing(sortDesc(mNursing, 'started_at'))
+    setSleep(sortDesc(mSleep, 'started_at'))
     setAppt(a.data)
-    setToday(buildActivity(f.data, n.data, d.data, s.data, startOfHouseholdDay()))
+    setToday(buildActivity(mFeedings, mNursing, mDiapers, mSleep, startOfHouseholdDay()))
   }, [])
+
+  const { online, pending, syncing, syncError, reloadPending } = useSync(() => {
+    if (baby) refresh(baby.id)
+  })
 
   useEffect(() => { if (baby) refresh(baby.id) }, [baby, refresh])
 
   // Every write reports its failure. A log entry that looks saved and
   // isn't is the worst thing this app can do.
-  async function run(label: string, fn: () => Promise<{ error: string | null }>) {
+  async function run(
+    label: string,
+    fn: () => Promise<{ error: string | null; queued?: boolean }>,
+  ) {
     if (!baby || busy) return
     setBusy(true)
     setErr(null)
-    const { error } = await fn()
-    if (error) setErr(`Couldn't save ${label} — ${error}`)
-    else { confirm(`${label} logged`); await refresh(baby.id) }
+    const { error, queued } = await fn()
+    if (error) {
+      setErr(`Couldn't save ${label} — ${error}`)
+    } else {
+      confirm(queued ? `${label} saved on this device — will sync` : `${label} logged`)
+      await refresh(baby.id)
+      await reloadPending()
+    }
     setBusy(false)
   }
 
@@ -118,6 +150,8 @@ export default function Dashboard() {
       <h1 className="name">{baby.name}</h1>
       <p className="age">{age ?? ' '}</p>
 
+      <SyncBar online={online} pending={pending} syncing={syncing} />
+      {syncError && <Banner kind="error">Couldn&rsquo;t sync — {syncError}</Banner>}
       {err && <Banner kind="error">{err}</Banner>}
       {flash && !err && <Banner kind="ok">{flash}</Banner>}
 
@@ -169,6 +203,7 @@ export default function Dashboard() {
               : '—'}
           </div>
           {lastFeeding && <div className="meta">{timeAgo(lastFeeding.fed_at, now)}</div>}
+          {lastFeeding?.pending && <div className="pending-tag">Not synced yet</div>}
           <div className="row-tight">
             <input
               className="input narrow"
@@ -193,6 +228,7 @@ export default function Dashboard() {
             {lastDiaper ? `${clockTime(lastDiaper.changed_at)} · ${lastDiaper.diaper_type}` : '—'}
           </div>
           {lastDiaper && <div className="meta">{timeAgo(lastDiaper.changed_at, now)}</div>}
+          {lastDiaper?.pending && <div className="pending-tag">Not synced yet</div>}
           <div className="row-tight">
             {(['wet', 'dirty', 'both'] as DiaperType[]).map((kind) => (
               <Btn key={kind} disabled={busy}

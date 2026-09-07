@@ -318,3 +318,39 @@ body {
 /* --------------------------------------------------------------- login */
 
 .auth { max-width: 380px; margin: 0 auto; padding: calc(var(--s-6) * 2) var(--s-5); }
+
+/* --------------------------------------------------------------- sync state
+
+   Offline is a normal condition in a nursery, not an error, so it reads
+   as information. What must never be ambiguous is whether something is
+   actually saved — a queued entry says so, everywhere it appears. */
+
+.syncbar {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  border-radius: var(--r-control);
+  border: 1px solid var(--c-line);
+  background: var(--c-surface);
+  padding: var(--s-3) var(--s-4);
+  margin-bottom: var(--s-4);
+  font-size: var(--t-meta);
+  color: var(--c-muted);
+}
+.syncbar.has-pending { border-color: var(--c-accent); color: var(--c-text); }
+
+.dot {
+  flex: none;
+  width: 0.6em;
+  height: 0.6em;
+  border-radius: 50%;
+  background: var(--c-muted);
+}
+.dot.offline { background: var(--c-accent); }
+.dot.syncing { background: var(--c-live); }
+
+.pending-tag {
+  color: var(--c-accent);
+  font-size: var(--t-meta);
+  margin-top: var(--s-1);
+}

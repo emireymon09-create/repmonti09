@@ -1,9 +1,19 @@
 import './globals.css'
 import type { Metadata, Viewport } from 'next'
+import { ServiceWorker } from '@/components/ServiceWorker'
 
 export const metadata: Metadata = {
   title: 'Amelia',
   description: 'Baby tracking for the Family Hub',
+  applicationName: 'Amelia',
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    // iOS has no manifest support worth relying on; these are what make
+    // "Add to Home Screen" open without Safari chrome.
+    capable: true,
+    title: 'Amelia',
+    statusBarStyle: 'black-translucent',
+  },
 }
 
 export const viewport: Viewport = {
@@ -18,7 +28,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        {children}
+        <ServiceWorker />
+      </body>
     </html>
   )
 }

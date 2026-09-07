@@ -138,6 +138,21 @@ Hub surface first and a standalone app second:
 - Dashboard has a **Today** timeline, merged client-side from this
   app's tables. It is shaped to become one read of `core.activity`.
 
+**Installable, and it survives bad wifi.** `app/manifest.ts` +
+`public/sw.js` make it an installed app on a phone home screen and a
+standalone kiosk on the wall screen. The service worker only caches the
+same-origin app shell — never a Supabase response, which would put auth
+tokens in a cache on a shared screen.
+
+Writes that can't reach the server are kept on the device
+(`lib/queue.ts`, IndexedDB) and replayed in order when it's back. Rows
+are inserted with a **client-generated uuid**, which is what lets a
+nursing session be started *and* ended offline: the queued update
+targets an id we already chose. A server rejection is never queued —
+replaying it would just fail again — so it surfaces as an error. Queued
+entries show as "not synced yet" everywhere they appear; nothing is
+ever presented as saved when it isn't.
+
 **`/api/ingest`:** the one endpoint the NUC will call to push sleep
 sessions and monitor events. Authenticates with a shared device
 secret (`NUC_DEVICE_SECRET`), NOT a user login, NOT the Supabase
@@ -154,11 +169,12 @@ database) — useful for quickly showing the design, not for real use.
 - Retry-queue logic on the HA side for when the NUC has no internet
   (data still logs fine locally in HA either way — this is only about
   keeping the cloud copy in sync once connectivity returns)
-- Editing or deleting a logged entry. `feedings` and `diaper_changes`
-  have no update/delete RLS policy, so a mis-tap at 3am is permanent
-  until a `0002` migration adds one — worth doing before real use
-- Real visual design (current styling is functional, not designed)
-- PWA manifest/service worker for installable offline behavior
+- Editing or retracting a logged entry. House convention is
+  `voided_at` / `voided_by` rather than deletes (`CONVENTIONS.md` §1),
+  and `feedings` / `diaper_changes` have no update policy — so a
+  mis-tap at 3am is permanent until a migration adds it. This app no
+  longer numbers its own migrations, so it is a proposal for the Hub
+  agent. **Still the biggest gap before real use.**
 - Anything related to calendar, meal planning, chores, irrigation —
   those belong to the Hub, a separate future project, not this repo
 

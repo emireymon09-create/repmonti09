@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useBaby } from '@/lib/useBaby'
 import { NoBaby } from '@/components/NoBaby'
 import { Banner, Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
+import { SyncStatus } from '@/components/SyncStatus'
 import { addGrowth, listGrowth } from '@/lib/db'
 import type { GrowthMeasurement } from '@/lib/types'
 import { cmToIn, householdToday, kgToLbOz, lbOzToKg, measuredOn } from '@/lib/format'
@@ -23,6 +24,7 @@ export default function GrowthPage() {
   const [cm, setCm] = useState('')
   const [notes, setNotes] = useState('')
   const [err, setErr] = useState<string | null>(null)
+  const [saved, setSaved] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   const refresh = useCallback(async (babyId: string) => {
@@ -69,7 +71,7 @@ export default function GrowthPage() {
     }
 
     setBusy(true)
-    const { error } = await addGrowth(baby.id, userId, {
+    const { error, queued } = await addGrowth(baby.id, userId, {
       measured_at: date,
       weight_kg: weightKg === null ? null : Number(weightKg.toFixed(3)),
       height_cm: heightCm === null ? null : Number(heightCm.toFixed(1)),
@@ -78,6 +80,7 @@ export default function GrowthPage() {
     setBusy(false)
 
     if (error) { setErr(`Couldn't save — ${error}`); return }
+    setSaved(queued ? 'Saved on this device — will sync when you\u2019re back online' : 'Measurement saved')
     setLb(''); setOz(''); setKg(''); setInches(''); setCm(''); setNotes('')
     refresh(baby.id)
   }
@@ -89,7 +92,9 @@ export default function GrowthPage() {
     <Page>
       <Nav />
       <h1 className="title">Growth</h1>
+      <SyncStatus />
       {err && <Banner kind="error">{err}</Banner>}
+      {saved && !err && <Banner kind="ok">{saved}</Banner>}
 
       <Grid>
         <Card>
