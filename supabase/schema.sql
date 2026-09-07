@@ -235,3 +235,9 @@ create policy "select pumping_sessions" on pumping_sessions
   for select using (is_baby_family_member(baby_id));
 create policy "insert pumping_sessions" on pumping_sessions
   for insert with check (is_baby_family_member(baby_id));
+
+-- Lets a parent zero out the "in the stash" running total without
+-- touching any logged session — history stays intact, only the sum
+-- shown on the Milk page changes. Nullable: no reset yet = count
+-- everything, same as before this migration existed.
+alter table babies add column if not exists pumping_reset_at timestamptz;

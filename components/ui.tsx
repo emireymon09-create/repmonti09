@@ -15,6 +15,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabaseClient'
+import { resetPumpingTotal } from '@/lib/db'
 
 export function Page({ children }: { children: React.ReactNode }) {
   return <div className="page">{children}</div>
@@ -72,14 +73,26 @@ const TABS = [
   { href: '/history', label: 'History' },
 ]
 
-export function Nav() {
+export function Nav({ babyId }: { babyId?: string }) {
   const pathname = usePathname()
   const router = useRouter()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [resetting, setResetting] = useState(false)
 
   async function signOut() {
     await createClient().auth.signOut()
     router.push('/login')
+  }
+
+  async function resetMilkTotal() {
+    if (!babyId || resetting) return
+    if (!window.confirm('Zero out the "in the stash" total? Past sessions stay in History.')) return
+    setMenuOpen(false)
+    setResetting(true)
+    const { error } = await resetPumpingTotal(babyId)
+    setResetting(false)
+    if (error) { window.alert(`Couldn't reset — ${error}`); return }
+    window.location.reload()
   }
 
   return (
@@ -111,6 +124,11 @@ export function Nav() {
         </button>
         {menuOpen && (
           <div className="nav-menu" role="menu">
+            {babyId && (
+              <button role="menuitem" className="nav-menu-item" onClick={resetMilkTotal} disabled={resetting}>
+                {resetting ? 'Resetting…' : 'Reset milk total'}
+              </button>
+            )}
             <button role="menuitem" className="nav-menu-item" onClick={signOut}>
               Sign out
             </button>

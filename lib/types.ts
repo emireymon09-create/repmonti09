@@ -20,6 +20,7 @@ export type Baby = {
   id: string
   name: string
   birth_date: string | null
+  pumping_reset_at: string | null
 }
 
 export type Feeding = {

@@ -83,7 +83,7 @@ export default function HistoryPage() {
 
   return (
     <Page>
-      <Nav />
+      <Nav babyId={baby.id} />
       <h1 className="title">History</h1>
       <SyncStatus />
       {err && <Banner kind="error">{err}</Banner>}

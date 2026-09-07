@@ -62,11 +62,14 @@ export default function PumpingPage() {
 
   // Building the stash starts weeks before the due date, so this page
   // works even on the "Expecting" screen — it never checks birth_date.
-  const total = totalPumped(rows)
+  // A reset only changes what counts toward the total, never History.
+  const resetAt = baby.pumping_reset_at
+  const counted = resetAt ? rows.filter((r) => r.pumped_at > resetAt) : rows
+  const total = totalPumped(counted)
 
   return (
     <Page>
-      <Nav />
+      <Nav babyId={baby.id} />
       <h1 className="title">Milk</h1>
       <SyncStatus />
       {err && <Banner kind="error">{err}</Banner>}
@@ -103,7 +106,10 @@ export default function PumpingPage() {
         <Card>
           <Label>In the stash</Label>
           <div className="value">{mlToFlOz(total)}</div>
-          <div className="meta">{rows.length} session{rows.length === 1 ? '' : 's'} logged</div>
+          <div className="meta">
+            {counted.length} session{counted.length === 1 ? '' : 's'} counted
+            {resetAt && ` since ${longDate(resetAt)}`}
+          </div>
         </Card>
 
         {rows.length === 0 ? (

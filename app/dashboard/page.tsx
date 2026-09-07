@@ -176,7 +176,7 @@ export default function Dashboard() {
   if (!baby.birth_date) {
     return (
       <Page>
-        <Nav />
+        <Nav babyId={baby.id} />
         <p className="eyebrow">{longDate(now)}</p>
         <h1 className="name">Expecting {baby.name}</h1>
         {err && <Banner kind="error">{err}</Banner>}
@@ -221,7 +221,7 @@ export default function Dashboard() {
 
   return (
     <Page>
-      <Nav />
+      <Nav babyId={baby.id} />
 
       <p className="eyebrow">{longDate(now)}</p>
       <h1 className="name">{baby.name}</h1>

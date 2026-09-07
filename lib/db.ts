@@ -131,7 +131,7 @@ export function mergePending<T extends { id: string }>(
 
 export async function currentBaby(): Promise<Result<Baby | null>> {
   const { data: rows, error } = await data()
-    .from('babies').select('id, name, birth_date')
+    .from('babies').select('id, name, birth_date, pumping_reset_at')
     .order('created_at', { ascending: true }).limit(1)
   if (error) return fail(null, error)
   return ok((rows && rows.length ? rows[0] : null) as Baby | null)
@@ -280,6 +280,19 @@ export function logPumping(
 /** Total ml pumped across the given rows — the running "stash" figure. */
 export function totalPumped(rows: PumpingSession[]): number {
   return rows.reduce((sum, r) => sum + (r.amount_ml ?? 0), 0)
+}
+
+/**
+ * Zero out the running total shown on the Milk page without touching
+ * any logged session — a parent who just moved the stash into the
+ * freezer, or wants to start counting from today, isn't deleting
+ * history.
+ */
+export function resetPumpingTotal(babyId: string): Promise<Result<null>> {
+  return write('Reset pumping total', {
+    kind: 'update', table: 'babies', id: babyId,
+    patch: { pumping_reset_at: new Date().toISOString() },
+  })
 }
 
 // --------------------------------------------------------------- growth

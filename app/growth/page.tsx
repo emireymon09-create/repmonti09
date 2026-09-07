@@ -90,7 +90,7 @@ export default function GrowthPage() {
 
   return (
     <Page>
-      <Nav />
+      <Nav babyId={baby.id} />
       <h1 className="title">Growth</h1>
       <SyncStatus />
       {err && <Banner kind="error">{err}</Banner>}

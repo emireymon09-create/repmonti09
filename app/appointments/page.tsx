@@ -78,7 +78,7 @@ export default function AppointmentsPage() {
 
   return (
     <Page>
-      <Nav />
+      <Nav babyId={baby.id} />
       <div className="between">
         <h1 className="title">Doctor</h1>
         <button className="pill" onClick={() => { setShowForm((v) => !v); setErr(null) }}>
