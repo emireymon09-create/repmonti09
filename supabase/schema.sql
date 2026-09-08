@@ -141,7 +141,7 @@ returns boolean as $$
     select 1 from family_members
     where family_id = fam_id and user_id = auth.uid()
   );
-$$ language sql security definer stable;
+$$ language sql security definer stable set search_path = public;
 
 -- Helper: is the current user a member of the family that owns this baby?
 create or replace function is_baby_family_member(b_id uuid)
@@ -151,7 +151,7 @@ returns boolean as $$
     join family_members on family_members.family_id = babies.family_id
     where babies.id = b_id and family_members.user_id = auth.uid()
   );
-$$ language sql security definer stable;
+$$ language sql security definer stable set search_path = public;
 
 -- families: members can see their own family
 create policy "select own family" on families
