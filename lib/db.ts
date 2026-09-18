@@ -162,12 +162,13 @@ export async function recentFeedings(babyId: string, limit = 20): Promise<Result
 
 export function logFeeding(
   babyId: string, userId: string | null, type: FeedingType, amountMl: number | null,
+  at?: string,
 ): Promise<Result<null>> {
   return write(type === 'bottle' ? 'Bottle' : 'Solid', {
     kind: 'insert', table: 'feedings',
     row: {
       id: newId(), ...scope(babyId, userId),
-      feeding_type: type, amount_ml: amountMl, fed_at: new Date().toISOString(),
+      feeding_type: type, amount_ml: amountMl, fed_at: at ?? new Date().toISOString(),
     },
   })
 }
@@ -183,13 +184,13 @@ export async function recentDiapers(babyId: string, limit = 20): Promise<Result<
 }
 
 export function logDiaper(
-  babyId: string, userId: string | null, type: DiaperType,
+  babyId: string, userId: string | null, type: DiaperType, at?: string,
 ): Promise<Result<null>> {
   return write(`Diaper (${type})`, {
     kind: 'insert', table: 'diaper_changes',
     row: {
       id: newId(), ...scope(babyId, userId),
-      diaper_type: type, changed_at: new Date().toISOString(),
+      diaper_type: type, changed_at: at ?? new Date().toISOString(),
     },
   })
 }
@@ -205,21 +206,21 @@ export async function recentNursing(babyId: string, limit = 20): Promise<Result<
 }
 
 export function startNursing(
-  babyId: string, userId: string | null, side: Side,
+  babyId: string, userId: string | null, side: Side, at?: string,
 ): Promise<Result<null>> {
   return write(`Nursing (${side})`, {
     kind: 'insert', table: 'nursing_sessions',
     row: {
       id: newId(), ...scope(babyId, userId),
-      side, started_at: new Date().toISOString(), ended_at: null,
+      side, started_at: at ?? new Date().toISOString(), ended_at: null,
     },
   })
 }
 
-export function endNursing(sessionId: string): Promise<Result<null>> {
+export function endNursing(sessionId: string, at?: string): Promise<Result<null>> {
   return write('Nursing end', {
     kind: 'update', table: 'nursing_sessions', id: sessionId,
-    patch: { ended_at: new Date().toISOString() },
+    patch: { ended_at: at ?? new Date().toISOString() },
   })
 }
 
@@ -233,20 +234,20 @@ export async function recentSleep(babyId: string, limit = 20): Promise<Result<Sl
   return ok((rows ?? []) as SleepSession[])
 }
 
-export function startSleep(babyId: string, userId: string | null): Promise<Result<null>> {
+export function startSleep(babyId: string, userId: string | null, at?: string): Promise<Result<null>> {
   return write('Sleep start', {
     kind: 'insert', table: 'sleep_sessions',
     row: {
       id: newId(), ...scope(babyId, userId),
-      started_at: new Date().toISOString(), ended_at: null, source: 'manual',
+      started_at: at ?? new Date().toISOString(), ended_at: null, source: 'manual',
     },
   })
 }
 
-export function endSleep(sessionId: string): Promise<Result<null>> {
+export function endSleep(sessionId: string, at?: string): Promise<Result<null>> {
   return write('Sleep end', {
     kind: 'update', table: 'sleep_sessions', id: sessionId,
-    patch: { ended_at: new Date().toISOString() },
+    patch: { ended_at: at ?? new Date().toISOString() },
   })
 }
 
@@ -267,12 +268,13 @@ export async function recentPumping(babyId: string, limit = 20): Promise<Result<
 
 export function logPumping(
   babyId: string, userId: string | null, side: PumpSide, amountMl: number | null, notes: string | null,
+  at?: string,
 ): Promise<Result<null>> {
   return write('Pumping', {
     kind: 'insert', table: 'pumping_sessions',
     row: {
       id: newId(), ...scope(babyId, userId),
-      side, amount_ml: amountMl, notes, pumped_at: new Date().toISOString(),
+      side, amount_ml: amountMl, notes, pumped_at: at ?? new Date().toISOString(),
     },
   })
 }

@@ -326,6 +326,7 @@ body {
 }
 .banner.error { background: rgba(196, 87, 74, 0.18); border: 1px solid var(--c-danger); }
 .banner.ok { background: rgba(92, 138, 107, 0.18); border: 1px solid var(--c-live); }
+.banner.warn { background: rgba(232, 163, 61, 0.18); border: 1px solid var(--c-accent); }
 
 .gain-up { font-size: var(--t-meta); color: var(--c-live); margin-top: var(--s-1); }
 .gain-down { font-size: var(--t-meta); color: var(--c-accent); margin-top: var(--s-1); }

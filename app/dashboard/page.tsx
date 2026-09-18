@@ -17,8 +17,8 @@ import type {
   NursingSession, Side, SleepSession, WithPending,
 } from '@/lib/types'
 import {
-  ageFrom, apptWhen, clockTime, dueRelative, durationBetween, elapsed, householdToday,
-  lbOzToKg, longDate, startOfHouseholdDay, timeAgo,
+  ageFrom, apptWhen, clockTime, dueRelative, durationBetween, elapsed, fromHouseholdInputValue,
+  householdToday, lbOzToKg, longDate, startOfHouseholdDay, timeAgo, toHouseholdInputValue,
 } from '@/lib/format'
 
 /** Newest first, after queued rows have been folded in out of order. */
@@ -48,6 +48,13 @@ export default function Dashboard() {
   const [flash, setFlash] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [now, setNow] = useState(() => Date.now())
+  // Every log button stamps "now" by default. This lets a missed
+  // feeding/diaper/nursing/sleep entry be logged with its real time
+  // instead -- it applies to the next single save only, then clears
+  // itself, so it can never silently backdate something later.
+  const [logAt, setLogAt] = useState<string | null>(null)
+  const [showTimeEditor, setShowTimeEditor] = useState(false)
+  const [timeInput, setTimeInput] = useState('')
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Drives the stopwatches and the relative labels. The wall screen is
@@ -111,9 +118,11 @@ export default function Dashboard() {
     if (error) {
       setErr(`Couldn't save ${label} — ${error}`)
     } else {
-      confirm(queued ? `${label} saved on this device — will sync` : `${label} logged`)
+      const when = logAt ? ` for ${clockTime(logAt)}` : ''
+      confirm(queued ? `${label} saved on this device${when} — will sync` : `${label} logged${when}`)
       await refresh(baby.id)
       await reloadPending()
+      setLogAt(null)
     }
     setBusy(false)
   }
@@ -164,7 +173,7 @@ export default function Dashboard() {
       return
     }
     run('Bottle', async () => {
-      const res = await logFeeding(baby!.id, userId, 'bottle', ml)
+      const res = await logFeeding(baby!.id, userId, 'bottle', ml, logAt ?? undefined)
       if (!res.error) setBottleMl('')
       return res
     })
@@ -232,6 +241,50 @@ export default function Dashboard() {
       {err && <Banner kind="error">{err}</Banner>}
       {flash && !err && <Banner kind="ok">{flash}</Banner>}
 
+      {logAt && !showTimeEditor && (
+        <Banner kind="warn">
+          Backdating to {clockTime(logAt)} — the next thing you log uses this time.{' '}
+          <button type="button" className="linkish" onClick={() => setLogAt(null)}>
+            Reset to now
+          </button>
+        </Banner>
+      )}
+
+      <div className="row-tight" style={{ flexWrap: 'wrap' }}>
+        {!showTimeEditor ? (
+          <Btn
+            variant="quiet"
+            onClick={() => {
+              setTimeInput(toHouseholdInputValue(logAt ? new Date(logAt) : new Date(now)))
+              setShowTimeEditor(true)
+            }}
+          >
+            {logAt ? 'Change time…' : 'Log a missed session…'}
+          </Btn>
+        ) : (
+          <>
+            <input
+              type="datetime-local"
+              className="input"
+              value={timeInput}
+              onChange={(e) => setTimeInput(e.target.value)}
+              max={toHouseholdInputValue(new Date(now))}
+              aria-label="Time this actually happened"
+            />
+            <Btn
+              disabled={!timeInput}
+              onClick={() => {
+                setLogAt(fromHouseholdInputValue(timeInput))
+                setShowTimeEditor(false)
+              }}
+            >
+              Use this time
+            </Btn>
+            <Btn variant="quiet" onClick={() => setShowTimeEditor(false)}>Cancel</Btn>
+          </>
+        )}
+      </div>
+
       <Grid>
         {/* ---------------- Breastfeeding ---------------- */}
         <Card live={!!activeNursing}>
@@ -244,7 +297,7 @@ export default function Dashboard() {
               </div>
               <div className="row-tight">
                 <Btn variant="live" disabled={busy}
-                  onClick={() => run('Nursing end', () => endNursing(activeNursing.id))}>
+                  onClick={() => run('Nursing end', () => endNursing(activeNursing.id, logAt ?? undefined))}>
                   Stop nursing
                 </Btn>
               </div>
@@ -259,11 +312,11 @@ export default function Dashboard() {
               {suggested && <div className="meta">Start on the {suggested} next</div>}
               <div className="row-tight">
                 <Btn disabled={busy} variant={suggested === 'left' ? 'action' : 'quiet'}
-                  onClick={() => run('Nursing (left)', () => startNursing(baby.id, userId, 'left'))}>
+                  onClick={() => run('Nursing (left)', () => startNursing(baby.id, userId, 'left', logAt ?? undefined))}>
                   Left
                 </Btn>
                 <Btn disabled={busy} variant={suggested === 'right' ? 'action' : 'quiet'}
-                  onClick={() => run('Nursing (right)', () => startNursing(baby.id, userId, 'right'))}>
+                  onClick={() => run('Nursing (right)', () => startNursing(baby.id, userId, 'right', logAt ?? undefined))}>
                   Right
                 </Btn>
               </div>
@@ -297,7 +350,7 @@ export default function Dashboard() {
             />
             <Btn disabled={busy} onClick={onBottle}>Bottle</Btn>
             <Btn variant="quiet" disabled={busy}
-              onClick={() => run('Solid', () => logFeeding(baby.id, userId, 'solid', null))}>
+              onClick={() => run('Solid', () => logFeeding(baby.id, userId, 'solid', null, logAt ?? undefined))}>
               Solid
             </Btn>
           </div>
@@ -314,7 +367,7 @@ export default function Dashboard() {
           <div className="row-tight">
             {(['wet', 'dirty', 'both'] as DiaperType[]).map((kind) => (
               <Btn key={kind} disabled={busy}
-                onClick={() => run(`Diaper (${kind})`, () => logDiaper(baby.id, userId, kind))}>
+                onClick={() => run(`Diaper (${kind})`, () => logDiaper(baby.id, userId, kind, logAt ?? undefined))}>
                 {kind[0].toUpperCase() + kind.slice(1)}
               </Btn>
             ))}
@@ -334,7 +387,7 @@ export default function Dashboard() {
               </div>
               <div className="row-tight">
                 <Btn variant="live" disabled={busy}
-                  onClick={() => run('Sleep end', () => endSleep(activeSleep.id))}>
+                  onClick={() => run('Sleep end', () => endSleep(activeSleep.id, logAt ?? undefined))}>
                   She&rsquo;s awake
                 </Btn>
               </div>
@@ -353,7 +406,7 @@ export default function Dashboard() {
               )}
               <div className="row-tight">
                 <Btn disabled={busy}
-                  onClick={() => run('Sleep start', () => startSleep(baby.id, userId))}>
+                  onClick={() => run('Sleep start', () => startSleep(baby.id, userId, logAt ?? undefined))}>
                   Start sleep
                 </Btn>
               </div>

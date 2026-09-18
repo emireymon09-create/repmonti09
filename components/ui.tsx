@@ -61,7 +61,7 @@ export function Btn({ children, onClick, type = 'button', variant = 'action', di
   )
 }
 
-export function Banner({ kind, children }: { kind: 'error' | 'ok'; children: React.ReactNode }) {
+export function Banner({ kind, children }: { kind: 'error' | 'ok' | 'warn'; children: React.ReactNode }) {
   return <div role="status" className={`banner ${kind}`}>{children}</div>
 }
 

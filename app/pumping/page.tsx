@@ -7,7 +7,9 @@ import { Banner, Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
 import { SyncStatus } from '@/components/SyncStatus'
 import { logPumping, recentPumping, totalPumped } from '@/lib/db'
 import type { PumpingSession, PumpSide } from '@/lib/types'
-import { clockTime, flOzToMl, longDate, mlToFlOz } from '@/lib/format'
+import {
+  clockTime, flOzToMl, fromHouseholdInputValue, longDate, mlToFlOz, toHouseholdInputValue,
+} from '@/lib/format'
 
 const SIDES: { value: PumpSide; label: string }[] = [
   { value: 'left', label: 'Left' },
@@ -22,6 +24,9 @@ export default function PumpingPage() {
   const [side, setSide] = useState<PumpSide>('both')
   const [oz, setOz] = useState('')
   const [notes, setNotes] = useState('')
+  // Defaults to right now; only touch it to log a session you missed
+  // in the moment, e.g. catching up after the app was down.
+  const [at, setAt] = useState(() => toHouseholdInputValue(new Date()))
   const [err, setErr] = useState<string | null>(null)
   const [saved, setSaved] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -47,13 +52,17 @@ export default function PumpingPage() {
       amountMl = Number(flOzToMl(parsed).toFixed(1))
     }
 
+    const atIso = fromHouseholdInputValue(at)
+
     setBusy(true)
-    const { error, queued } = await logPumping(baby.id, userId, side, amountMl, notes.trim() || null)
+    const { error, queued } = await logPumping(
+      baby.id, userId, side, amountMl, notes.trim() || null, atIso,
+    )
     setBusy(false)
 
     if (error) { setErr(`Couldn't save — ${error}`); return }
     setSaved(queued ? 'Saved on this device — will sync when you’re back online' : 'Session logged')
-    setOz(''); setNotes('')
+    setOz(''); setNotes(''); setAt(toHouseholdInputValue(new Date()))
     refresh(baby.id)
   }
 
@@ -96,6 +105,12 @@ export default function PumpingPage() {
                 inputMode="decimal" placeholder="oz (optional)" aria-label="Amount, ounces" />
               <input className="input" value={notes} onChange={(e) => setNotes(e.target.value)}
                 placeholder="Notes (optional)" aria-label="Notes" />
+              <div>
+                <label className="label" htmlFor="pump-at">When (defaults to now)</label>
+                <input id="pump-at" type="datetime-local" className="input" value={at}
+                  onChange={(e) => setAt(e.target.value)}
+                  max={toHouseholdInputValue(new Date())} />
+              </div>
             </div>
             <div className="row-tight">
               <Btn type="submit" disabled={busy}>{busy ? 'Saving…' : 'Log session'}</Btn>
