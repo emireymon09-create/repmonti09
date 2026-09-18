@@ -241,3 +241,8 @@ create policy "insert pumping_sessions" on pumping_sessions
 -- shown on the Milk page changes. Nullable: no reset yet = count
 -- everything, same as before this migration existed.
 alter table babies add column if not exists pumping_reset_at timestamptz;
+
+-- 0005_grant_authenticated.sql
+grant usage on schema public to authenticated;
+grant select, insert, update, delete on all tables in schema public to authenticated;
+alter default privileges in schema public grant select, insert, update, delete on tables to authenticated;
