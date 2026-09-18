@@ -36,6 +36,7 @@ export default function manifest(): MetadataRoute.Manifest {
       { src: '/icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
     ],
     shortcuts: [
+      { name: 'Milk', url: '/pumping' },
       { name: 'Growth', url: '/growth' },
       { name: 'Doctor', url: '/appointments' },
     ],
