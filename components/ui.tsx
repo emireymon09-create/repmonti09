@@ -26,7 +26,12 @@ export function Grid({ children }: { children: React.ReactNode }) {
   return <div className="grid">{children}</div>
 }
 
-export function Card({ children, live, past, spanAll }: {
+export function Card({
+  children,
+  live,
+  past,
+  spanAll,
+}: {
   children: React.ReactNode
   live?: boolean
   past?: boolean
@@ -43,7 +48,13 @@ export function Label({ children }: { children: React.ReactNode }) {
   return <div className="label">{children}</div>
 }
 
-export function Btn({ children, onClick, type = 'button', variant = 'action', disabled }: {
+export function Btn({
+  children,
+  onClick,
+  type = 'button',
+  variant = 'action',
+  disabled,
+}: {
   children: React.ReactNode
   onClick?: () => void
   type?: 'button' | 'submit'
@@ -62,8 +73,18 @@ export function Btn({ children, onClick, type = 'button', variant = 'action', di
   )
 }
 
-export function Banner({ kind, children }: { kind: 'error' | 'ok' | 'warn'; children: React.ReactNode }) {
-  return <div role="status" className={`banner ${kind}`}>{children}</div>
+export function Banner({
+  kind,
+  children,
+}: {
+  kind: 'error' | 'ok' | 'warn'
+  children: React.ReactNode
+}) {
+  return (
+    <div role="status" className={`banner ${kind}`}>
+      {children}
+    </div>
+  )
 }
 
 const TABS = [
@@ -102,7 +123,10 @@ export function Nav({ babyId }: { babyId?: string }) {
     setResetting(true)
     const { error } = await resetPumpingTotal(babyId)
     setResetting(false)
-    if (error) { window.alert(`Couldn't reset — ${error}`); return }
+    if (error) {
+      window.alert(`Couldn't reset — ${error}`)
+      return
+    }
     window.location.reload()
   }
 
@@ -139,7 +163,12 @@ export function Nav({ babyId }: { babyId?: string }) {
               Switch to {unit === 'oz' ? 'ml' : 'oz'}
             </button>
             {babyId && (
-              <button role="menuitem" className="nav-menu-item" onClick={resetMilkTotal} disabled={resetting}>
+              <button
+                role="menuitem"
+                className="nav-menu-item"
+                onClick={resetMilkTotal}
+                disabled={resetting}
+              >
                 {resetting ? 'Resetting…' : 'Reset milk total'}
               </button>
             )}

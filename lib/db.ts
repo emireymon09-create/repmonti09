@@ -22,13 +22,32 @@
 import { createClient } from '@/lib/supabaseClient'
 import { formatVolume } from '@/lib/format'
 import {
-  browserQueueStore, flushQueue, looksOffline, newId,
-  type FlushResult, type PendingOp, type PendingWrite,
+  browserQueueStore,
+  flushQueue,
+  looksOffline,
+  newId,
+  type FlushResult,
+  type PendingOp,
+  type PendingWrite,
 } from '@/lib/queue'
 import type {
-  ActivityEntry, AppointmentType, Baby, DiaperChange, DiaperType,
-  DoctorAppointment, Feeding, FeedingType, GrowthMeasurement,
-  NursingSession, PumpingSession, PumpSide, Result, Side, SleepSession, VolumeUnit, WithPending,
+  ActivityEntry,
+  AppointmentType,
+  Baby,
+  DiaperChange,
+  DiaperType,
+  DoctorAppointment,
+  Feeding,
+  FeedingType,
+  GrowthMeasurement,
+  NursingSession,
+  PumpingSession,
+  PumpSide,
+  Result,
+  Side,
+  SleepSession,
+  VolumeUnit,
+  WithPending,
 } from '@/lib/types'
 
 /** Phase 2: 'baby'. Supabase must expose it under API Settings → Exposed schemas. */
@@ -47,7 +66,9 @@ function scope(babyId: string, userId: string | null) {
   return { baby_id: babyId, logged_by: userId }
 }
 
-function ok<T>(value: T): Result<T> { return { data: value, error: null } }
+function ok<T>(value: T): Result<T> {
+  return { data: value, error: null }
+}
 function fail<T>(empty: T, error: { message: string } | null): Result<T> {
   return { data: empty, error: error ? error.message : null }
 }
@@ -59,9 +80,8 @@ const store = browserQueueStore()
 /** Run one op against the server. Also the replay function for the queue. */
 async function sendOp(op: PendingOp): Promise<{ error: string | null }> {
   const table = data().from(op.table)
-  const { error } = op.kind === 'insert'
-    ? await table.insert(op.row)
-    : await table.update(op.patch).eq('id', op.id)
+  const { error } =
+    op.kind === 'insert' ? await table.insert(op.row) : await table.update(op.patch).eq('id', op.id)
   return { error: error ? error.message : null }
 }
 
@@ -86,8 +106,11 @@ async function write(label: string, op: PendingOp): Promise<Result<null>> {
 async function enqueue(label: string, op: PendingOp): Promise<Result<null>> {
   try {
     await store.add({
-      id: newId(), schema: DATA_SCHEMA, label,
-      queuedAt: new Date().toISOString(), op,
+      id: newId(),
+      schema: DATA_SCHEMA,
+      label,
+      queuedAt: new Date().toISOString(),
+      op,
     })
     return { data: null, error: null, queued: true }
   } catch (e) {
@@ -112,7 +135,9 @@ export function flushPending(): Promise<FlushResult> {
  * one finished session.
  */
 export function mergePending<T extends { id: string }>(
-  rows: T[], table: string, pending: PendingWrite[],
+  rows: T[],
+  table: string,
+  pending: PendingWrite[],
 ): WithPending<T>[] {
   const merged: WithPending<T>[] = rows.map((r) => ({ ...r }))
 
@@ -132,8 +157,10 @@ export function mergePending<T extends { id: string }>(
 
 export async function currentBaby(): Promise<Result<Baby | null>> {
   const { data: rows, error } = await data()
-    .from('babies').select('id, name, birth_date, pumping_reset_at')
-    .order('created_at', { ascending: true }).limit(1)
+    .from('babies')
+    .select('id, name, birth_date, pumping_reset_at')
+    .order('created_at', { ascending: true })
+    .limit(1)
   if (error) return fail(null, error)
   return ok((rows && rows.length ? rows[0] : null) as Baby | null)
 }
@@ -146,7 +173,9 @@ export async function currentBaby(): Promise<Result<Baby | null>> {
  */
 export function recordBirth(babyId: string, birthDate: string): Promise<Result<null>> {
   return write('Birth date', {
-    kind: 'update', table: 'babies', id: babyId,
+    kind: 'update',
+    table: 'babies',
+    id: babyId,
     patch: { birth_date: birthDate },
   })
 }
@@ -155,29 +184,40 @@ export function recordBirth(babyId: string, birthDate: string): Promise<Result<n
 
 export async function recentFeedings(babyId: string, limit = 20): Promise<Result<Feeding[]>> {
   const { data: rows, error } = await data()
-    .from('feedings').select('id, fed_at, feeding_type, amount_ml, notes')
-    .eq('baby_id', babyId).is('voided_at', null)
-    .order('fed_at', { ascending: false }).limit(limit)
+    .from('feedings')
+    .select('id, fed_at, feeding_type, amount_ml, notes')
+    .eq('baby_id', babyId)
+    .is('voided_at', null)
+    .order('fed_at', { ascending: false })
+    .limit(limit)
   if (error) return fail([] as Feeding[], error)
   return ok((rows ?? []) as Feeding[])
 }
 
 export function logFeeding(
-  babyId: string, userId: string | null, type: FeedingType, amountMl: number | null,
+  babyId: string,
+  userId: string | null,
+  type: FeedingType,
+  amountMl: number | null,
   at?: string,
 ): Promise<Result<null>> {
   return write(type === 'bottle' ? 'Bottle' : 'Solid', {
-    kind: 'insert', table: 'feedings',
+    kind: 'insert',
+    table: 'feedings',
     row: {
-      id: newId(), ...scope(babyId, userId),
-      feeding_type: type, amount_ml: amountMl, fed_at: at ?? new Date().toISOString(),
+      id: newId(),
+      ...scope(babyId, userId),
+      feeding_type: type,
+      amount_ml: amountMl,
+      fed_at: at ?? new Date().toISOString(),
     },
   })
 }
 
 /** Edit a past feeding — correcting the type, amount, or time after the fact. */
 export function updateFeeding(
-  id: string, patch: Partial<{ feeding_type: FeedingType; amount_ml: number | null; fed_at: string }>,
+  id: string,
+  patch: Partial<{ feeding_type: FeedingType; amount_ml: number | null; fed_at: string }>,
 ): Promise<Result<null>> {
   return write('Edit feeding', { kind: 'update', table: 'feedings', id, patch })
 }
@@ -185,7 +225,10 @@ export function updateFeeding(
 /** Soft-delete: marks the row retracted rather than removing history. */
 export function voidFeeding(id: string): Promise<Result<null>> {
   return write('Delete feeding', {
-    kind: 'update', table: 'feedings', id, patch: { voided_at: new Date().toISOString() },
+    kind: 'update',
+    table: 'feedings',
+    id,
+    patch: { voided_at: new Date().toISOString() },
   })
 }
 
@@ -193,28 +236,38 @@ export function voidFeeding(id: string): Promise<Result<null>> {
 
 export async function recentDiapers(babyId: string, limit = 20): Promise<Result<DiaperChange[]>> {
   const { data: rows, error } = await data()
-    .from('diaper_changes').select('id, changed_at, diaper_type')
-    .eq('baby_id', babyId).is('voided_at', null)
-    .order('changed_at', { ascending: false }).limit(limit)
+    .from('diaper_changes')
+    .select('id, changed_at, diaper_type')
+    .eq('baby_id', babyId)
+    .is('voided_at', null)
+    .order('changed_at', { ascending: false })
+    .limit(limit)
   if (error) return fail([] as DiaperChange[], error)
   return ok((rows ?? []) as DiaperChange[])
 }
 
 export function logDiaper(
-  babyId: string, userId: string | null, type: DiaperType, at?: string,
+  babyId: string,
+  userId: string | null,
+  type: DiaperType,
+  at?: string,
 ): Promise<Result<null>> {
   return write(`Diaper (${type})`, {
-    kind: 'insert', table: 'diaper_changes',
+    kind: 'insert',
+    table: 'diaper_changes',
     row: {
-      id: newId(), ...scope(babyId, userId),
-      diaper_type: type, changed_at: at ?? new Date().toISOString(),
+      id: newId(),
+      ...scope(babyId, userId),
+      diaper_type: type,
+      changed_at: at ?? new Date().toISOString(),
     },
   })
 }
 
 /** Edit a past diaper change — correcting the type or time after the fact. */
 export function updateDiaper(
-  id: string, patch: Partial<{ diaper_type: DiaperType; changed_at: string }>,
+  id: string,
+  patch: Partial<{ diaper_type: DiaperType; changed_at: string }>,
 ): Promise<Result<null>> {
   return write('Edit diaper', { kind: 'update', table: 'diaper_changes', id, patch })
 }
@@ -222,7 +275,10 @@ export function updateDiaper(
 /** Soft-delete: marks the row retracted rather than removing history. */
 export function voidDiaper(id: string): Promise<Result<null>> {
   return write('Delete diaper', {
-    kind: 'update', table: 'diaper_changes', id, patch: { voided_at: new Date().toISOString() },
+    kind: 'update',
+    table: 'diaper_changes',
+    id,
+    patch: { voided_at: new Date().toISOString() },
   })
 }
 
@@ -230,35 +286,48 @@ export function voidDiaper(id: string): Promise<Result<null>> {
 
 export async function recentNursing(babyId: string, limit = 20): Promise<Result<NursingSession[]>> {
   const { data: rows, error } = await data()
-    .from('nursing_sessions').select('id, side, started_at, ended_at')
-    .eq('baby_id', babyId).is('voided_at', null)
-    .order('started_at', { ascending: false }).limit(limit)
+    .from('nursing_sessions')
+    .select('id, side, started_at, ended_at')
+    .eq('baby_id', babyId)
+    .is('voided_at', null)
+    .order('started_at', { ascending: false })
+    .limit(limit)
   if (error) return fail([] as NursingSession[], error)
   return ok((rows ?? []) as NursingSession[])
 }
 
 export function startNursing(
-  babyId: string, userId: string | null, side: Side, at?: string,
+  babyId: string,
+  userId: string | null,
+  side: Side,
+  at?: string,
 ): Promise<Result<null>> {
   return write(`Nursing (${side})`, {
-    kind: 'insert', table: 'nursing_sessions',
+    kind: 'insert',
+    table: 'nursing_sessions',
     row: {
-      id: newId(), ...scope(babyId, userId),
-      side, started_at: at ?? new Date().toISOString(), ended_at: null,
+      id: newId(),
+      ...scope(babyId, userId),
+      side,
+      started_at: at ?? new Date().toISOString(),
+      ended_at: null,
     },
   })
 }
 
 export function endNursing(sessionId: string, at?: string): Promise<Result<null>> {
   return write('Nursing end', {
-    kind: 'update', table: 'nursing_sessions', id: sessionId,
+    kind: 'update',
+    table: 'nursing_sessions',
+    id: sessionId,
     patch: { ended_at: at ?? new Date().toISOString() },
   })
 }
 
 /** Edit a past nursing session — correcting the side or start/end time. */
 export function updateNursing(
-  id: string, patch: Partial<{ side: Side; started_at: string; ended_at: string | null }>,
+  id: string,
+  patch: Partial<{ side: Side; started_at: string; ended_at: string | null }>,
 ): Promise<Result<null>> {
   return write('Edit nursing', { kind: 'update', table: 'nursing_sessions', id, patch })
 }
@@ -266,7 +335,10 @@ export function updateNursing(
 /** Soft-delete: marks the row retracted rather than removing history. */
 export function voidNursing(id: string): Promise<Result<null>> {
   return write('Delete nursing', {
-    kind: 'update', table: 'nursing_sessions', id, patch: { voided_at: new Date().toISOString() },
+    kind: 'update',
+    table: 'nursing_sessions',
+    id,
+    patch: { voided_at: new Date().toISOString() },
   })
 }
 
@@ -274,33 +346,47 @@ export function voidNursing(id: string): Promise<Result<null>> {
 
 export async function recentSleep(babyId: string, limit = 20): Promise<Result<SleepSession[]>> {
   const { data: rows, error } = await data()
-    .from('sleep_sessions').select('id, started_at, ended_at, source')
-    .eq('baby_id', babyId).is('voided_at', null)
-    .order('started_at', { ascending: false }).limit(limit)
+    .from('sleep_sessions')
+    .select('id, started_at, ended_at, source')
+    .eq('baby_id', babyId)
+    .is('voided_at', null)
+    .order('started_at', { ascending: false })
+    .limit(limit)
   if (error) return fail([] as SleepSession[], error)
   return ok((rows ?? []) as SleepSession[])
 }
 
-export function startSleep(babyId: string, userId: string | null, at?: string): Promise<Result<null>> {
+export function startSleep(
+  babyId: string,
+  userId: string | null,
+  at?: string,
+): Promise<Result<null>> {
   return write('Sleep start', {
-    kind: 'insert', table: 'sleep_sessions',
+    kind: 'insert',
+    table: 'sleep_sessions',
     row: {
-      id: newId(), ...scope(babyId, userId),
-      started_at: at ?? new Date().toISOString(), ended_at: null, source: 'manual',
+      id: newId(),
+      ...scope(babyId, userId),
+      started_at: at ?? new Date().toISOString(),
+      ended_at: null,
+      source: 'manual',
     },
   })
 }
 
 export function endSleep(sessionId: string, at?: string): Promise<Result<null>> {
   return write('Sleep end', {
-    kind: 'update', table: 'sleep_sessions', id: sessionId,
+    kind: 'update',
+    table: 'sleep_sessions',
+    id: sessionId,
     patch: { ended_at: at ?? new Date().toISOString() },
   })
 }
 
 /** Edit a past sleep session — correcting the start or end time. */
 export function updateSleep(
-  id: string, patch: Partial<{ started_at: string; ended_at: string | null }>,
+  id: string,
+  patch: Partial<{ started_at: string; ended_at: string | null }>,
 ): Promise<Result<null>> {
   return write('Edit sleep', { kind: 'update', table: 'sleep_sessions', id, patch })
 }
@@ -308,7 +394,10 @@ export function updateSleep(
 /** Soft-delete: marks the row retracted rather than removing history. */
 export function voidSleep(id: string): Promise<Result<null>> {
   return write('Delete sleep', {
-    kind: 'update', table: 'sleep_sessions', id, patch: { voided_at: new Date().toISOString() },
+    kind: 'update',
+    table: 'sleep_sessions',
+    id,
+    patch: { voided_at: new Date().toISOString() },
   })
 }
 
@@ -321,29 +410,47 @@ export function voidSleep(id: string): Promise<Result<null>> {
  */
 export async function recentPumping(babyId: string, limit = 20): Promise<Result<PumpingSession[]>> {
   const { data: rows, error } = await data()
-    .from('pumping_sessions').select('id, pumped_at, side, amount_ml, notes')
-    .eq('baby_id', babyId).is('voided_at', null)
-    .order('pumped_at', { ascending: false }).limit(limit)
+    .from('pumping_sessions')
+    .select('id, pumped_at, side, amount_ml, notes')
+    .eq('baby_id', babyId)
+    .is('voided_at', null)
+    .order('pumped_at', { ascending: false })
+    .limit(limit)
   if (error) return fail([] as PumpingSession[], error)
   return ok((rows ?? []) as PumpingSession[])
 }
 
 export function logPumping(
-  babyId: string, userId: string | null, side: PumpSide, amountMl: number | null, notes: string | null,
+  babyId: string,
+  userId: string | null,
+  side: PumpSide,
+  amountMl: number | null,
+  notes: string | null,
   at?: string,
 ): Promise<Result<null>> {
   return write('Pumping', {
-    kind: 'insert', table: 'pumping_sessions',
+    kind: 'insert',
+    table: 'pumping_sessions',
     row: {
-      id: newId(), ...scope(babyId, userId),
-      side, amount_ml: amountMl, notes, pumped_at: at ?? new Date().toISOString(),
+      id: newId(),
+      ...scope(babyId, userId),
+      side,
+      amount_ml: amountMl,
+      notes,
+      pumped_at: at ?? new Date().toISOString(),
     },
   })
 }
 
 /** Edit a past pumping session — correcting the side, amount, or time. */
 export function updatePumping(
-  id: string, patch: Partial<{ side: PumpSide; amount_ml: number | null; notes: string | null; pumped_at: string }>,
+  id: string,
+  patch: Partial<{
+    side: PumpSide
+    amount_ml: number | null
+    notes: string | null
+    pumped_at: string
+  }>,
 ): Promise<Result<null>> {
   return write('Edit pumping', { kind: 'update', table: 'pumping_sessions', id, patch })
 }
@@ -351,7 +458,10 @@ export function updatePumping(
 /** Soft-delete: marks the row retracted rather than removing history. */
 export function voidPumping(id: string): Promise<Result<null>> {
   return write('Delete pumping', {
-    kind: 'update', table: 'pumping_sessions', id, patch: { voided_at: new Date().toISOString() },
+    kind: 'update',
+    table: 'pumping_sessions',
+    id,
+    patch: { voided_at: new Date().toISOString() },
   })
 }
 
@@ -368,7 +478,9 @@ export function totalPumped(rows: PumpingSession[]): number {
  */
 export function resetPumpingTotal(babyId: string): Promise<Result<null>> {
   return write('Reset pumping total', {
-    kind: 'update', table: 'babies', id: babyId,
+    kind: 'update',
+    table: 'babies',
+    id: babyId,
     patch: { pumping_reset_at: new Date().toISOString() },
   })
 }
@@ -377,18 +489,27 @@ export function resetPumpingTotal(babyId: string): Promise<Result<null>> {
 
 export async function listGrowth(babyId: string): Promise<Result<GrowthMeasurement[]>> {
   const { data: rows, error } = await data()
-    .from('growth_measurements').select('id, measured_at, weight_kg, height_cm, notes')
-    .eq('baby_id', babyId).order('measured_at', { ascending: false })
+    .from('growth_measurements')
+    .select('id, measured_at, weight_kg, height_cm, notes')
+    .eq('baby_id', babyId)
+    .order('measured_at', { ascending: false })
   if (error) return fail([] as GrowthMeasurement[], error)
   return ok((rows ?? []) as GrowthMeasurement[])
 }
 
 export function addGrowth(
-  babyId: string, userId: string | null,
-  row: { measured_at: string; weight_kg: number | null; height_cm: number | null; notes: string | null },
+  babyId: string,
+  userId: string | null,
+  row: {
+    measured_at: string
+    weight_kg: number | null
+    height_cm: number | null
+    notes: string | null
+  },
 ): Promise<Result<null>> {
   return write('Measurement', {
-    kind: 'insert', table: 'growth_measurements',
+    kind: 'insert',
+    table: 'growth_measurements',
     row: { id: newId(), ...scope(babyId, userId), ...row },
   })
 }
@@ -399,38 +520,51 @@ const APPT_COLUMNS = 'id, title, appointment_type, scheduled_at, doctor_name, no
 
 export async function listAppointments(babyId: string): Promise<Result<DoctorAppointment[]>> {
   const { data: rows, error } = await data()
-    .from('doctor_appointments').select(APPT_COLUMNS)
-    .eq('baby_id', babyId).order('scheduled_at', { ascending: true })
+    .from('doctor_appointments')
+    .select(APPT_COLUMNS)
+    .eq('baby_id', babyId)
+    .order('scheduled_at', { ascending: true })
   if (error) return fail([] as DoctorAppointment[], error)
   return ok((rows ?? []) as DoctorAppointment[])
 }
 
 export async function nextAppointment(babyId: string): Promise<Result<DoctorAppointment | null>> {
   const { data: rows, error } = await data()
-    .from('doctor_appointments').select(APPT_COLUMNS)
-    .eq('baby_id', babyId).eq('completed', false)
+    .from('doctor_appointments')
+    .select(APPT_COLUMNS)
+    .eq('baby_id', babyId)
+    .eq('completed', false)
     .gte('scheduled_at', new Date().toISOString())
-    .order('scheduled_at', { ascending: true }).limit(1)
+    .order('scheduled_at', { ascending: true })
+    .limit(1)
   if (error) return fail(null, error)
   return ok((rows && rows.length ? rows[0] : null) as DoctorAppointment | null)
 }
 
 export function addAppointment(
-  babyId: string, userId: string | null,
+  babyId: string,
+  userId: string | null,
   row: {
-    title: string; appointment_type: AppointmentType; scheduled_at: string
-    doctor_name: string | null; notes: string | null
+    title: string
+    appointment_type: AppointmentType
+    scheduled_at: string
+    doctor_name: string | null
+    notes: string | null
   },
 ): Promise<Result<null>> {
   return write('Appointment', {
-    kind: 'insert', table: 'doctor_appointments',
+    kind: 'insert',
+    table: 'doctor_appointments',
     row: { id: newId(), ...scope(babyId, userId), completed: false, ...row },
   })
 }
 
 export function setAppointmentCompleted(id: string, completed: boolean): Promise<Result<null>> {
   return write('Appointment', {
-    kind: 'update', table: 'doctor_appointments', id, patch: { completed },
+    kind: 'update',
+    table: 'doctor_appointments',
+    id,
+    patch: { completed },
   })
 }
 
@@ -441,9 +575,12 @@ export function setAppointmentCompleted(id: string, completed: boolean): Promise
  * read of `core.activity` once the shared backend lands.
  */
 export function buildActivity(
-  feedings: WithPending<Feeding>[], nursing: WithPending<NursingSession>[],
-  diapers: WithPending<DiaperChange>[], sleep: WithPending<SleepSession>[],
-  since: number, unit: VolumeUnit = 'oz',
+  feedings: WithPending<Feeding>[],
+  nursing: WithPending<NursingSession>[],
+  diapers: WithPending<DiaperChange>[],
+  sleep: WithPending<SleepSession>[],
+  since: number,
+  unit: VolumeUnit = 'oz',
 ): ActivityEntry[] {
   const out: ActivityEntry[] = []
   const mark = (row: { pending?: boolean }, text: string) =>
@@ -451,22 +588,37 @@ export function buildActivity(
 
   for (const f of feedings) {
     out.push({
-      id: f.id, at: f.fed_at, kind: 'feeding',
-      what: mark(f, f.feeding_type === 'bottle'
-        ? `Bottle${f.amount_ml ? ` · ${formatVolume(f.amount_ml, unit)}` : ''}`
-        : f.feeding_type === 'solid' ? 'Solids' : 'Nursing (logged as feed)'),
+      id: f.id,
+      at: f.fed_at,
+      kind: 'feeding',
+      what: mark(
+        f,
+        f.feeding_type === 'bottle'
+          ? `Bottle${f.amount_ml ? ` · ${formatVolume(f.amount_ml, unit)}` : ''}`
+          : f.feeding_type === 'solid'
+            ? 'Solids'
+            : 'Nursing (logged as feed)',
+      ),
     })
   }
   for (const n of nursing) {
-    if (n.ended_at) out.push({ id: n.id, at: n.ended_at, kind: 'nursing', what: mark(n, `Nursed · ${n.side}`) })
+    if (n.ended_at)
+      out.push({ id: n.id, at: n.ended_at, kind: 'nursing', what: mark(n, `Nursed · ${n.side}`) })
   }
   for (const d of diapers) {
-    out.push({ id: d.id, at: d.changed_at, kind: 'diaper', what: mark(d, `Diaper · ${d.diaper_type}`) })
+    out.push({
+      id: d.id,
+      at: d.changed_at,
+      kind: 'diaper',
+      what: mark(d, `Diaper · ${d.diaper_type}`),
+    })
   }
   for (const s of sleep) {
     if (s.ended_at) {
       out.push({
-        id: s.id, at: s.ended_at, kind: 'sleep',
+        id: s.id,
+        at: s.ended_at,
+        kind: 'sleep',
         what: mark(s, s.source === 'nuc_derived' ? 'Woke (detected)' : 'Woke'),
       })
     }
@@ -493,21 +645,22 @@ export type SchedulePrediction = {
  * within a day or two of a growth spurt or schedule change.
  */
 export function predictNextFeeding(
-  feedings: Feeding[], nursing: NursingSession[], sampleSize = 6,
+  feedings: Feeding[],
+  nursing: NursingSession[],
+  sampleSize = 6,
 ): SchedulePrediction {
-  const events = [
-    ...feedings.map((f) => f.fed_at),
-    ...nursing.map((n) => n.started_at),
-  ].sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
+  const events = [...feedings.map((f) => f.fed_at), ...nursing.map((n) => n.started_at)].sort(
+    (a, b) => new Date(b).getTime() - new Date(a).getTime(),
+  )
 
   if (events.length === 0) return { lastAt: null, avgIntervalMinutes: null, dueAt: null }
   const lastAt = events[0]
   if (events.length < 2) return { lastAt, avgIntervalMinutes: null, dueAt: null }
 
   const sample = events.slice(0, sampleSize + 1)
-  const gaps = sample.slice(0, -1).map((at, i) =>
-    (new Date(at).getTime() - new Date(sample[i + 1]).getTime()) / 60_000,
-  )
+  const gaps = sample
+    .slice(0, -1)
+    .map((at, i) => (new Date(at).getTime() - new Date(sample[i + 1]).getTime()) / 60_000)
   const avg = gaps.reduce((a, b) => a + b, 0) / gaps.length
   const dueAt = new Date(new Date(lastAt).getTime() + avg * 60_000).toISOString()
   return { lastAt, avgIntervalMinutes: Math.round(avg), dueAt }
@@ -529,8 +682,12 @@ export function predictNextNap(sleep: SleepSession[], sampleSize = 6): ScheduleP
   if (finished.length < 2) return { lastAt, avgIntervalMinutes: null, dueAt: null }
 
   const sample = finished.slice(0, sampleSize + 1)
-  const gaps = sample.slice(0, -1)
-    .map((s, i) => (new Date(s.started_at).getTime() - new Date(sample[i + 1].ended_at).getTime()) / 60_000)
+  const gaps = sample
+    .slice(0, -1)
+    .map(
+      (s, i) =>
+        (new Date(s.started_at).getTime() - new Date(sample[i + 1].ended_at).getTime()) / 60_000,
+    )
     .filter((mins) => mins > 0)
 
   if (gaps.length === 0) return { lastAt, avgIntervalMinutes: null, dueAt: null }

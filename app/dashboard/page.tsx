@@ -6,28 +6,62 @@ import { useBaby } from '@/lib/useBaby'
 import { NoBaby } from '@/components/NoBaby'
 import { Banner, Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
 import {
-  addGrowth, buildActivity, endNursing, endSleep, logDiaper, logFeeding, mergePending,
-  nextAppointment, pendingWrites, predictNextFeeding, predictNextNap, recentDiapers,
-  recentFeedings, recentNursing, recentSleep, recordBirth, startNursing, startSleep,
+  addGrowth,
+  buildActivity,
+  endNursing,
+  endSleep,
+  logDiaper,
+  logFeeding,
+  mergePending,
+  nextAppointment,
+  pendingWrites,
+  predictNextFeeding,
+  predictNextNap,
+  recentDiapers,
+  recentFeedings,
+  recentNursing,
+  recentSleep,
+  recordBirth,
+  startNursing,
+  startSleep,
 } from '@/lib/db'
 import { useSync } from '@/lib/useSync'
 import { SyncBar } from '@/components/SyncStatus'
 import { useVolumeUnit } from '@/lib/useVolumeUnit'
 import type {
-  ActivityEntry, DiaperChange, DiaperType, DoctorAppointment, Feeding,
-  NursingSession, Side, SleepSession, WithPending,
+  ActivityEntry,
+  DiaperChange,
+  DiaperType,
+  DoctorAppointment,
+  Feeding,
+  NursingSession,
+  Side,
+  SleepSession,
+  WithPending,
 } from '@/lib/types'
 import {
-  ageFrom, apptWhen, clockTime, dueRelative, durationBetween, elapsed, formatVolume,
-  fromHouseholdInputValue, householdToday, lbOzToKg, longDate, startOfHouseholdDay, timeAgo,
-  toHouseholdInputValue, unitToMl,
+  ageFrom,
+  apptWhen,
+  clockTime,
+  dueRelative,
+  durationBetween,
+  elapsed,
+  formatVolume,
+  fromHouseholdInputValue,
+  householdToday,
+  lbOzToKg,
+  longDate,
+  startOfHouseholdDay,
+  timeAgo,
+  toHouseholdInputValue,
+  unitToMl,
 } from '@/lib/format'
 
 /** Newest first, after queued rows have been folded in out of order. */
 function sortDesc<T extends Record<string, unknown>>(rows: T[], key: keyof T): T[] {
-  return rows.slice().sort(
-    (a, b) => new Date(String(b[key])).getTime() - new Date(String(a[key])).getTime(),
-  )
+  return rows
+    .slice()
+    .sort((a, b) => new Date(String(b[key])).getTime() - new Date(String(a[key])).getTime())
 }
 
 export default function Dashboard() {
@@ -67,7 +101,12 @@ export default function Dashboard() {
     return () => clearInterval(id)
   }, [])
 
-  useEffect(() => () => { if (flashTimer.current) clearTimeout(flashTimer.current) }, [])
+  useEffect(
+    () => () => {
+      if (flashTimer.current) clearTimeout(flashTimer.current)
+    },
+    [],
+  )
 
   function confirm(message: string) {
     setFlash(message)
@@ -75,45 +114,50 @@ export default function Dashboard() {
     flashTimer.current = setTimeout(() => setFlash(null), 2500)
   }
 
-  const refresh = useCallback(async (babyId: string) => {
-    const [f, d, n, s, a, queued] = await Promise.all([
-      recentFeedings(babyId), recentDiapers(babyId),
-      recentNursing(babyId), recentSleep(babyId), nextAppointment(babyId),
-      pendingWrites(),
-    ])
+  const refresh = useCallback(
+    async (babyId: string) => {
+      const [f, d, n, s, a, queued] = await Promise.all([
+        recentFeedings(babyId),
+        recentDiapers(babyId),
+        recentNursing(babyId),
+        recentSleep(babyId),
+        nextAppointment(babyId),
+        pendingWrites(),
+      ])
 
-    // Offline reads fail; that is expected and the sync bar already
-    // says so, so don't also shout an error over the top of it.
-    const firstError = [f, d, n, s, a].find((r) => r.error)?.error
-    if (firstError && navigator.onLine) setErr(`Couldn't load today — ${firstError}`)
+      // Offline reads fail; that is expected and the sync bar already
+      // says so, so don't also shout an error over the top of it.
+      const firstError = [f, d, n, s, a].find((r) => r.error)?.error
+      if (firstError && navigator.onLine) setErr(`Couldn't load today — ${firstError}`)
 
-    // Anything still queued is folded in and marked, so a tap made with
-    // no signal is visible rather than apparently lost.
-    const mFeedings = mergePending(f.data, 'feedings', queued)
-    const mDiapers = mergePending(d.data, 'diaper_changes', queued)
-    const mNursing = mergePending(n.data, 'nursing_sessions', queued)
-    const mSleep = mergePending(s.data, 'sleep_sessions', queued)
+      // Anything still queued is folded in and marked, so a tap made with
+      // no signal is visible rather than apparently lost.
+      const mFeedings = mergePending(f.data, 'feedings', queued)
+      const mDiapers = mergePending(d.data, 'diaper_changes', queued)
+      const mNursing = mergePending(n.data, 'nursing_sessions', queued)
+      const mSleep = mergePending(s.data, 'sleep_sessions', queued)
 
-    setFeedings(sortDesc(mFeedings, 'fed_at'))
-    setDiapers(sortDesc(mDiapers, 'changed_at'))
-    setNursing(sortDesc(mNursing, 'started_at'))
-    setSleep(sortDesc(mSleep, 'started_at'))
-    setAppt(a.data)
-    setToday(buildActivity(mFeedings, mNursing, mDiapers, mSleep, startOfHouseholdDay(), unit))
-  }, [unit])
+      setFeedings(sortDesc(mFeedings, 'fed_at'))
+      setDiapers(sortDesc(mDiapers, 'changed_at'))
+      setNursing(sortDesc(mNursing, 'started_at'))
+      setSleep(sortDesc(mSleep, 'started_at'))
+      setAppt(a.data)
+      setToday(buildActivity(mFeedings, mNursing, mDiapers, mSleep, startOfHouseholdDay(), unit))
+    },
+    [unit],
+  )
 
   const { online, pending, syncing, syncError, reloadPending } = useSync(() => {
     if (baby) refresh(baby.id)
   })
 
-  useEffect(() => { if (baby) refresh(baby.id) }, [baby, refresh])
+  useEffect(() => {
+    if (baby) refresh(baby.id)
+  }, [baby, refresh])
 
   // Every write reports its failure. A log entry that looks saved and
   // isn't is the worst thing this app can do.
-  async function run(
-    label: string,
-    fn: () => Promise<{ error: string | null; queued?: boolean }>,
-  ) {
+  async function run(label: string, fn: () => Promise<{ error: string | null; queued?: boolean }>) {
     if (!baby || busy) return
     setBusy(true)
     setErr(null)
@@ -122,7 +166,9 @@ export default function Dashboard() {
       setErr(`Couldn't save ${label} — ${error}`)
     } else {
       const when = logAt ? ` for ${clockTime(logAt)}` : ''
-      confirm(queued ? `${label} saved on this device${when} — will sync` : `${label} logged${when}`)
+      confirm(
+        queued ? `${label} saved on this device${when} — will sync` : `${label} logged${when}`,
+      )
       await refresh(baby.id)
       await reloadPending()
       setLogAt(null)
@@ -158,7 +204,8 @@ export default function Dashboard() {
     if (lb !== null || oz !== null || inch !== null) {
       await addGrowth(baby.id, userId, {
         measured_at: birthDate,
-        weight_kg: (lb !== null || oz !== null) ? Number(lbOzToKg(lb ?? 0, oz ?? 0).toFixed(3)) : null,
+        weight_kg:
+          lb !== null || oz !== null ? Number(lbOzToKg(lb ?? 0, oz ?? 0).toFixed(3)) : null,
         height_cm: inch !== null ? Number((inch * 2.54).toFixed(1)) : null,
         notes: 'Birth weight',
       })
@@ -183,8 +230,19 @@ export default function Dashboard() {
     })
   }
 
-  if (loading) return <Page><p className="empty">Loading…</p></Page>
-  if (!baby) return <Page><Nav /><NoBaby /></Page>
+  if (loading)
+    return (
+      <Page>
+        <p className="empty">Loading…</p>
+      </Page>
+    )
+  if (!baby)
+    return (
+      <Page>
+        <Nav />
+        <NoBaby />
+      </Page>
+    )
 
   if (!baby.birth_date) {
     return (
@@ -196,24 +254,50 @@ export default function Dashboard() {
         <Card>
           <Label>Not born yet</Label>
           <p className="meta">
-            Logging, the feeding clock, growth tracking — all of it turns on the
-            moment you save her birth date below. Nothing before that is lost;
-            it just starts counting from here.
+            Logging, the feeding clock, growth tracking — all of it turns on the moment you save her
+            birth date below. Nothing before that is lost; it just starts counting from here.
           </p>
           <form onSubmit={onBirth}>
             <div className="stack">
               <div>
-                <label className="label" htmlFor="birth-date">Birth date</label>
-                <input id="birth-date" className="input" type="date" value={birthDate}
-                  onChange={(e) => setBirthDate(e.target.value)} max={householdToday()} required />
+                <label className="label" htmlFor="birth-date">
+                  Birth date
+                </label>
+                <input
+                  id="birth-date"
+                  className="input"
+                  type="date"
+                  value={birthDate}
+                  onChange={(e) => setBirthDate(e.target.value)}
+                  max={householdToday()}
+                  required
+                />
               </div>
               <div className="row">
-                <input className="input" value={birthLb} onChange={(e) => setBirthLb(e.target.value)}
-                  inputMode="decimal" placeholder="lb (optional)" aria-label="Birth weight, pounds" />
-                <input className="input" value={birthOz} onChange={(e) => setBirthOz(e.target.value)}
-                  inputMode="decimal" placeholder="oz" aria-label="Birth weight, ounces" />
-                <input className="input" value={birthIn} onChange={(e) => setBirthIn(e.target.value)}
-                  inputMode="decimal" placeholder="in (optional)" aria-label="Birth height, inches" />
+                <input
+                  className="input"
+                  value={birthLb}
+                  onChange={(e) => setBirthLb(e.target.value)}
+                  inputMode="decimal"
+                  placeholder="lb (optional)"
+                  aria-label="Birth weight, pounds"
+                />
+                <input
+                  className="input"
+                  value={birthOz}
+                  onChange={(e) => setBirthOz(e.target.value)}
+                  inputMode="decimal"
+                  placeholder="oz"
+                  aria-label="Birth weight, ounces"
+                />
+                <input
+                  className="input"
+                  value={birthIn}
+                  onChange={(e) => setBirthIn(e.target.value)}
+                  inputMode="decimal"
+                  placeholder="in (optional)"
+                  aria-label="Birth height, inches"
+                />
               </div>
             </div>
             <div className="row-tight">
@@ -229,7 +313,9 @@ export default function Dashboard() {
 
   const age = ageFrom(baby.birth_date, new Date(now))
   const suggested: Side | null = lastNursing
-    ? (lastNursing.side === 'left' ? 'right' : 'left')
+    ? lastNursing.side === 'left'
+      ? 'right'
+      : 'left'
     : null
 
   return (
@@ -284,7 +370,9 @@ export default function Dashboard() {
             >
               Use this time
             </Btn>
-            <Btn variant="quiet" onClick={() => setShowTimeEditor(false)}>Cancel</Btn>
+            <Btn variant="quiet" onClick={() => setShowTimeEditor(false)}>
+              Cancel
+            </Btn>
           </>
         )}
       </div>
@@ -300,8 +388,13 @@ export default function Dashboard() {
                 <span className="side">{activeNursing.side} side</span>
               </div>
               <div className="row-tight">
-                <Btn variant="live" disabled={busy}
-                  onClick={() => run('Nursing end', () => endNursing(activeNursing.id, logAt ?? undefined))}>
+                <Btn
+                  variant="live"
+                  disabled={busy}
+                  onClick={() =>
+                    run('Nursing end', () => endNursing(activeNursing.id, logAt ?? undefined))
+                  }
+                >
                   Stop nursing
                 </Btn>
               </div>
@@ -315,12 +408,26 @@ export default function Dashboard() {
               </div>
               {suggested && <div className="meta">Start on the {suggested} next</div>}
               <div className="row-tight">
-                <Btn disabled={busy} variant={suggested === 'left' ? 'action' : 'quiet'}
-                  onClick={() => run('Nursing (left)', () => startNursing(baby.id, userId, 'left', logAt ?? undefined))}>
+                <Btn
+                  disabled={busy}
+                  variant={suggested === 'left' ? 'action' : 'quiet'}
+                  onClick={() =>
+                    run('Nursing (left)', () =>
+                      startNursing(baby.id, userId, 'left', logAt ?? undefined),
+                    )
+                  }
+                >
                   Left
                 </Btn>
-                <Btn disabled={busy} variant={suggested === 'right' ? 'action' : 'quiet'}
-                  onClick={() => run('Nursing (right)', () => startNursing(baby.id, userId, 'right', logAt ?? undefined))}>
+                <Btn
+                  disabled={busy}
+                  variant={suggested === 'right' ? 'action' : 'quiet'}
+                  onClick={() =>
+                    run('Nursing (right)', () =>
+                      startNursing(baby.id, userId, 'right', logAt ?? undefined),
+                    )
+                  }
+                >
                   Right
                 </Btn>
               </div>
@@ -340,7 +447,8 @@ export default function Dashboard() {
           {lastFeeding?.pending && <div className="pending-tag">Not synced yet</div>}
           {feedingPrediction.dueAt && (
             <div className="meta">
-              Next feeding {clockTime(feedingPrediction.dueAt)} · {dueRelative(feedingPrediction.dueAt, now)}
+              Next feeding {clockTime(feedingPrediction.dueAt)} ·{' '}
+              {dueRelative(feedingPrediction.dueAt, now)}
             </div>
           )}
           <div className="row-tight">
@@ -352,9 +460,16 @@ export default function Dashboard() {
               placeholder={unit}
               aria-label={`Bottle amount in ${unit}`}
             />
-            <Btn disabled={busy} onClick={onBottle}>Bottle</Btn>
-            <Btn variant="quiet" disabled={busy}
-              onClick={() => run('Solid', () => logFeeding(baby.id, userId, 'solid', null, logAt ?? undefined))}>
+            <Btn disabled={busy} onClick={onBottle}>
+              Bottle
+            </Btn>
+            <Btn
+              variant="quiet"
+              disabled={busy}
+              onClick={() =>
+                run('Solid', () => logFeeding(baby.id, userId, 'solid', null, logAt ?? undefined))
+              }
+            >
               Solid
             </Btn>
           </div>
@@ -370,8 +485,15 @@ export default function Dashboard() {
           {lastDiaper?.pending && <div className="pending-tag">Not synced yet</div>}
           <div className="row-tight">
             {(['wet', 'dirty', 'both'] as DiaperType[]).map((kind) => (
-              <Btn key={kind} disabled={busy}
-                onClick={() => run(`Diaper (${kind})`, () => logDiaper(baby.id, userId, kind, logAt ?? undefined))}>
+              <Btn
+                key={kind}
+                disabled={busy}
+                onClick={() =>
+                  run(`Diaper (${kind})`, () =>
+                    logDiaper(baby.id, userId, kind, logAt ?? undefined),
+                  )
+                }
+              >
                 {kind[0].toUpperCase() + kind.slice(1)}
               </Btn>
             ))}
@@ -390,8 +512,13 @@ export default function Dashboard() {
                 </span>
               </div>
               <div className="row-tight">
-                <Btn variant="live" disabled={busy}
-                  onClick={() => run('Sleep end', () => endSleep(activeSleep.id, logAt ?? undefined))}>
+                <Btn
+                  variant="live"
+                  disabled={busy}
+                  onClick={() =>
+                    run('Sleep end', () => endSleep(activeSleep.id, logAt ?? undefined))
+                  }
+                >
                   She&rsquo;s awake
                 </Btn>
               </div>
@@ -405,12 +532,17 @@ export default function Dashboard() {
               </div>
               {napPrediction.dueAt && (
                 <div className="meta">
-                  Next nap ~{clockTime(napPrediction.dueAt)} · {dueRelative(napPrediction.dueAt, now)}
+                  Next nap ~{clockTime(napPrediction.dueAt)} ·{' '}
+                  {dueRelative(napPrediction.dueAt, now)}
                 </div>
               )}
               <div className="row-tight">
-                <Btn disabled={busy}
-                  onClick={() => run('Sleep start', () => startSleep(baby.id, userId, logAt ?? undefined))}>
+                <Btn
+                  disabled={busy}
+                  onClick={() =>
+                    run('Sleep start', () => startSleep(baby.id, userId, logAt ?? undefined))
+                  }
+                >
                   Start sleep
                 </Btn>
               </div>
@@ -425,14 +557,17 @@ export default function Dashboard() {
             <>
               <div className="value">{appt.title}</div>
               <div className="meta">
-                {apptWhen(appt.scheduled_at)}{appt.doctor_name ? ` · ${appt.doctor_name}` : ''}
+                {apptWhen(appt.scheduled_at)}
+                {appt.doctor_name ? ` · ${appt.doctor_name}` : ''}
               </div>
             </>
           ) : (
             <div className="empty">Nothing scheduled</div>
           )}
           <div className="row-tight">
-            <Link href="/appointments" className="linkish">All appointments →</Link>
+            <Link href="/appointments" className="linkish">
+              All appointments →
+            </Link>
           </div>
         </Card>
 

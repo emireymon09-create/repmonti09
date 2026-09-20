@@ -20,7 +20,9 @@ export function useSync(onFlushed?: () => void) {
   // Held in a ref so a caller passing an inline function doesn't
   // re-register the connectivity listeners on every render.
   const flushed = useRef(onFlushed)
-  useEffect(() => { flushed.current = onFlushed })
+  useEffect(() => {
+    flushed.current = onFlushed
+  })
 
   const reload = useCallback(async () => {
     setPending(await pendingWrites())
@@ -42,7 +44,10 @@ export function useSync(onFlushed?: () => void) {
     reload()
     if (navigator.onLine) sync()
 
-    const goOnline = () => { setOnline(true); sync() }
+    const goOnline = () => {
+      setOnline(true)
+      sync()
+    }
     const goOffline = () => setOnline(false)
     window.addEventListener('online', goOnline)
     window.addEventListener('offline', goOffline)

@@ -38,16 +38,23 @@ export async function POST(req: NextRequest) {
   // Single-baby household — same "oldest family" lookup currentBaby()
   // uses client-side, so the Shortcut never has to know a baby_id.
   const { data: babies, error: babyErr } = await supabase
-    .from('babies').select('id')
-    .order('created_at', { ascending: true }).limit(1)
+    .from('babies')
+    .select('id')
+    .order('created_at', { ascending: true })
+    .limit(1)
   if (babyErr) return NextResponse.json({ error: babyErr.message }, { status: 500 })
   const baby = babies?.[0]
   if (!baby) return NextResponse.json({ error: 'no baby set up yet' }, { status: 404 })
 
   const { data: active, error: activeErr } = await supabase
-    .from('nursing_sessions').select('id, side, started_at')
-    .eq('baby_id', baby.id).is('ended_at', null).is('voided_at', null)
-    .order('started_at', { ascending: false }).limit(1).maybeSingle()
+    .from('nursing_sessions')
+    .select('id, side, started_at')
+    .eq('baby_id', baby.id)
+    .is('ended_at', null)
+    .is('voided_at', null)
+    .order('started_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
   if (activeErr) return NextResponse.json({ error: activeErr.message }, { status: 500 })
 
   const now = new Date().toISOString()
@@ -55,22 +62,29 @@ export async function POST(req: NextRequest) {
   // Nothing running — this tap starts that side.
   if (!active) {
     const { error } = await supabase.from('nursing_sessions').insert({
-      baby_id: baby.id, side, started_at: now, ended_at: null,
+      baby_id: baby.id,
+      side,
+      started_at: now,
+      ended_at: null,
     })
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({
-      ok: true, action: 'started',
+      ok: true,
+      action: 'started',
       message: `Nursing (${side}) started — ${clockTime(now)}`,
     })
   }
 
   // Same side already running — this tap stops it.
   if (active.side === side) {
-    const { error } = await supabase.from('nursing_sessions')
-      .update({ ended_at: now }).eq('id', active.id)
+    const { error } = await supabase
+      .from('nursing_sessions')
+      .update({ ended_at: now })
+      .eq('id', active.id)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({
-      ok: true, action: 'ended',
+      ok: true,
+      action: 'ended',
       message: `Nursing (${side}) ended — ${durationBetween(active.started_at, now)}`,
     })
   }
@@ -78,17 +92,23 @@ export async function POST(req: NextRequest) {
   // The other side is running — treat this as a real side switch
   // rather than leaving two sessions open: close the old one, start
   // the new one at the same instant.
-  const { error: closeErr } = await supabase.from('nursing_sessions')
-    .update({ ended_at: now }).eq('id', active.id)
+  const { error: closeErr } = await supabase
+    .from('nursing_sessions')
+    .update({ ended_at: now })
+    .eq('id', active.id)
   if (closeErr) return NextResponse.json({ error: closeErr.message }, { status: 500 })
 
   const { error: startErr } = await supabase.from('nursing_sessions').insert({
-    baby_id: baby.id, side, started_at: now, ended_at: null,
+    baby_id: baby.id,
+    side,
+    started_at: now,
+    ended_at: null,
   })
   if (startErr) return NextResponse.json({ error: startErr.message }, { status: 500 })
 
   return NextResponse.json({
-    ok: true, action: 'switched',
+    ok: true,
+    action: 'switched',
     message: `Switched to ${side} — ${active.side} ran ${durationBetween(active.started_at, now)}`,
   })
 }

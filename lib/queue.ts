@@ -67,9 +67,7 @@ export async function flushQueue(
   schema: string,
   send: (op: PendingOp) => Promise<{ error: string | null }>,
 ): Promise<FlushResult> {
-  const pending = (await store.all())
-    .slice()
-    .sort((a, b) => a.queuedAt.localeCompare(b.queuedAt))
+  const pending = (await store.all()).slice().sort((a, b) => a.queuedAt.localeCompare(b.queuedAt))
 
   let sent = 0
   let dropped = 0
@@ -101,8 +99,9 @@ export async function flushQueue(
 export function looksOffline(message: string | null): boolean {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return true
   if (!message) return false
-  return /failed to fetch|networkerror|network request failed|load failed|fetch failed|err_internet/i
-    .test(message)
+  return /failed to fetch|networkerror|network request failed|load failed|fetch failed|err_internet/i.test(
+    message,
+  )
 }
 
 // --------------------------------------------------------------- IndexedDB
@@ -148,7 +147,9 @@ export function browserQueueStore(): QueueStore {
         const db = await openDb()
         const tx = db.transaction(STORE, 'readonly')
         return (await promisify(tx.objectStore(STORE).getAll())) as PendingWrite[]
-      } catch { return [] }
+      } catch {
+        return []
+      }
     },
     async add(write) {
       if (!available) throw new Error('This device will not let the app store anything offline.')
@@ -162,7 +163,9 @@ export function browserQueueStore(): QueueStore {
         const db = await openDb()
         const tx = db.transaction(STORE, 'readwrite')
         await promisify(tx.objectStore(STORE).delete(id))
-      } catch { /* it will be retried and removed next flush */ }
+      } catch {
+        /* it will be retried and removed next flush */
+      }
     },
   }
 }
