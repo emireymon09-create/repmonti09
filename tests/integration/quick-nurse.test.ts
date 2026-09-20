@@ -1,10 +1,11 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   adminClient,
   exposeEnvToRouteHandlers,
   seedTwoFamilies,
   type SeededFamily,
 } from '../helpers/supabase'
+import { resetDeviceRateLimit } from '@/lib/deviceAuth'
 
 let a: SeededFamily
 let b: SeededFamily
@@ -19,6 +20,12 @@ beforeAll(async () => {
 })
 afterAll(async () => {
   await cleanup()
+  delete process.env.QUICK_TOGGLE_BABY_ID
+})
+
+// El contador del rate limit es global al proceso.
+beforeEach(() => {
+  resetDeviceRateLimit()
 })
 
 async function post(body: unknown, secret: string | null) {
@@ -52,42 +59,61 @@ describe('/api/quick/nurse — autenticación', () => {
 })
 
 /**
- * HALLAZGO C1 de docs/auditorias/2026-09-20-auditoria-inicial.md.
+ * HALLAZGO C1 de docs/auditorias/2026-09-20-auditoria-inicial.md, con el parche
+ * aplicado.
  *
- * El endpoint corre con service_role (salta RLS) y elige el `babies` más
- * antiguo sin filtrar por familia (CLAUDE.md §7.3). Con una sola familia es
- * correcto; con dos, el secreto de CUALQUIERA escribe sobre el bebé de la
- * familia más vieja.
+ * El endpoint corre con service_role (salta RLS) y antes elegía el `babies` más
+ * ANTIGUO de toda la base sin filtrar por familia: con dos familias, el secreto
+ * de cualquiera escribía sobre el bebé de la familia más vieja.
  *
- * Este archivo documenta el comportamiento tal como está. Cuando el arreglo de
- * fondo llegue (proposals/device-tokens-and-idempotency.md), estos tests tienen
- * que DARSE VUELTA. Hasta entonces, esto es la evidencia.
+ * Estos tests son la versión DADA VUELTA de los que documentaban el bug: ahora
+ * el endpoint falla cerrado en vez de adivinar. El arreglo de fondo —resolver
+ * el bebé desde el token del dispositivo— sigue siendo
+ * proposals/device-tokens-and-idempotency.md §3.
  */
-describe('HALLAZGO: /api/quick/nurse escribe sobre el bebé más viejo de TODA la base', () => {
-  it('con dos familias, la sesión aterriza en el bebé de la familia A', async () => {
+describe('/api/quick/nurse — a qué bebé le escribe', () => {
+  it('con dos familias y sin configurar nada, falla cerrado en vez de adivinar', async () => {
+    delete process.env.QUICK_TOGGLE_BABY_ID
+    const res = await post({ side: 'left' }, SECRET)
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toContain('more than one baby')
+
+    // Y no escribió nada en ninguna de las dos familias.
+    const admin = adminClient()
+    const { data } = await admin
+      .from('nursing_sessions')
+      .select('id')
+      .in('baby_id', [a.babyId, b.babyId])
+    expect(data).toEqual([])
+  })
+
+  it('con QUICK_TOGGLE_BABY_ID apuntando a B, la sesión aterriza en B', async () => {
+    process.env.QUICK_TOGGLE_BABY_ID = b.babyId
     const res = await post({ side: 'left' }, SECRET)
     expect(res.status).toBe(200)
 
     const admin = adminClient()
-    const { data: enA } = await admin
-      .from('nursing_sessions')
-      .select('id')
-      .eq('baby_id', a.babyId)
-      .is('ended_at', null)
     const { data: enB } = await admin
       .from('nursing_sessions')
       .select('id')
       .eq('baby_id', b.babyId)
       .is('ended_at', null)
+    const { data: enA } = await admin.from('nursing_sessions').select('id').eq('baby_id', a.babyId)
 
-    expect(enA).toHaveLength(1) // <- el bebé más viejo se lo queda todo
-    expect(enB).toHaveLength(0) // <- la otra familia nunca recibe nada
+    expect(enB).toHaveLength(1)
+    expect(enA).toEqual([]) // la familia más vieja ya no se lo queda todo
 
     // Cerramos la sesión para no dejar estado colgando.
     await post({ side: 'left' }, SECRET)
   })
 
-  it('el toggle sigue el ciclo start -> switch -> end sobre ese mismo bebé', async () => {
+  it('un QUICK_TOGGLE_BABY_ID que no es uuid es un error de configuración, no un 200', async () => {
+    process.env.QUICK_TOGGLE_BABY_ID = 'la-bebe'
+    expect((await post({ side: 'left' }, SECRET)).status).toBe(500)
+  })
+
+  it('el toggle sigue el ciclo start -> switch -> end sobre el bebé configurado', async () => {
+    process.env.QUICK_TOGGLE_BABY_ID = b.babyId
     const admin = adminClient()
 
     const started = await post({ side: 'left' }, SECRET)
@@ -102,7 +128,7 @@ describe('HALLAZGO: /api/quick/nurse escribe sobre el bebé más viejo de TODA l
     const { data } = await admin
       .from('nursing_sessions')
       .select('id, ended_at')
-      .eq('baby_id', a.babyId)
+      .eq('baby_id', b.babyId)
     expect(data!.every((r) => r.ended_at !== null)).toBe(true)
   })
 })

@@ -1,10 +1,11 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   adminClient,
   exposeEnvToRouteHandlers,
   seedTwoFamilies,
   type SeededFamily,
 } from '../helpers/supabase'
+import { resetDeviceRateLimit } from '@/lib/deviceAuth'
 
 let a: SeededFamily
 let b: SeededFamily
@@ -19,6 +20,12 @@ beforeAll(async () => {
 })
 afterAll(async () => {
   await cleanup()
+})
+
+// El contador del rate limit es global al proceso: sin esto, los tests de más
+// abajo empezarían a chocar contra el techo de 20 por minuto.
+beforeEach(() => {
+  resetDeviceRateLimit()
 })
 
 async function post(body: unknown, secret: string | null) {
@@ -79,5 +86,56 @@ describe('/api/ingest', () => {
     const admin = adminClient()
     const { data } = await admin.from('monitor_events').select('id').eq('baby_id', b.babyId)
     expect(data).toHaveLength(1)
+  })
+})
+/**
+ * Lo que la Tarea 8 endurece. Escritos antes del arreglo: al correrlos contra
+ * el handler viejo dan 500 / 200 en vez de 400.
+ */
+describe('/api/ingest endurecido', () => {
+  it('un body que no es JSON responde 400, no 500', async () => {
+    expect((await raw('esto no es json', SECRET)).status).toBe(400)
+  })
+
+  it('un baby_id que no es uuid responde 400', async () => {
+    expect((await post({ baby_id: 'la-bebe', event_type: 'sound_alert' }, SECRET)).status).toBe(400)
+  })
+
+  it('un event_type fuera de la lista blanca responde 400', async () => {
+    expect((await post({ baby_id: a.babyId, event_type: 'video_clip' }, SECRET)).status).toBe(400)
+  })
+
+  it('un event_type ausente ya no se guarda como "unknown"', async () => {
+    expect((await post({ baby_id: a.babyId }, SECRET)).status).toBe(400)
+  })
+
+  it('un occurred_at absurdo responde 400', async () => {
+    const res = await post(
+      { baby_id: a.babyId, event_type: 'sound_alert', occurred_at: '1899-01-01T00:00:00Z' },
+      SECRET,
+    )
+    expect(res.status).toBe(400)
+  })
+
+  it('un kind desconocido responde 400', async () => {
+    expect((await post({ baby_id: a.babyId, kind: 'sleep_sideways' }, SECRET)).status).toBe(400)
+  })
+
+  it('un meta gigante responde 400', async () => {
+    const res = await post(
+      { baby_id: a.babyId, event_type: 'sound_alert', meta: { blob: 'x'.repeat(4000) } },
+      SECRET,
+    )
+    expect(res.status).toBe(400)
+  })
+})
+
+describe('/api/ingest — techo de intentos', () => {
+  it('el intento 21 dentro del minuto responde 429', async () => {
+    let last = 0
+    for (let i = 0; i < 21; i += 1) {
+      last = (await post({ baby_id: a.babyId, event_type: 'sound_alert' }, 'secreto-malo')).status
+    }
+    expect(last).toBe(429)
   })
 })

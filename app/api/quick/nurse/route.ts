@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createAdminClient } from '@/lib/supabaseAdmin'
+import { checkDeviceSecret, isUuid, readJson } from '@/lib/deviceAuth'
 import { clockTime, durationBetween } from '@/lib/format'
 
 // The door an iOS Shortcut uses to toggle nursing with no login — tap
@@ -21,13 +23,66 @@ import { clockTime, durationBetween } from '@/lib/format'
 // via the Shortcut's "Show Notification" / "Show Result" step, e.g.
 // "Nursing (left) started — 6:42 PM".
 
+/**
+ * Qué bebé recibe la sesión.
+ *
+ * ⚠️ HALLAZGO C1 (docs/auditorias/2026-09-20-auditoria-inicial.md): este
+ * handler corre con service_role, o sea que salta RLS por completo, y el
+ * secreto es uno solo para toda la instalación. Antes tomaba el `babies` más
+ * ANTIGUO de toda la base sin filtrar por familia: con dos familias, el
+ * secreto de cualquiera escribía sobre el bebé de la más vieja. Demostrado en
+ * tests/integration/quick-nurse.test.ts.
+ *
+ * Parche mientras llega el arreglo de fondo (token por dispositivo,
+ * proposals/device-tokens-and-idempotency.md §3):
+ *
+ *   · Si QUICK_TOGGLE_BABY_ID está seteada, se usa esa y punto. Es lo que
+ *     corresponde en cuanto haya más de un hogar en la base.
+ *   · Si no está y hay exactamente un bebé, se usa ese — el caso de hoy, un
+ *     solo hogar, sigue funcionando sin configurar nada.
+ *   · Si no está y hay más de uno, FALLA CERRADO (409). Adivinar es
+ *     justamente lo que hacía el bug.
+ */
+async function resolveBabyId(
+  supabase: SupabaseClient,
+): Promise<{ babyId: string } | { error: string; status: number }> {
+  const configured = process.env.QUICK_TOGGLE_BABY_ID
+  if (configured) {
+    if (!isUuid(configured)) {
+      return { error: 'QUICK_TOGGLE_BABY_ID is not a uuid', status: 500 }
+    }
+    return { babyId: configured }
+  }
+
+  // limit(2): alcanza para saber si hay ambigüedad, sin traer la base entera.
+  const { data: babies, error } = await supabase
+    .from('babies')
+    .select('id')
+    .order('created_at', { ascending: true })
+    .limit(2)
+  if (error) return { error: error.message, status: 500 }
+  if (!babies || babies.length === 0) return { error: 'no baby set up yet', status: 404 }
+  if (babies.length > 1) {
+    return {
+      error:
+        'more than one baby in this database — set QUICK_TOGGLE_BABY_ID so this ' +
+        'endpoint does not have to guess',
+      status: 409,
+    }
+  }
+  return { babyId: babies[0].id as string }
+}
+
 export async function POST(req: NextRequest) {
-  const deviceSecret = req.headers.get('x-device-secret')
-  if (!deviceSecret || deviceSecret !== process.env.QUICK_TOGGLE_SECRET) {
+  const auth = checkDeviceSecret(req, process.env.QUICK_TOGGLE_SECRET)
+  if (auth === 'rate_limited') {
+    return NextResponse.json({ error: 'too many requests' }, { status: 429 })
+  }
+  if (auth !== 'ok') {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
 
-  const body = await req.json().catch(() => null)
+  const body = await readJson<{ side?: unknown }>(req)
   const side = body?.side
   if (side !== 'left' && side !== 'right') {
     return NextResponse.json({ error: "side must be 'left' or 'right'" }, { status: 400 })
@@ -35,16 +90,11 @@ export async function POST(req: NextRequest) {
 
   const supabase = createAdminClient()
 
-  // Single-baby household — same "oldest family" lookup currentBaby()
-  // uses client-side, so the Shortcut never has to know a baby_id.
-  const { data: babies, error: babyErr } = await supabase
-    .from('babies')
-    .select('id')
-    .order('created_at', { ascending: true })
-    .limit(1)
-  if (babyErr) return NextResponse.json({ error: babyErr.message }, { status: 500 })
-  const baby = babies?.[0]
-  if (!baby) return NextResponse.json({ error: 'no baby set up yet' }, { status: 404 })
+  const resolved = await resolveBabyId(supabase)
+  if ('error' in resolved) {
+    return NextResponse.json({ error: resolved.error }, { status: resolved.status })
+  }
+  const baby = { id: resolved.babyId }
 
   const { data: active, error: activeErr } = await supabase
     .from('nursing_sessions')
