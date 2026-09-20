@@ -3,7 +3,11 @@
 import { useSync } from '@/lib/useSync'
 import type { PendingWrite } from '@/lib/queue'
 
-export function SyncBar({ online, pending, syncing }: {
+export function SyncBar({
+  online,
+  pending,
+  syncing,
+}: {
   online: boolean
   pending: PendingWrite[]
   syncing?: boolean

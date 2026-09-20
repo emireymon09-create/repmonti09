@@ -66,9 +66,13 @@ whenever that sync gets built.
 
 ## Current status (as of right now)
 
-- **Local git repo initialized** on `main`, scaffold committed.
-  No remote configured yet.
-- **No GitHub repo yet.**
+- **Git repo on `main`**, with a remote: `origin` points at
+  `git@github.com:emireymon09-create/repmonti09.git`. *(This section said
+  "no remote configured yet" and "no GitHub repo yet" until 2026-09-20.
+  Both were false — verified with `git remote -v`.)*
+- **Do not create a second GitHub repo for this directory.** The one that
+  exists is the one to use; the monorepo of ADR 0003 is the Hub agent's
+  phase 0, and this directory becomes `apps/amelia` inside it.
 - **No cloud Supabase project — and this app must not create one.**
   Per ADR 0001 the cloud database is shared and the Hub agent creates
   it. Local development runs against `supabase start` (Docker) as
@@ -76,6 +80,12 @@ whenever that sync gets built.
 - **No Vercel deployment yet.**
 - The app runs and is testable on Emilio's machine right now via the
   local Supabase stack.
+- **pnpm is the only package manager**, with `pnpm-lock.yaml` committed
+  (since 2026-09-20). `npm` and `yarn` abort at `preinstall`.
+- **There is a test suite** (Vitest): unit tests run under four system
+  timezones, integration tests run against the local Supabase through
+  PostgREST with real JWTs — the same path the app uses, which is the
+  only path that would have caught the missing-GRANT bug of `0005`.
 
 ## What's built
 
@@ -132,7 +142,10 @@ Hub surface first and a standalone app second:
   generated `packages/db/types`.
 - `lib/format.ts` — times render in `America/Los_Angeles` regardless
   of the viewer's clock, relative under a day and absolute past it.
-  Unit-tested under four system timezones.
+  Unit-tested under four system timezones — `tests/unit/format.test.ts`,
+  run with `pnpm test:tz` under `UTC`, `America/Los_Angeles`,
+  `Asia/Tokyo` and `Pacific/Kiritimati`. **That sentence was false until
+  2026-09-20:** this repo had zero tests in it while claiming otherwise.
 - `lib/useBaby.ts` — auth guard + current baby; the place the
   caregiver role check lands in phase 2.
 - Dashboard has a **Today** timeline, merged client-side from this
@@ -169,12 +182,27 @@ database) — useful for quickly showing the design, not for real use.
 - Retry-queue logic on the HA side for when the NUC has no internet
   (data still logs fine locally in HA either way — this is only about
   keeping the cloud copy in sync once connectivity returns)
-- Editing or retracting a logged entry. House convention is
-  `voided_at` / `voided_by` rather than deletes (`CONVENTIONS.md` §1),
-  and `feedings` / `diaper_changes` have no update policy — so a
-  mis-tap at 3am is permanent until a migration adds it. This app no
-  longer numbers its own migrations, so it is a proposal for the Hub
-  agent. **Still the biggest gap before real use.**
+- Correcting or retracting a **growth measurement**.
+  `growth_measurements` has no UPDATE policy and no `voided_at` column,
+  so a mis-typed weight is permanent. Schema change ⇒ proposed in
+  `proposals/growth-edit-and-void.md`, demonstrated by a test in
+  `tests/integration/rls.test.ts`.
+
+  *(Editing and retracting **every other** logged entry — feedings,
+  diapers, nursing, sleep, pumping — IS built, and has been since
+  `0006_edit_and_void.sql` plus `updateFeeding`/`voidFeeding` and their
+  siblings in `lib/db.ts`. This section claimed otherwise until
+  2026-09-20.)*
+- Per-device tokens and idempotency on the two device endpoints. A single
+  shared secret with `service_role` means whoever holds it can write to
+  any family's `baby_id` — two confirmed CRITICAL findings, open on
+  purpose because they need new tables ⇒
+  `proposals/device-tokens-and-idempotency.md`.
+- Automated tests for **components and pages**. What exists covers
+  `lib/format.ts`, `lib/queue.ts`, RLS isolation between families, and
+  the two device endpoints.
+- Lint/format were missing and now exist (`pnpm lint`, `pnpm format`);
+  CI to run them does not.
 - Anything related to calendar, meal planning, chores, irrigation —
   those belong to the Hub, a separate future project, not this repo
 
@@ -186,10 +214,10 @@ database) — useful for quickly showing the design, not for real use.
 2. **Keep building UI locally** against `supabase start`. Nothing in
    the backend change blocks this, and it is the right thing to be
    doing before Amelia arrives.
-3. **Do not create a GitHub repo for this directory on its own.** The
-   monorepo (ADR 0003) is the Hub agent's phase 0; this directory
-   becomes `apps/amelia` inside it. A standalone repo now would just
-   have to be unpicked.
+3. **Do not create another GitHub repo for this directory.** One remote
+   already exists (`emireymon09-create/repmonti09`). The monorepo
+   (ADR 0003) is the Hub agent's phase 0; this directory becomes
+   `apps/amelia` inside it.
 4. **Do not create a cloud Supabase project.** ADR 0001. The shared one
    is the Hub's to create.
 
@@ -233,5 +261,43 @@ here gets built in a direction that has to be undone:
 - Devices authenticate with their own **hashed per-device token** from
   `core.devices`, with an idempotency key on the event — replacing the
   single shared `NUC_DEVICE_SECRET` this app uses today (ADR 0005).
-  Not yet implemented; nothing calls the endpoint.
+  **Still not implemented.** Written up as
+  `proposals/device-tokens-and-idempotency.md`, with a test that
+  demonstrates today's cross-family write.
 - 2FA on Supabase / Vercel / GitHub accounts, once those exist
+
+### What changed on 2026-09-20
+
+An audit pass (`docs/auditorias/2026-09-20-auditoria-inicial.md`) went
+over the whole repo. What it closed:
+
+- **Server-side auth guard.** `middleware.ts` now redirects a signed-out
+  visitor away from `/dashboard`, `/pumping`, `/growth`, `/appointments`
+  and `/history` before anything renders. RLS is still what protects the
+  *data*; this fixes the flash of app shell on a shared wall screen.
+- **Device endpoints hardened.** Constant-time secret comparison, a
+  ceiling of 20 attempts per minute per source IP, full payload
+  validation (uuid, event-type whitelist, `meta` size cap, sane instant
+  range), and a malformed body now returns 400 instead of escaping as a
+  500. `lib/deviceAuth.ts`.
+- **Security headers** in `next.config.mjs`. CSP deliberately left out —
+  Next 14 inlines styles and scripts, and a wrong CSP breaks the wall
+  screen silently. It goes in separately, report-only first.
+- **The offline queue stopped under-reporting itself.** `flushQueue`
+  returned `remaining: 0` with a write still queued when a discard came
+  before a failure. One line, `lib/queue.ts`.
+
+What it left **open**, on purpose:
+
+- **`/api/quick/nurse` cross-family write (CRITICAL).** It ran with
+  `service_role` and picked the oldest `babies` row in the *whole
+  database*. Mitigated, not fixed: `QUICK_TOGGLE_BABY_ID` pins the baby,
+  and with more than one baby and no variable set the endpoint now
+  **fails closed** (409) instead of guessing. The real fix is resolving
+  the baby from a device token.
+- **`/api/ingest` cross-family write (CRITICAL).** Same root cause; same
+  proposal.
+- **The local Supabase stack binds to `0.0.0.0`**, not to localhost. On
+  the VPS this repo lives on, Studio and the API answer on the public
+  interface. Not verified whether a firewall covers it — no sudo. See
+  `docs/seguridad-operacional.md` §6.

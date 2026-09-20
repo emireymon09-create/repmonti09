@@ -1,0 +1,12 @@
+# pnpm 11 lee la configuración del proyecto desde este archivo, no del campo
+# "pnpm" de package.json. Esto NO convierte el repo en un monorepo: no hay
+# clave `packages`. (El monorepo de verdad llega en la fase 2 del Hub, y ahí
+# este directorio pasa a ser apps/amelia.)
+#
+# Los dos únicos paquetes con script de instalación permitido:
+#   unrs-resolver — resolver nativo de eslint-config-next; sin esto `pnpm lint`
+#                   no arranca.
+#   esbuild       — binario nativo de Vitest; sin esto `pnpm test` no arranca.
+allowBuilds:
+  esbuild: true
+  unrs-resolver: true

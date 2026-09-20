@@ -33,7 +33,12 @@ export default function manifest(): MetadataRoute.Manifest {
       { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
       // Android crops to whatever shape the launcher uses; this one
       // fills edge to edge with the mark inside the safe zone.
-      { src: '/icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+      {
+        src: '/icons/icon-maskable-512.png',
+        sizes: '512x512',
+        type: 'image/png',
+        purpose: 'maskable',
+      },
     ],
     shortcuts: [
       { name: 'Milk', url: '/pumping' },

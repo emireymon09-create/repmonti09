@@ -9,7 +9,12 @@ import { logPumping, recentPumping, totalPumped, updatePumping, voidPumping } fr
 import { useVolumeUnit } from '@/lib/useVolumeUnit'
 import type { PumpingSession, PumpSide } from '@/lib/types'
 import {
-  clockTime, formatVolume, fromHouseholdInputValue, longDate, mlToUnit, toHouseholdInputValue,
+  clockTime,
+  formatVolume,
+  fromHouseholdInputValue,
+  longDate,
+  mlToUnit,
+  toHouseholdInputValue,
   unitToMl,
 } from '@/lib/format'
 
@@ -47,7 +52,9 @@ export default function PumpingPage() {
     setRows(data)
   }, [])
 
-  useEffect(() => { if (baby) refresh(baby.id) }, [baby, refresh])
+  useEffect(() => {
+    if (baby) refresh(baby.id)
+  }, [baby, refresh])
 
   async function save(e: React.FormEvent) {
     e.preventDefault()
@@ -58,7 +65,10 @@ export default function PumpingPage() {
     let amountMl: number | null = null
     if (trimmed !== '') {
       const parsed = Number(trimmed)
-      if (!Number.isFinite(parsed)) { setErr('Amount has to be a number.'); return }
+      if (!Number.isFinite(parsed)) {
+        setErr('Amount has to be a number.')
+        return
+      }
       amountMl = Number(unitToMl(parsed, unit).toFixed(1))
     }
 
@@ -66,13 +76,23 @@ export default function PumpingPage() {
 
     setBusy(true)
     const { error, queued } = await logPumping(
-      baby.id, userId, side, amountMl, notes.trim() || null, atIso,
+      baby.id,
+      userId,
+      side,
+      amountMl,
+      notes.trim() || null,
+      atIso,
     )
     setBusy(false)
 
-    if (error) { setErr(`Couldn't save — ${error}`); return }
+    if (error) {
+      setErr(`Couldn't save — ${error}`)
+      return
+    }
     setSaved(queued ? 'Saved on this device — will sync when you’re back online' : 'Session logged')
-    setAmount(''); setNotes(''); setAt(toHouseholdInputValue(new Date()))
+    setAmount('')
+    setNotes('')
+    setAt(toHouseholdInputValue(new Date()))
     refresh(baby.id)
   }
 
@@ -93,18 +113,26 @@ export default function PumpingPage() {
     let amountMl: number | null = null
     if (trimmed !== '') {
       const parsed = Number(trimmed)
-      if (!Number.isFinite(parsed)) { setErr('Amount has to be a number.'); return }
+      if (!Number.isFinite(parsed)) {
+        setErr('Amount has to be a number.')
+        return
+      }
       amountMl = Number(unitToMl(parsed, unit).toFixed(1))
     }
 
     setBusy(true)
     const { error } = await updatePumping(editingId, {
-      side: eSide, amount_ml: amountMl, notes: eNotes.trim() || null,
+      side: eSide,
+      amount_ml: amountMl,
+      notes: eNotes.trim() || null,
       pumped_at: fromHouseholdInputValue(eAt),
     })
     setBusy(false)
 
-    if (error) { setErr(`Couldn't save — ${error}`); return }
+    if (error) {
+      setErr(`Couldn't save — ${error}`)
+      return
+    }
     setSaved('Saved')
     setEditingId(null)
     if (baby) refresh(baby.id)
@@ -119,14 +147,28 @@ export default function PumpingPage() {
     const { error } = await voidPumping(id)
     setBusy(false)
 
-    if (error) { setErr(`Couldn't delete — ${error}`); return }
+    if (error) {
+      setErr(`Couldn't delete — ${error}`)
+      return
+    }
     if (editingId === id) setEditingId(null)
     setSaved('Deleted')
     if (baby) refresh(baby.id)
   }
 
-  if (loading) return <Page><p className="empty">Loading…</p></Page>
-  if (!baby) return <Page><Nav /><NoBaby /></Page>
+  if (loading)
+    return (
+      <Page>
+        <p className="empty">Loading…</p>
+      </Page>
+    )
+  if (!baby)
+    return (
+      <Page>
+        <Nav />
+        <NoBaby />
+      </Page>
+    )
 
   // Building the stash starts weeks before the due date, so this page
   // works even on the "Expecting" screen — it never checks birth_date.
@@ -160,19 +202,39 @@ export default function PumpingPage() {
                   </button>
                 ))}
               </div>
-              <input className="input" value={amount} onChange={(e) => setAmount(e.target.value)}
-                inputMode="decimal" placeholder={`${unit} (optional)`} aria-label={`Amount, ${unit}`} />
-              <input className="input" value={notes} onChange={(e) => setNotes(e.target.value)}
-                placeholder="Notes (optional)" aria-label="Notes" />
+              <input
+                className="input"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                inputMode="decimal"
+                placeholder={`${unit} (optional)`}
+                aria-label={`Amount, ${unit}`}
+              />
+              <input
+                className="input"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Notes (optional)"
+                aria-label="Notes"
+              />
               <div>
-                <label className="label" htmlFor="pump-at">When (defaults to now)</label>
-                <input id="pump-at" type="datetime-local" className="input" value={at}
+                <label className="label" htmlFor="pump-at">
+                  When (defaults to now)
+                </label>
+                <input
+                  id="pump-at"
+                  type="datetime-local"
+                  className="input"
+                  value={at}
                   onChange={(e) => setAt(e.target.value)}
-                  max={toHouseholdInputValue(new Date())} />
+                  max={toHouseholdInputValue(new Date())}
+                />
               </div>
             </div>
             <div className="row-tight">
-              <Btn type="submit" disabled={busy}>{busy ? 'Saving…' : 'Log session'}</Btn>
+              <Btn type="submit" disabled={busy}>
+                {busy ? 'Saving…' : 'Log session'}
+              </Btn>
             </div>
           </form>
         </Card>
@@ -187,7 +249,9 @@ export default function PumpingPage() {
         </Card>
 
         {rows.length === 0 ? (
-          <Card><div className="empty">No sessions logged yet.</div></Card>
+          <Card>
+            <div className="empty">No sessions logged yet.</div>
+          </Card>
         ) : (
           rows.map((row) => (
             <Card key={row.id}>
@@ -206,34 +270,67 @@ export default function PumpingPage() {
                       </button>
                     ))}
                   </div>
-                  <input className="input" value={eAmount} onChange={(e) => setEAmount(e.target.value)}
-                    inputMode="decimal" placeholder={`${unit} (optional)`} aria-label={`Amount, ${unit}`} />
-                  <input className="input" value={eNotes} onChange={(e) => setENotes(e.target.value)}
-                    placeholder="Notes (optional)" aria-label="Notes" />
-                  <input type="datetime-local" className="input" value={eAt}
+                  <input
+                    className="input"
+                    value={eAmount}
+                    onChange={(e) => setEAmount(e.target.value)}
+                    inputMode="decimal"
+                    placeholder={`${unit} (optional)`}
+                    aria-label={`Amount, ${unit}`}
+                  />
+                  <input
+                    className="input"
+                    value={eNotes}
+                    onChange={(e) => setENotes(e.target.value)}
+                    placeholder="Notes (optional)"
+                    aria-label="Notes"
+                  />
+                  <input
+                    type="datetime-local"
+                    className="input"
+                    value={eAt}
                     onChange={(e) => setEAt(e.target.value)}
-                    max={toHouseholdInputValue(new Date())} aria-label="Time it happened" />
+                    max={toHouseholdInputValue(new Date())}
+                    aria-label="Time it happened"
+                  />
                   <div className="row-tight">
-                    <Btn disabled={busy} onClick={saveEdit}>Save</Btn>
-                    <Btn variant="quiet" onClick={() => setEditingId(null)}>Cancel</Btn>
+                    <Btn disabled={busy} onClick={saveEdit}>
+                      Save
+                    </Btn>
+                    <Btn variant="quiet" onClick={() => setEditingId(null)}>
+                      Cancel
+                    </Btn>
                   </div>
                 </div>
               ) : (
                 <>
                   <div className="between">
-                    <Label>{longDate(row.pumped_at)} · {clockTime(row.pumped_at)}</Label>
+                    <Label>
+                      {longDate(row.pumped_at)} · {clockTime(row.pumped_at)}
+                    </Label>
                     <span className="feed-actions">
-                      <button type="button" className="linkish" disabled={busy} onClick={() => startEdit(row)}>
+                      <button
+                        type="button"
+                        className="linkish"
+                        disabled={busy}
+                        onClick={() => startEdit(row)}
+                      >
                         Edit
                       </button>
-                      <button type="button" className="linkish" disabled={busy} onClick={() => deleteRow(row.id)}>
+                      <button
+                        type="button"
+                        className="linkish"
+                        disabled={busy}
+                        onClick={() => deleteRow(row.id)}
+                      >
                         Delete
                       </button>
                     </span>
                   </div>
                   <div className="value">
                     {row.amount_ml != null ? formatVolume(row.amount_ml, unit) : 'No amount'}
-                    {' · '}{SIDES.find((s) => s.value === row.side)?.label ?? row.side}
+                    {' · '}
+                    {SIDES.find((s) => s.value === row.side)?.label ?? row.side}
                   </div>
                   {row.notes && <div className="meta">{row.notes}</div>}
                 </>

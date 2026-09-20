@@ -6,18 +6,41 @@ import { NoBaby } from '@/components/NoBaby'
 import { Banner, Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
 import { SyncStatus } from '@/components/SyncStatus'
 import {
-  buildActivity, mergePending, pendingWrites,
-  recentDiapers, recentFeedings, recentNursing, recentSleep,
-  updateDiaper, updateFeeding, updateNursing, updateSleep,
-  voidDiaper, voidFeeding, voidNursing, voidSleep,
+  buildActivity,
+  mergePending,
+  pendingWrites,
+  recentDiapers,
+  recentFeedings,
+  recentNursing,
+  recentSleep,
+  updateDiaper,
+  updateFeeding,
+  updateNursing,
+  updateSleep,
+  voidDiaper,
+  voidFeeding,
+  voidNursing,
+  voidSleep,
 } from '@/lib/db'
 import { useVolumeUnit } from '@/lib/useVolumeUnit'
 import type {
-  ActivityEntry, DiaperChange, DiaperType, Feeding, FeedingType,
-  NursingSession, Side, SleepSession, WithPending,
+  ActivityEntry,
+  DiaperChange,
+  DiaperType,
+  Feeding,
+  FeedingType,
+  NursingSession,
+  Side,
+  SleepSession,
+  WithPending,
 } from '@/lib/types'
 import {
-  clockTime, fromHouseholdInputValue, householdToday, longDate, mlToUnit, toHouseholdInputValue,
+  clockTime,
+  fromHouseholdInputValue,
+  householdToday,
+  longDate,
+  mlToUnit,
+  toHouseholdInputValue,
   unitToMl,
 } from '@/lib/format'
 
@@ -95,7 +118,12 @@ export default function HistoryPage() {
   const [sStart, setSStart] = useState('')
   const [sEnd, setSEnd] = useState('')
 
-  useEffect(() => () => { if (flashTimer.current) clearTimeout(flashTimer.current) }, [])
+  useEffect(
+    () => () => {
+      if (flashTimer.current) clearTimeout(flashTimer.current)
+    },
+    [],
+  )
 
   function confirm(message: string) {
     setFlash(message)
@@ -103,33 +131,40 @@ export default function HistoryPage() {
     flashTimer.current = setTimeout(() => setFlash(null), 2500)
   }
 
-  const refresh = useCallback(async (babyId: string) => {
-    const [f, d, n, s, queued] = await Promise.all([
-      recentFeedings(babyId, HISTORY_LIMIT), recentDiapers(babyId, HISTORY_LIMIT),
-      recentNursing(babyId, HISTORY_LIMIT), recentSleep(babyId, HISTORY_LIMIT),
-      pendingWrites(),
-    ])
+  const refresh = useCallback(
+    async (babyId: string) => {
+      const [f, d, n, s, queued] = await Promise.all([
+        recentFeedings(babyId, HISTORY_LIMIT),
+        recentDiapers(babyId, HISTORY_LIMIT),
+        recentNursing(babyId, HISTORY_LIMIT),
+        recentSleep(babyId, HISTORY_LIMIT),
+        pendingWrites(),
+      ])
 
-    const firstError = [f, d, n, s].find((r) => r.error)?.error
-    if (firstError && navigator.onLine) setErr(`Couldn't load history — ${firstError}`)
+      const firstError = [f, d, n, s].find((r) => r.error)?.error
+      if (firstError && navigator.onLine) setErr(`Couldn't load history — ${firstError}`)
 
-    const mFeedings = mergePending(f.data, 'feedings', queued)
-    const mDiapers = mergePending(d.data, 'diaper_changes', queued)
-    const mNursing = mergePending(n.data, 'nursing_sessions', queued)
-    const mSleep = mergePending(s.data, 'sleep_sessions', queued)
+      const mFeedings = mergePending(f.data, 'feedings', queued)
+      const mDiapers = mergePending(d.data, 'diaper_changes', queued)
+      const mNursing = mergePending(n.data, 'nursing_sessions', queued)
+      const mSleep = mergePending(s.data, 'sleep_sessions', queued)
 
-    setFeedings(mFeedings)
-    setDiapers(mDiapers)
-    setNursing(mNursing)
-    setSleep(mSleep)
+      setFeedings(mFeedings)
+      setDiapers(mDiapers)
+      setNursing(mNursing)
+      setSleep(mSleep)
 
-    // 0 = the start of time, i.e. no "since today" cutoff — the same
-    // merge dashboard uses for Today, just unfiltered.
-    const entries = buildActivity(mFeedings, mNursing, mDiapers, mSleep, 0, unit)
-    setDays(groupByHouseholdDay(entries))
-  }, [unit])
+      // 0 = the start of time, i.e. no "since today" cutoff — the same
+      // merge dashboard uses for Today, just unfiltered.
+      const entries = buildActivity(mFeedings, mNursing, mDiapers, mSleep, 0, unit)
+      setDays(groupByHouseholdDay(entries))
+    },
+    [unit],
+  )
 
-  useEffect(() => { if (baby) refresh(baby.id) }, [baby, refresh])
+  useEffect(() => {
+    if (baby) refresh(baby.id)
+  }, [baby, refresh])
 
   function startEdit(entry: ActivityEntry) {
     if (!isEditable(entry.kind)) return
@@ -217,10 +252,14 @@ export default function HistoryPage() {
     setBusy(true)
     setErr(null)
 
-    const result = kind === 'feeding' ? await voidFeeding(id)
-      : kind === 'diaper' ? await voidDiaper(id)
-        : kind === 'nursing' ? await voidNursing(id)
-          : await voidSleep(id)
+    const result =
+      kind === 'feeding'
+        ? await voidFeeding(id)
+        : kind === 'diaper'
+          ? await voidDiaper(id)
+          : kind === 'nursing'
+            ? await voidNursing(id)
+            : await voidSleep(id)
 
     if (result.error) {
       setErr(`Couldn't delete — ${result.error}`)
@@ -232,8 +271,19 @@ export default function HistoryPage() {
     setBusy(false)
   }
 
-  if (loading) return <Page><p className="empty">Loading…</p></Page>
-  if (!baby) return <Page><Nav /><NoBaby /></Page>
+  if (loading)
+    return (
+      <Page>
+        <p className="empty">Loading…</p>
+      </Page>
+    )
+  if (!baby)
+    return (
+      <Page>
+        <Nav />
+        <NoBaby />
+      </Page>
+    )
 
   return (
     <Page>
@@ -245,7 +295,9 @@ export default function HistoryPage() {
 
       <Grid>
         {days.length === 0 ? (
-          <Card><div className="empty">Nothing logged yet.</div></Card>
+          <Card>
+            <div className="empty">Nothing logged yet.</div>
+          </Card>
         ) : (
           days.map((day) => (
             <Card key={day.key} spanAll>
@@ -264,13 +316,17 @@ export default function HistoryPage() {
                         {isEditable(entry.kind) && !isEditing && (
                           <span className="feed-actions">
                             <button
-                              type="button" className="linkish" disabled={busy}
+                              type="button"
+                              className="linkish"
+                              disabled={busy}
                               onClick={() => startEdit(entry)}
                             >
                               Edit
                             </button>
                             <button
-                              type="button" className="linkish" disabled={busy}
+                              type="button"
+                              className="linkish"
+                              disabled={busy}
                               onClick={() => deleteEntry(entry)}
                             >
                               Delete
@@ -283,26 +339,40 @@ export default function HistoryPage() {
                         <div className="edit-panel">
                           <div className="row">
                             {(['bottle', 'solid', 'nursing'] as FeedingType[]).map((t) => (
-                              <Btn key={t} variant={fType === t ? 'action' : 'quiet'} onClick={() => setFType(t)}>
+                              <Btn
+                                key={t}
+                                variant={fType === t ? 'action' : 'quiet'}
+                                onClick={() => setFType(t)}
+                              >
                                 {t[0].toUpperCase() + t.slice(1)}
                               </Btn>
                             ))}
                           </div>
                           {fType === 'bottle' && (
                             <input
-                              className="input narrow" value={fAmount}
+                              className="input narrow"
+                              value={fAmount}
                               onChange={(e) => setFAmount(e.target.value)}
-                              inputMode="decimal" placeholder={unit} aria-label={`Amount in ${unit}`}
+                              inputMode="decimal"
+                              placeholder={unit}
+                              aria-label={`Amount in ${unit}`}
                             />
                           )}
                           <input
-                            type="datetime-local" className="input" value={fAt}
+                            type="datetime-local"
+                            className="input"
+                            value={fAt}
                             onChange={(e) => setFAt(e.target.value)}
-                            max={toHouseholdInputValue()} aria-label="Time it happened"
+                            max={toHouseholdInputValue()}
+                            aria-label="Time it happened"
                           />
                           <div className="row-tight">
-                            <Btn disabled={busy} onClick={saveEdit}>Save</Btn>
-                            <Btn variant="quiet" onClick={() => setEditing(null)}>Cancel</Btn>
+                            <Btn disabled={busy} onClick={saveEdit}>
+                              Save
+                            </Btn>
+                            <Btn variant="quiet" onClick={() => setEditing(null)}>
+                              Cancel
+                            </Btn>
                           </div>
                         </div>
                       )}
@@ -311,19 +381,30 @@ export default function HistoryPage() {
                         <div className="edit-panel">
                           <div className="row">
                             {(['wet', 'dirty', 'both'] as DiaperType[]).map((t) => (
-                              <Btn key={t} variant={dType === t ? 'action' : 'quiet'} onClick={() => setDType(t)}>
+                              <Btn
+                                key={t}
+                                variant={dType === t ? 'action' : 'quiet'}
+                                onClick={() => setDType(t)}
+                              >
                                 {t[0].toUpperCase() + t.slice(1)}
                               </Btn>
                             ))}
                           </div>
                           <input
-                            type="datetime-local" className="input" value={dAt}
+                            type="datetime-local"
+                            className="input"
+                            value={dAt}
                             onChange={(e) => setDAt(e.target.value)}
-                            max={toHouseholdInputValue()} aria-label="Time it happened"
+                            max={toHouseholdInputValue()}
+                            aria-label="Time it happened"
                           />
                           <div className="row-tight">
-                            <Btn disabled={busy} onClick={saveEdit}>Save</Btn>
-                            <Btn variant="quiet" onClick={() => setEditing(null)}>Cancel</Btn>
+                            <Btn disabled={busy} onClick={saveEdit}>
+                              Save
+                            </Btn>
+                            <Btn variant="quiet" onClick={() => setEditing(null)}>
+                              Cancel
+                            </Btn>
                           </div>
                         </div>
                       )}
@@ -332,43 +413,79 @@ export default function HistoryPage() {
                         <div className="edit-panel">
                           <div className="row">
                             {(['left', 'right'] as Side[]).map((s) => (
-                              <Btn key={s} variant={nSide === s ? 'action' : 'quiet'} onClick={() => setNSide(s)}>
+                              <Btn
+                                key={s}
+                                variant={nSide === s ? 'action' : 'quiet'}
+                                onClick={() => setNSide(s)}
+                              >
                                 {s[0].toUpperCase() + s.slice(1)}
                               </Btn>
                             ))}
                           </div>
-                          <label className="label" htmlFor="nursing-start">Started</label>
+                          <label className="label" htmlFor="nursing-start">
+                            Started
+                          </label>
                           <input
-                            id="nursing-start" type="datetime-local" className="input" value={nStart}
-                            onChange={(e) => setNStart(e.target.value)} max={toHouseholdInputValue()}
+                            id="nursing-start"
+                            type="datetime-local"
+                            className="input"
+                            value={nStart}
+                            onChange={(e) => setNStart(e.target.value)}
+                            max={toHouseholdInputValue()}
                           />
-                          <label className="label" htmlFor="nursing-end">Ended</label>
+                          <label className="label" htmlFor="nursing-end">
+                            Ended
+                          </label>
                           <input
-                            id="nursing-end" type="datetime-local" className="input" value={nEnd}
-                            onChange={(e) => setNEnd(e.target.value)} max={toHouseholdInputValue()}
+                            id="nursing-end"
+                            type="datetime-local"
+                            className="input"
+                            value={nEnd}
+                            onChange={(e) => setNEnd(e.target.value)}
+                            max={toHouseholdInputValue()}
                           />
                           <div className="row-tight">
-                            <Btn disabled={busy} onClick={saveEdit}>Save</Btn>
-                            <Btn variant="quiet" onClick={() => setEditing(null)}>Cancel</Btn>
+                            <Btn disabled={busy} onClick={saveEdit}>
+                              Save
+                            </Btn>
+                            <Btn variant="quiet" onClick={() => setEditing(null)}>
+                              Cancel
+                            </Btn>
                           </div>
                         </div>
                       )}
 
                       {isEditing && editing.kind === 'sleep' && (
                         <div className="edit-panel">
-                          <label className="label" htmlFor="sleep-start">Started</label>
+                          <label className="label" htmlFor="sleep-start">
+                            Started
+                          </label>
                           <input
-                            id="sleep-start" type="datetime-local" className="input" value={sStart}
-                            onChange={(e) => setSStart(e.target.value)} max={toHouseholdInputValue()}
+                            id="sleep-start"
+                            type="datetime-local"
+                            className="input"
+                            value={sStart}
+                            onChange={(e) => setSStart(e.target.value)}
+                            max={toHouseholdInputValue()}
                           />
-                          <label className="label" htmlFor="sleep-end">Ended</label>
+                          <label className="label" htmlFor="sleep-end">
+                            Ended
+                          </label>
                           <input
-                            id="sleep-end" type="datetime-local" className="input" value={sEnd}
-                            onChange={(e) => setSEnd(e.target.value)} max={toHouseholdInputValue()}
+                            id="sleep-end"
+                            type="datetime-local"
+                            className="input"
+                            value={sEnd}
+                            onChange={(e) => setSEnd(e.target.value)}
+                            max={toHouseholdInputValue()}
                           />
                           <div className="row-tight">
-                            <Btn disabled={busy} onClick={saveEdit}>Save</Btn>
-                            <Btn variant="quiet" onClick={() => setEditing(null)}>Cancel</Btn>
+                            <Btn disabled={busy} onClick={saveEdit}>
+                              Save
+                            </Btn>
+                            <Btn variant="quiet" onClick={() => setEditing(null)}>
+                              Cancel
+                            </Btn>
                           </div>
                         </div>
                       )}

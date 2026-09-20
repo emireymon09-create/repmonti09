@@ -30,13 +30,21 @@ export default function AppointmentsPage() {
     setRows(data)
   }, [])
 
-  useEffect(() => { if (baby) refresh(baby.id) }, [baby, refresh])
+  useEffect(() => {
+    if (baby) refresh(baby.id)
+  }, [baby, refresh])
 
   async function save(e: React.FormEvent) {
     e.preventDefault()
     if (!baby || busy) return
-    if (!title.trim()) { setErr('Give the appointment a title.'); return }
-    if (!when) { setErr('Pick a date and time.'); return }
+    if (!title.trim()) {
+      setErr('Give the appointment a title.')
+      return
+    }
+    if (!when) {
+      setErr('Pick a date and time.')
+      return
+    }
 
     setErr(null)
     setBusy(true)
@@ -50,9 +58,19 @@ export default function AppointmentsPage() {
     })
     setBusy(false)
 
-    if (error) { setErr(`Couldn't save — ${error}`); return }
-    setSaved(queued ? 'Saved on this device — will sync when you\u2019re back online' : 'Appointment saved')
-    setTitle(''); setDoctor(''); setNotes(''); setType('checkup')
+    if (error) {
+      setErr(`Couldn't save — ${error}`)
+      return
+    }
+    setSaved(
+      queued
+        ? 'Saved on this device — will sync when you\u2019re back online'
+        : 'Appointment saved',
+    )
+    setTitle('')
+    setDoctor('')
+    setNotes('')
+    setType('checkup')
     setWhen(toHouseholdInputValue())
     setShowForm(false)
     refresh(baby.id)
@@ -63,25 +81,43 @@ export default function AppointmentsPage() {
     setBusy(true)
     const { error } = await setAppointmentCompleted(appt.id, !appt.completed)
     setBusy(false)
-    if (error) { setErr(`Couldn't update — ${error}`); return }
+    if (error) {
+      setErr(`Couldn't update — ${error}`)
+      return
+    }
     refresh(baby.id)
   }
 
-  if (loading) return <Page><p className="empty">Loading…</p></Page>
-  if (!baby) return <Page><Nav /><NoBaby /></Page>
+  if (loading)
+    return (
+      <Page>
+        <p className="empty">Loading…</p>
+      </Page>
+    )
+  if (!baby)
+    return (
+      <Page>
+        <Nav />
+        <NoBaby />
+      </Page>
+    )
 
   const now = Date.now()
   const upcoming = rows.filter((r) => !r.completed && new Date(r.scheduled_at).getTime() >= now)
-  const past = rows
-    .filter((r) => r.completed || new Date(r.scheduled_at).getTime() < now)
-    .reverse()
+  const past = rows.filter((r) => r.completed || new Date(r.scheduled_at).getTime() < now).reverse()
 
   return (
     <Page>
       <Nav babyId={baby.id} />
       <div className="between">
         <h1 className="title">Doctor</h1>
-        <button className="pill" onClick={() => { setShowForm((v) => !v); setErr(null) }}>
+        <button
+          className="pill"
+          onClick={() => {
+            setShowForm((v) => !v)
+            setErr(null)
+          }}
+        >
           {showForm ? 'Cancel' : '+ Add'}
         </button>
       </div>
@@ -95,23 +131,51 @@ export default function AppointmentsPage() {
           <form onSubmit={save}>
             <Label>New appointment</Label>
             <div className="stack">
-              <input className="input" value={title} onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g. 2-month checkup" aria-label="Title" />
-              <select className="input" value={type} aria-label="Appointment type"
-                onChange={(e) => setType(e.target.value as AppointmentType)}>
+              <input
+                className="input"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. 2-month checkup"
+                aria-label="Title"
+              />
+              <select
+                className="input"
+                value={type}
+                aria-label="Appointment type"
+                onChange={(e) => setType(e.target.value as AppointmentType)}
+              >
                 {(Object.keys(APPOINTMENT_TYPE_LABELS) as AppointmentType[]).map((key) => (
-                  <option key={key} value={key}>{APPOINTMENT_TYPE_LABELS[key]}</option>
+                  <option key={key} value={key}>
+                    {APPOINTMENT_TYPE_LABELS[key]}
+                  </option>
                 ))}
               </select>
-              <input className="input" type="datetime-local" value={when}
-                onChange={(e) => setWhen(e.target.value)} aria-label="Date and time" />
-              <input className="input" value={doctor} onChange={(e) => setDoctor(e.target.value)}
-                placeholder="Doctor (optional)" aria-label="Doctor" />
-              <input className="input" value={notes} onChange={(e) => setNotes(e.target.value)}
-                placeholder="Notes (optional)" aria-label="Notes" />
+              <input
+                className="input"
+                type="datetime-local"
+                value={when}
+                onChange={(e) => setWhen(e.target.value)}
+                aria-label="Date and time"
+              />
+              <input
+                className="input"
+                value={doctor}
+                onChange={(e) => setDoctor(e.target.value)}
+                placeholder="Doctor (optional)"
+                aria-label="Doctor"
+              />
+              <input
+                className="input"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Notes (optional)"
+                aria-label="Notes"
+              />
             </div>
             <div className="row-tight">
-              <Btn type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save appointment'}</Btn>
+              <Btn type="submit" disabled={busy}>
+                {busy ? 'Saving…' : 'Save appointment'}
+              </Btn>
             </div>
             <p className="note">
               Stored here only. Syncing to the shared calendar is the Hub&rsquo;s job later.
@@ -123,7 +187,9 @@ export default function AppointmentsPage() {
       <Label>Upcoming</Label>
       <Grid>
         {upcoming.length === 0 ? (
-          <Card><div className="empty">Nothing scheduled.</div></Card>
+          <Card>
+            <div className="empty">Nothing scheduled.</div>
+          </Card>
         ) : (
           upcoming.map((appt) => (
             <ApptCard key={appt.id} appt={appt} onToggle={toggleCompleted} busy={busy} />
@@ -145,7 +211,12 @@ export default function AppointmentsPage() {
   )
 }
 
-function ApptCard({ appt, onToggle, busy, past }: {
+function ApptCard({
+  appt,
+  onToggle,
+  busy,
+  past,
+}: {
   appt: DoctorAppointment
   onToggle: (appt: DoctorAppointment) => void
   busy: boolean

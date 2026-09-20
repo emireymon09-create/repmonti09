@@ -24,7 +24,9 @@ export function useBaby() {
     let cancelled = false
 
     async function load() {
-      const { data: { user } } = await createClient().auth.getUser()
+      const {
+        data: { user },
+      } = await createClient().auth.getUser()
       if (!user) {
         router.replace('/login')
         return
@@ -37,7 +39,9 @@ export function useBaby() {
     }
 
     load()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [router])
 
   // Re-reads just the baby row — for the moment `birth_date` actually

@@ -20,15 +20,24 @@ export const HOUSEHOLD_TZ = 'America/Los_Angeles'
 /** How far the household timezone sits from UTC at a given instant. */
 function tzOffsetMs(at: Date): number {
   const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: HOUSEHOLD_TZ, hour12: false,
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    timeZone: HOUSEHOLD_TZ,
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
   }).formatToParts(at)
 
   const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? '0')
   const asIfUtc = Date.UTC(
-    get('year'), get('month') - 1, get('day'),
-    get('hour') % 24, get('minute'), get('second'),
+    get('year'),
+    get('month') - 1,
+    get('day'),
+    get('hour') % 24,
+    get('minute'),
+    get('second'),
   )
   return asIfUtc - at.getTime()
 }
@@ -50,8 +59,11 @@ export function longDate(iso: string | number | Date): string {
 
 export function apptWhen(iso: string): string {
   return fmt(iso, {
-    weekday: 'short', month: 'short', day: 'numeric',
-    hour: 'numeric', minute: '2-digit',
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
   })
 }
 
@@ -60,7 +72,10 @@ export function measuredOn(dateOnly: string): string {
   // rather than shifting it across midnight into another day.
   const [y, m, d] = dateOnly.split('-').map(Number)
   return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString([], {
-    timeZone: 'UTC', month: 'long', day: 'numeric', year: 'numeric',
+    timeZone: 'UTC',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
   })
 }
 
@@ -133,7 +148,10 @@ export function kgToLbOz(kg: number): string {
   const total = kg * LB_PER_KG
   let lb = Math.floor(total)
   let oz = Math.round((total - lb) * 16)
-  if (oz === 16) { lb += 1; oz = 0 }
+  if (oz === 16) {
+    lb += 1
+    oz = 0
+  }
   return `${lb} lb ${oz} oz`
 }
 
@@ -178,13 +196,18 @@ export function unitToMl(amount: number, unit: VolumeUnit): number {
 }
 
 /** "6 days old" / "5 weeks old" / "3 months old" — null before birth. */
-export function ageFrom(birthDate: string | null | undefined, now: Date = new Date()): string | null {
+export function ageFrom(
+  birthDate: string | null | undefined,
+  now: Date = new Date(),
+): string | null {
   if (!birthDate) return null
   const [y, m, d] = birthDate.split('-').map(Number)
   const bornUtc = Date.UTC(y, m - 1, d)
   const nowLocalDay = new Date(now.getTime() + tzOffsetMs(now))
   const todayUtc = Date.UTC(
-    nowLocalDay.getUTCFullYear(), nowLocalDay.getUTCMonth(), nowLocalDay.getUTCDate(),
+    nowLocalDay.getUTCFullYear(),
+    nowLocalDay.getUTCMonth(),
+    nowLocalDay.getUTCDate(),
   )
   const days = Math.floor((todayUtc - bornUtc) / 86_400_000)
   if (days < 0) return null

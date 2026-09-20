@@ -5,6 +5,10 @@ Después leé `PROJECT.md` (arquitectura y estado) y `design.md` (UI/UX).
 Si algo en `PROJECT.md` o en el README contradice a este archivo, **este
 archivo manda** — y avisá de la contradicción en vez de elegir en silencio.
 
+Para **trabajar** (no para entender el proyecto), la doc operativa vive en
+`docs/`: manual de buenas prácticas, checklist de cada cambio, prompt de
+auditoría y seguridad operacional. Índice: `docs/README.md`.
+
 ---
 
 ## 0. Regla número uno — investigar antes de hablar
@@ -21,10 +25,18 @@ lo que "suele hacer" un proyecto Next + Supabase.
 
 En este repo esto no es teórico. Ejemplos reales de doc que miente:
 
-- `lib/format.ts` y `PROJECT.md` afirman que hay tests de timezone.
-  **No hay ningún test en el repo.**
-- El README dice que la PWA, la UI de sueño y la de crecimiento "no
-  están construidas". **Están construidas.**
+- El README mandaba `npm install -g supabase` y
+  `cp .env.local.dev .env.local`. Lo primero está prohibido acá y además
+  Supabase no soporta esa instalación; lo segundo apunta a un archivo
+  que **no existe** (el que existe es `.env.local.example`). Reescrito el
+  20 sep 2026 — pero el hábito de verificar es lo único que agarra la
+  próxima.
+- El README decía que la PWA, la UI de sueño y la de crecimiento "no
+  están construidas". **Están construidas.** Corregido el 20 sep 2026.
+- *(Cerrado el 20 sep 2026: `lib/format.ts` y `PROJECT.md` afirmaban que
+  había tests de timezone y no había un solo test en el repo. Ahora los
+  hay — `tests/unit/format.test.ts`, `pnpm test:tz`. Se deja anotado
+  porque la lección no es sobre los tests, es sobre la doc.)*
 - `PROJECT.md` referencia `CONVENTIONS.md`, `ARCHITECTURE.md`,
   `FAMILY_HUB.md` y varios ADR. **Ninguno existe en este repo** — viven
   en el repo del Hub, que todavía no está acá.
@@ -71,9 +83,9 @@ viole esto se rechaza sin discusión.
 | Acceso a datos | Cliente Supabase (PostgREST) directo. **No hay ORM.** |
 | Estilos | CSS plano + custom properties en `app/globals.css`. **No hay Tailwind ni CSS-in-JS.** |
 | Migraciones | SQL a mano en `supabase/migrations/` |
-| Gestor de paquetes | **npm** |
-| Tests | **Ninguno** (por definir) |
-| Lint / format | **Ninguno** (por definir) |
+| Gestor de paquetes | **pnpm** (lockfile commiteado) |
+| Tests | **Vitest** — unit bajo 4 TZ + integración contra el Supabase local |
+| Lint / format | **ESLint** (`next/core-web-vitals` + `prettier`) y **Prettier** |
 | Deploy | Vercel previsto — todavía no desplegado |
 
 No es un monorepo. Hay un solo `package.json`, en la raíz.
@@ -90,7 +102,13 @@ lib/supabaseClient.ts   anon key — browser. Protegido por RLS.
 lib/supabaseAdmin.ts    service_role — SOLO server. Salta RLS.
 app/globals.css    TODO el CSS del proyecto.
 components/ui.tsx  Page, Grid, Card, Label, Btn, Banner, Nav.
+lib/deviceAuth.ts  Auth de los endpoints de dispositivo: comparación en tiempo
+                   constante, techo de intentos, validación de payload.
+middleware.ts      Guard de auth server-side. NO reemplaza a RLS: evita que una
+                   ruta privada se renderice antes de rebotar al login.
 public/sw.js       Service worker: que la app ABRA sin conexión.
+tests/             Vitest. unit/ no necesita nada; integration/ necesita el
+                   stack local levantado.
 ```
 
 ---
@@ -99,30 +117,44 @@ public/sw.js       Service worker: que la app ABRA sin conexión.
 
 ```bash
 # Dependencias
-npm install
+corepack enable             # una sola vez por máquina
+pnpm install
 
 # Base de datos local (necesita Docker corriendo)
-npm install -g supabase     # una sola vez
-supabase start              # levanta Postgres + Auth + API + Studio
-supabase db reset           # re-aplica las migraciones desde cero
+# El CLI de Supabase es devDependency: NO se instala global.
+pnpm exec supabase start    # levanta Postgres + Auth + API + Studio
+pnpm exec supabase db reset # re-aplica las migraciones desde cero
+pnpm exec supabase stop     # bajalo al terminar (bindea a 0.0.0.0)
 # Studio local: http://localhost:54323
 
 # Entorno
-cp .env.local.example .env.local   # y completá los valores
+cp .env.local.example .env.local   # y completá con lo que imprime supabase start
 
 # Desarrollo
-npm run dev                 # http://localhost:3000
+pnpm dev                    # http://localhost:3000
 
 # Build / producción
-npm run build
-npm start
+pnpm build
+pnpm start
 
-# Test   -> por definir (no hay runner instalado)
-# Lint   -> por definir (no hay eslint ni prettier)
+# Tests
+pnpm test                   # unit (lib/format.ts, lib/queue.ts). Sin Docker
+pnpm test:tz                # los mismos, bajo UTC / LA / Tokio / Kiritimati
+pnpm test:integration       # RLS + endpoints. NECESITA el stack local
+pnpm test:all               # test:tz + test:integration
+bash scripts/test-env.sh    # escribe .env.test leyendo el estado real del stack
+
+# Lint / format
+pnpm lint
+pnpm format                 # escribe
+pnpm format:check           # solo verifica
+
+# Chequeo de tipos
+pnpm exec tsc --noEmit
 ```
 
-**Chequeo de tipos:** no hay script propio. `npm run build` corre el
-type-check de Next. Para chequear sin buildear: `npx tsc --noEmit`.
+`pnpm build` también corre el type-check de Next, pero `pnpm exec tsc
+--noEmit` es más rápido cuando es lo único que querés saber.
 
 ---
 
@@ -160,11 +192,22 @@ que sea una decisión explícita, no una deriva commit a commit.
 
 ### 5.1 Gestor de paquetes
 
-**npm.** No corras `pnpm` ni `yarn` en este repo.
+**pnpm, y solo pnpm.** `npm` y `yarn` están prohibidos en este repo — en
+comandos, en scripts, en documentación y en mensajes de commit.
 
-> **Hueco conocido:** no hay lockfile commiteado. Los builds no son
-> reproducibles. Cerrar esto (commitear `package-lock.json`) es una
-> mejora pendiente, no una licencia para cambiar de gestor.
+`scripts/only-pnpm.mjs` corre en `preinstall` y aborta si el gestor no es
+pnpm. La versión sale de `packageManager` en `package.json`; en una
+máquina nueva, `corepack enable` y listo.
+
+`pnpm-lock.yaml` **va commiteado**, siempre. El "hueco conocido" de los
+builds no reproducibles se cerró el 20 sep 2026.
+
+> **Nota de pnpm 11:** la configuración del proyecto se lee de
+> `pnpm-workspace.yaml`, no del campo `"pnpm"` de `package.json`, que pnpm
+> ignora. Ese archivo **no** convierte el repo en monorepo: no tiene clave
+> `packages`. Está ahí para permitir los scripts de instalación de
+> `unrs-resolver` (eslint) y `esbuild` (vitest); sin eso, ni `pnpm lint` ni
+> `pnpm test` arrancan.
 
 ### 5.2 Migraciones
 
@@ -221,8 +264,11 @@ Esto es una regla de producto, no un detalle técnico:
 
 Según `PROJECT.md`, y salvo que Emilio lo pida explícitamente:
 
-- **No crear un repo propio en GitHub** para este directorio. Va a ser
-  `apps/amelia` dentro del monorepo del Hub.
+- **No crear otro repo en GitHub** para este directorio. Ya hay uno:
+  `origin` apunta a `git@github.com:emireymon09-create/repmonti09.git`
+  (verificado con `git remote -v` el 20 sep 2026 — `PROJECT.md` decía que
+  no había remote, y era falso). A futuro esto va a ser `apps/amelia`
+  dentro del monorepo del Hub.
 - **No crear un proyecto Supabase en la nube.** La base compartida la
   crea el agente del Hub (ADR 0001).
 - **No construir calendario, comidas, tareas ni riego.** Eso es del Hub.
@@ -234,20 +280,35 @@ Según `PROJECT.md`, y salvo que Emilio lo pida explícitamente:
 **Construido y funcionando:** auth, dashboard completo (lactancia,
 biberón, sólidos, pañales, sueño, predicciones), Milk (extracción),
 Growth, Doctor, History con editar/borrar, PWA instalable, cola offline,
-RLS en las 11 tablas, los dos endpoints de dispositivo.
+RLS en las 11 tablas, los dos endpoints de dispositivo, **middleware de
+auth server-side**, **lockfile de pnpm**, **lint y format**, y **una
+suite de tests**.
+
+**Alcance exacto de los tests** (que no es "hay tests" a secas):
+
+| Cubierto | Archivo |
+|---|---|
+| `lib/format.ts` — fechas, horas, DST, unidades, edad | `tests/unit/format.test.ts`, bajo cuatro TZ |
+| `lib/queue.ts` — orden de replay, descartes, `looksOffline`, `newId` | `tests/unit/queue.test.ts` |
+| Aislamiento entre familias por RLS, por el camino real (PostgREST + JWT) | `tests/integration/rls.test.ts` |
+| Los dos endpoints de dispositivo: auth, validación, rate limit, scoping | `tests/integration/{ingest,quick-nurse}.test.ts` |
+
+**NO hay tests de componentes ni de páginas.** Lo que se cubre es `lib/`
+y la base.
 
 **No construido:**
 
-- Tests automatizados (**cero**, pese a lo que dice la doc)
-- Lint / format
-- Lockfile
-- CI, deploy, proyecto Supabase en la nube
-- Middleware de auth server-side (el guard es client-side; lo que
-  protege los datos es RLS)
+- Tests de componentes y de páginas
+- CI
+- Deploy, y proyecto Supabase en la nube (lo crea el agente del Hub)
 - La automatización de Home Assistant que llamaría a `/api/ingest`
   (el endpoint existe, **nada lo llama**)
 - Uso real de `family_members.role` (la columna existe, nadie la lee →
   hoy todos los miembros tienen los mismos permisos)
+- Corregir o retractar una medición de `growth_measurements` — necesita
+  schema ⇒ `proposals/growth-edit-and-void.md`
+- Tokens por dispositivo e idempotencia ⇒
+  `proposals/device-tokens-and-idempotency.md`
 
 ---
 
@@ -258,20 +319,34 @@ RLS en las 11 tablas, los dos endpoints de dispositivo.
    ingest se muda a `apps/hub`, o la regla necesita una excepción.
 2. Cuál de las dos cajas (NUC o HA Green) deriva los eventos de sueño y
    llama a `/api/ingest` — **no está decidido**.
-3. `/api/quick/nurse` asume **un solo bebé en toda la base** (toma el
-   `babies` más antiguo sin filtrar por familia) y corre con
-   `service_role`, o sea que salta RLS. Correcto para un hogar, incorrecto
-   apenas haya más de una familia.
-4. Los secretos de dispositivo son estáticos y compartidos, sin
-   idempotencia ni rate limiting. ADR 0005 pide tokens hasheados por
-   dispositivo. No implementado.
+3. `/api/quick/nurse` corre con `service_role`, o sea que salta RLS, y el
+   secreto que lo autentica no dice a qué familia pertenece. **Parcheado,
+   no resuelto** (20 sep 2026): `QUICK_TOGGLE_BABY_ID` fija el bebé, y sin
+   esa variable y con más de un bebé en la base el endpoint **falla
+   cerrado** (409) en vez de adivinar. El arreglo de fondo —resolver el
+   bebé desde un token por dispositivo— sigue abierto ⇒
+   `proposals/device-tokens-and-idempotency.md`.
+4. Los secretos de dispositivo siguen siendo **estáticos y compartidos**.
+   Desde el 20 sep 2026 hay comparación en tiempo constante y un techo de
+   20 intentos por minuto y por IP (`lib/deviceAuth.ts`), pero el contador
+   vive en la memoria de un proceso: con varias instancias no sirve. Y
+   sigue sin haber idempotencia. ADR 0005 pide tokens hasheados por
+   dispositivo; propuesto, no implementado.
+5. El stack local de Supabase **bindea a `0.0.0.0`**, no a localhost. En
+   este VPS, Studio y la API responden en la interfaz pública. No pude
+   verificar si un firewall lo tapa (no hay sudo). Mientras tanto:
+   `pnpm exec supabase stop` al terminar. Ver
+   `docs/seguridad-operacional.md` §6.
 
 ---
 
 ## 8. Antes de decir "listo"
 
-- [ ] `npx tsc --noEmit` pasa
-- [ ] `npm run build` pasa
+- [ ] `pnpm exec tsc --noEmit` pasa
+- [ ] `pnpm lint` y `pnpm format:check` pasan
+- [ ] `pnpm build` pasa
+- [ ] `pnpm test:all` pasa — y si no pudiste correr los de integración
+      (Docker apagado), **lo decís**, no lo das por bueno
 - [ ] Lo probaste contra el Supabase local, no solo lo leíste
 - [ ] Ningún hex ni px nuevo fuera de `app/globals.css` (ver `design.md`)
 - [ ] Ninguna query nueva fuera de `lib/db.ts`

@@ -19,12 +19,16 @@ export default function LoginPage() {
     setError(null)
 
     const supabase = createClient()
-    const { error } = mode === 'signin'
-      ? await supabase.auth.signInWithPassword({ email, password })
-      : await supabase.auth.signUp({ email, password })
+    const { error } =
+      mode === 'signin'
+        ? await supabase.auth.signInWithPassword({ email, password })
+        : await supabase.auth.signUp({ email, password })
 
     setLoading(false)
-    if (error) { setError(error.message); return }
+    if (error) {
+      setError(error.message)
+      return
+    }
     router.push('/dashboard')
   }
 
@@ -37,15 +41,32 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit}>
             <div className="stack">
               <div>
-                <label className="label" htmlFor="email">Email</label>
-                <input id="email" className="input" type="email" value={email}
-                  onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
+                <label className="label" htmlFor="email">
+                  Email
+                </label>
+                <input
+                  id="email"
+                  className="input"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  autoComplete="email"
+                />
               </div>
               <div>
-                <label className="label" htmlFor="password">Password</label>
-                <input id="password" className="input" type="password" value={password}
-                  onChange={(e) => setPassword(e.target.value)} required
-                  autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} />
+                <label className="label" htmlFor="password">
+                  Password
+                </label>
+                <input
+                  id="password"
+                  className="input"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
+                />
               </div>
             </div>
             <div className="row-tight">
@@ -55,7 +76,10 @@ export default function LoginPage() {
             </div>
           </form>
         </Card>
-        <button className="linkish" onClick={() => setMode(mode === 'signin' ? 'signup' : 'signin')}>
+        <button
+          className="linkish"
+          onClick={() => setMode(mode === 'signin' ? 'signup' : 'signin')}
+        >
           {mode === 'signin' ? 'Need an account? Sign up' : 'Already have an account? Sign in'}
         </button>
       </div>
