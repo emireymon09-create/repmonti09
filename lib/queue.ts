@@ -85,7 +85,11 @@ export async function flushQueue(
 
     const { error } = await send(write.op)
     if (error) {
-      return { sent, dropped, remaining: pending.length - i - dropped, error }
+      // Lo que sigue en el store son las entradas de `i` en adelante, esta
+      // incluida. Los descartes ya salieron y ya quedaron detrás del índice:
+      // restarlos otra vez contaba de menos y la UI podía decir "0
+      // pendientes" con una escritura adentro (CLAUDE.md §5.5).
+      return { sent, dropped, remaining: pending.length - i, error }
     }
 
     await store.remove(write.id)
