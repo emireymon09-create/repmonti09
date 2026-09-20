@@ -16,6 +16,9 @@ export type SleepSource = 'manual' | 'nuc_derived'
 export type PumpSide = 'left' | 'right' | 'both'
 export type AppointmentType = 'checkup' | 'vaccine' | 'sick_visit' | 'other'
 
+/** Display/entry unit for milk amounts. Stored as ml either way. */
+export type VolumeUnit = 'oz' | 'ml'
+
 export type Baby = {
   id: string
   name: string
@@ -97,6 +100,7 @@ export type WithPending<T> = T & { pending?: boolean }
  * source changes.
  */
 export type ActivityEntry = {
+  id: string
   at: string
   kind: 'feeding' | 'nursing' | 'diaper' | 'sleep' | 'growth'
   what: string

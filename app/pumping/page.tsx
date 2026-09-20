@@ -5,10 +5,10 @@ import { useBaby } from '@/lib/useBaby'
 import { NoBaby } from '@/components/NoBaby'
 import { Banner, Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
 import { SyncStatus } from '@/components/SyncStatus'
-import { logPumping, recentPumping, totalPumped } from '@/lib/db'
+import { logPumping, recentPumping, totalPumped, updatePumping, voidPumping } from '@/lib/db'
 import type { PumpingSession, PumpSide } from '@/lib/types'
 import {
-  clockTime, flOzToMl, fromHouseholdInputValue, longDate, mlToFlOz, toHouseholdInputValue,
+  clockTime, flOzToMl, fromHouseholdInputValue, longDate, ML_PER_FL_OZ, mlToFlOz, toHouseholdInputValue,
 } from '@/lib/format'
 
 const SIDES: { value: PumpSide; label: string }[] = [
@@ -30,6 +30,13 @@ export default function PumpingPage() {
   const [err, setErr] = useState<string | null>(null)
   const [saved, setSaved] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+
+  // Editing an already-logged session — separate from the log form above.
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [eSide, setESide] = useState<PumpSide>('both')
+  const [eOz, setEOz] = useState('')
+  const [eNotes, setENotes] = useState('')
+  const [eAt, setEAt] = useState('')
 
   const refresh = useCallback(async (babyId: string) => {
     const { data, error } = await recentPumping(babyId, 100)
@@ -64,6 +71,55 @@ export default function PumpingPage() {
     setSaved(queued ? 'Saved on this device — will sync when you’re back online' : 'Session logged')
     setOz(''); setNotes(''); setAt(toHouseholdInputValue(new Date()))
     refresh(baby.id)
+  }
+
+  function startEdit(row: PumpingSession) {
+    setErr(null)
+    setESide(row.side)
+    setEOz(row.amount_ml != null ? (row.amount_ml / ML_PER_FL_OZ).toFixed(1) : '')
+    setENotes(row.notes ?? '')
+    setEAt(toHouseholdInputValue(new Date(row.pumped_at)))
+    setEditingId(row.id)
+  }
+
+  async function saveEdit() {
+    if (!editingId || busy) return
+    setErr(null)
+
+    const trimmed = eOz.trim()
+    let amountMl: number | null = null
+    if (trimmed !== '') {
+      const parsed = Number(trimmed)
+      if (!Number.isFinite(parsed)) { setErr('Amount has to be a number.'); return }
+      amountMl = Number(flOzToMl(parsed).toFixed(1))
+    }
+
+    setBusy(true)
+    const { error } = await updatePumping(editingId, {
+      side: eSide, amount_ml: amountMl, notes: eNotes.trim() || null,
+      pumped_at: fromHouseholdInputValue(eAt),
+    })
+    setBusy(false)
+
+    if (error) { setErr(`Couldn't save — ${error}`); return }
+    setSaved('Saved')
+    setEditingId(null)
+    if (baby) refresh(baby.id)
+  }
+
+  async function deleteRow(id: string) {
+    if (busy) return
+    if (!window.confirm('Remove this session? It comes out of the stash total too.')) return
+
+    setBusy(true)
+    setErr(null)
+    const { error } = await voidPumping(id)
+    setBusy(false)
+
+    if (error) { setErr(`Couldn't delete — ${error}`); return }
+    if (editingId === id) setEditingId(null)
+    setSaved('Deleted')
+    if (baby) refresh(baby.id)
   }
 
   if (loading) return <Page><p className="empty">Loading…</p></Page>
@@ -132,12 +188,53 @@ export default function PumpingPage() {
         ) : (
           rows.map((row) => (
             <Card key={row.id}>
-              <Label>{longDate(row.pumped_at)} · {clockTime(row.pumped_at)}</Label>
-              <div className="value">
-                {row.amount_ml != null ? mlToFlOz(row.amount_ml) : 'No amount'}
-                {' · '}{SIDES.find((s) => s.value === row.side)?.label ?? row.side}
-              </div>
-              {row.notes && <div className="meta">{row.notes}</div>}
+              {editingId === row.id ? (
+                <div className="stack">
+                  <Label>Edit session</Label>
+                  <div className="row">
+                    {SIDES.map((s) => (
+                      <button
+                        key={s.value}
+                        type="button"
+                        className={eSide === s.value ? 'btn' : 'btn quiet'}
+                        onClick={() => setESide(s.value)}
+                      >
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                  <input className="input" value={eOz} onChange={(e) => setEOz(e.target.value)}
+                    inputMode="decimal" placeholder="oz (optional)" aria-label="Amount, ounces" />
+                  <input className="input" value={eNotes} onChange={(e) => setENotes(e.target.value)}
+                    placeholder="Notes (optional)" aria-label="Notes" />
+                  <input type="datetime-local" className="input" value={eAt}
+                    onChange={(e) => setEAt(e.target.value)}
+                    max={toHouseholdInputValue(new Date())} aria-label="Time it happened" />
+                  <div className="row-tight">
+                    <Btn disabled={busy} onClick={saveEdit}>Save</Btn>
+                    <Btn variant="quiet" onClick={() => setEditingId(null)}>Cancel</Btn>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="between">
+                    <Label>{longDate(row.pumped_at)} · {clockTime(row.pumped_at)}</Label>
+                    <span className="feed-actions">
+                      <button type="button" className="linkish" disabled={busy} onClick={() => startEdit(row)}>
+                        Edit
+                      </button>
+                      <button type="button" className="linkish" disabled={busy} onClick={() => deleteRow(row.id)}>
+                        Delete
+                      </button>
+                    </span>
+                  </div>
+                  <div className="value">
+                    {row.amount_ml != null ? mlToFlOz(row.amount_ml) : 'No amount'}
+                    {' · '}{SIDES.find((s) => s.value === row.side)?.label ?? row.side}
+                  </div>
+                  {row.notes && <div className="meta">{row.notes}</div>}
+                </>
+              )}
             </Card>
           ))
         )}

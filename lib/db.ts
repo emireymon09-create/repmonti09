@@ -155,7 +155,8 @@ export function recordBirth(babyId: string, birthDate: string): Promise<Result<n
 export async function recentFeedings(babyId: string, limit = 20): Promise<Result<Feeding[]>> {
   const { data: rows, error } = await data()
     .from('feedings').select('id, fed_at, feeding_type, amount_ml, notes')
-    .eq('baby_id', babyId).order('fed_at', { ascending: false }).limit(limit)
+    .eq('baby_id', babyId).is('voided_at', null)
+    .order('fed_at', { ascending: false }).limit(limit)
   if (error) return fail([] as Feeding[], error)
   return ok((rows ?? []) as Feeding[])
 }
@@ -173,12 +174,27 @@ export function logFeeding(
   })
 }
 
+/** Edit a past feeding — correcting the type, amount, or time after the fact. */
+export function updateFeeding(
+  id: string, patch: Partial<{ feeding_type: FeedingType; amount_ml: number | null; fed_at: string }>,
+): Promise<Result<null>> {
+  return write('Edit feeding', { kind: 'update', table: 'feedings', id, patch })
+}
+
+/** Soft-delete: marks the row retracted rather than removing history. */
+export function voidFeeding(id: string): Promise<Result<null>> {
+  return write('Delete feeding', {
+    kind: 'update', table: 'feedings', id, patch: { voided_at: new Date().toISOString() },
+  })
+}
+
 // --------------------------------------------------------------- diapers
 
 export async function recentDiapers(babyId: string, limit = 20): Promise<Result<DiaperChange[]>> {
   const { data: rows, error } = await data()
     .from('diaper_changes').select('id, changed_at, diaper_type')
-    .eq('baby_id', babyId).order('changed_at', { ascending: false }).limit(limit)
+    .eq('baby_id', babyId).is('voided_at', null)
+    .order('changed_at', { ascending: false }).limit(limit)
   if (error) return fail([] as DiaperChange[], error)
   return ok((rows ?? []) as DiaperChange[])
 }
@@ -195,12 +211,27 @@ export function logDiaper(
   })
 }
 
+/** Edit a past diaper change — correcting the type or time after the fact. */
+export function updateDiaper(
+  id: string, patch: Partial<{ diaper_type: DiaperType; changed_at: string }>,
+): Promise<Result<null>> {
+  return write('Edit diaper', { kind: 'update', table: 'diaper_changes', id, patch })
+}
+
+/** Soft-delete: marks the row retracted rather than removing history. */
+export function voidDiaper(id: string): Promise<Result<null>> {
+  return write('Delete diaper', {
+    kind: 'update', table: 'diaper_changes', id, patch: { voided_at: new Date().toISOString() },
+  })
+}
+
 // --------------------------------------------------------------- nursing
 
 export async function recentNursing(babyId: string, limit = 20): Promise<Result<NursingSession[]>> {
   const { data: rows, error } = await data()
     .from('nursing_sessions').select('id, side, started_at, ended_at')
-    .eq('baby_id', babyId).order('started_at', { ascending: false }).limit(limit)
+    .eq('baby_id', babyId).is('voided_at', null)
+    .order('started_at', { ascending: false }).limit(limit)
   if (error) return fail([] as NursingSession[], error)
   return ok((rows ?? []) as NursingSession[])
 }
@@ -224,12 +255,27 @@ export function endNursing(sessionId: string, at?: string): Promise<Result<null>
   })
 }
 
+/** Edit a past nursing session — correcting the side or start/end time. */
+export function updateNursing(
+  id: string, patch: Partial<{ side: Side; started_at: string; ended_at: string | null }>,
+): Promise<Result<null>> {
+  return write('Edit nursing', { kind: 'update', table: 'nursing_sessions', id, patch })
+}
+
+/** Soft-delete: marks the row retracted rather than removing history. */
+export function voidNursing(id: string): Promise<Result<null>> {
+  return write('Delete nursing', {
+    kind: 'update', table: 'nursing_sessions', id, patch: { voided_at: new Date().toISOString() },
+  })
+}
+
 // --------------------------------------------------------------- sleep
 
 export async function recentSleep(babyId: string, limit = 20): Promise<Result<SleepSession[]>> {
   const { data: rows, error } = await data()
     .from('sleep_sessions').select('id, started_at, ended_at, source')
-    .eq('baby_id', babyId).order('started_at', { ascending: false }).limit(limit)
+    .eq('baby_id', babyId).is('voided_at', null)
+    .order('started_at', { ascending: false }).limit(limit)
   if (error) return fail([] as SleepSession[], error)
   return ok((rows ?? []) as SleepSession[])
 }
@@ -251,6 +297,20 @@ export function endSleep(sessionId: string, at?: string): Promise<Result<null>> 
   })
 }
 
+/** Edit a past sleep session — correcting the start or end time. */
+export function updateSleep(
+  id: string, patch: Partial<{ started_at: string; ended_at: string | null }>,
+): Promise<Result<null>> {
+  return write('Edit sleep', { kind: 'update', table: 'sleep_sessions', id, patch })
+}
+
+/** Soft-delete: marks the row retracted rather than removing history. */
+export function voidSleep(id: string): Promise<Result<null>> {
+  return write('Delete sleep', {
+    kind: 'update', table: 'sleep_sessions', id, patch: { voided_at: new Date().toISOString() },
+  })
+}
+
 // --------------------------------------------------------------- pumping
 
 /**
@@ -261,7 +321,8 @@ export function endSleep(sessionId: string, at?: string): Promise<Result<null>> 
 export async function recentPumping(babyId: string, limit = 20): Promise<Result<PumpingSession[]>> {
   const { data: rows, error } = await data()
     .from('pumping_sessions').select('id, pumped_at, side, amount_ml, notes')
-    .eq('baby_id', babyId).order('pumped_at', { ascending: false }).limit(limit)
+    .eq('baby_id', babyId).is('voided_at', null)
+    .order('pumped_at', { ascending: false }).limit(limit)
   if (error) return fail([] as PumpingSession[], error)
   return ok((rows ?? []) as PumpingSession[])
 }
@@ -276,6 +337,20 @@ export function logPumping(
       id: newId(), ...scope(babyId, userId),
       side, amount_ml: amountMl, notes, pumped_at: at ?? new Date().toISOString(),
     },
+  })
+}
+
+/** Edit a past pumping session — correcting the side, amount, or time. */
+export function updatePumping(
+  id: string, patch: Partial<{ side: PumpSide; amount_ml: number | null; notes: string | null; pumped_at: string }>,
+): Promise<Result<null>> {
+  return write('Edit pumping', { kind: 'update', table: 'pumping_sessions', id, patch })
+}
+
+/** Soft-delete: marks the row retracted rather than removing history. */
+export function voidPumping(id: string): Promise<Result<null>> {
+  return write('Delete pumping', {
+    kind: 'update', table: 'pumping_sessions', id, patch: { voided_at: new Date().toISOString() },
   })
 }
 
@@ -375,22 +450,22 @@ export function buildActivity(
 
   for (const f of feedings) {
     out.push({
-      at: f.fed_at, kind: 'feeding',
+      id: f.id, at: f.fed_at, kind: 'feeding',
       what: mark(f, f.feeding_type === 'bottle'
         ? `Bottle${f.amount_ml ? ` · ${f.amount_ml} ml` : ''}`
         : f.feeding_type === 'solid' ? 'Solids' : 'Nursing (logged as feed)'),
     })
   }
   for (const n of nursing) {
-    if (n.ended_at) out.push({ at: n.ended_at, kind: 'nursing', what: mark(n, `Nursed · ${n.side}`) })
+    if (n.ended_at) out.push({ id: n.id, at: n.ended_at, kind: 'nursing', what: mark(n, `Nursed · ${n.side}`) })
   }
   for (const d of diapers) {
-    out.push({ at: d.changed_at, kind: 'diaper', what: mark(d, `Diaper · ${d.diaper_type}`) })
+    out.push({ id: d.id, at: d.changed_at, kind: 'diaper', what: mark(d, `Diaper · ${d.diaper_type}`) })
   }
   for (const s of sleep) {
     if (s.ended_at) {
       out.push({
-        at: s.ended_at, kind: 'sleep',
+        id: s.id, at: s.ended_at, kind: 'sleep',
         what: mark(s, s.source === 'nuc_derived' ? 'Woke (detected)' : 'Woke'),
       })
     }
