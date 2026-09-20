@@ -5,6 +5,10 @@ Después leé `PROJECT.md` (arquitectura y estado) y `design.md` (UI/UX).
 Si algo en `PROJECT.md` o en el README contradice a este archivo, **este
 archivo manda** — y avisá de la contradicción en vez de elegir en silencio.
 
+Para **trabajar** (no para entender el proyecto), la doc operativa vive en
+`docs/`: manual de buenas prácticas, checklist de cada cambio, prompt de
+auditoría y seguridad operacional. Índice: `docs/README.md`.
+
 ---
 
 ## 0. Regla número uno — investigar antes de hablar

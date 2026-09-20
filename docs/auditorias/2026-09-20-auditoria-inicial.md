@@ -26,7 +26,7 @@ Cada hallazgo lleva una marca de evidencia:
 | Severidad | Cantidad | Abiertos | Cerrados en este batch |
 | --- | --- | --- | --- |
 | 🔴 CRÍTICO | 2 | 2 | 0 |
-| 🟠 ALTO | 5 | 0 | 5 |
+| 🟠 ALTO | 6 | 1 | 5 |
 | 🟡 MEDIO | 6 | 2 | 4 |
 | 🟢 BAJO | 5 | 3 | 2 |
 
@@ -183,6 +183,40 @@ Lo único que se validaba era `if (!baby_id)`. Concretamente faltaba:
 - `occurred_at` sin validar: aceptaba el año 1899 o el 3000.
 - `kind` sin validar: cualquier valor distinto de `sleep_start`/`sleep_end` caía
   al camino de evento genérico en vez de rechazarse.
+
+---
+
+### A6 — El stack local de Supabase escucha en todas las interfaces de este VPS
+
+**Dónde:** no es código del repo — es el entorno donde corre
+`pnpm exec supabase start`.
+**Evidencia:** **CONFIRMADO POR LECTURA DEL ENTORNO** (`ss -tln`,
+`docker ps`, `curl` contra la IP pública de la máquina).
+**ABIERTO.**
+
+```
+0.0.0.0:54321->8000/tcp     supabase_kong      (API completa)
+0.0.0.0:54322->5432/tcp     supabase_db        (Postgres: postgres/postgres)
+0.0.0.0:54323->3000/tcp     supabase_studio    (Studio, SIN autenticación)
+0.0.0.0:54324->8025/tcp     supabase_inbucket
+0.0.0.0:54327->4000/tcp     supabase_analytics
+```
+
+Los contenedores de `fruco-erp` en la misma máquina bindean a `127.0.0.1`. Los
+de Supabase, a `0.0.0.0`. Desde la IP pública de la máquina, Studio responde 307
+y la API responde 404 — o sea, responden.
+
+**Lo que NO pude verificar:** si un firewall externo tapa esos puertos. Este
+usuario no tiene sudo, así que `ufw status` e `iptables -L` fallan. Lo que sé es
+que el proceso escucha en todas las interfaces.
+
+**Riesgo inmediato: bajo.** Los datos son de prueba y las llaves son las de
+desarrollo que Supabase publica en su propia documentación. **Riesgo real:** un
+Postgres con `postgres/postgres` accesible desde afuera es un punto de apoyo
+dentro de la máquina, y esta máquina también tiene `fruco-erp`.
+
+**Corrección sugerida:** `pnpm exec supabase stop` cuando no se está testeando.
+Detalle completo y alternativas en `docs/seguridad-operacional.md` §6.
 
 ---
 
@@ -373,4 +407,4 @@ corrieron y no encontraron nada:
 
 | Fecha | Commit | Quién | Críticos | Altos | Medios | Bajos |
 | --- | --- | --- | --- | --- | --- | --- |
-| 2026-09-20 | `7c72ba2` | Claude Opus 5 | 2 | 5 | 6 | 5 |
+| 2026-09-20 | `7c72ba2` | Claude Opus 5 | 2 | 6 | 6 | 5 |
