@@ -6,9 +6,11 @@ import { NoBaby } from '@/components/NoBaby'
 import { Banner, Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
 import { SyncStatus } from '@/components/SyncStatus'
 import { logPumping, recentPumping, totalPumped, updatePumping, voidPumping } from '@/lib/db'
+import { useVolumeUnit } from '@/lib/useVolumeUnit'
 import type { PumpingSession, PumpSide } from '@/lib/types'
 import {
-  clockTime, flOzToMl, fromHouseholdInputValue, longDate, ML_PER_FL_OZ, mlToFlOz, toHouseholdInputValue,
+  clockTime, formatVolume, fromHouseholdInputValue, longDate, mlToUnit, toHouseholdInputValue,
+  unitToMl,
 } from '@/lib/format'
 
 const SIDES: { value: PumpSide; label: string }[] = [
@@ -19,10 +21,11 @@ const SIDES: { value: PumpSide; label: string }[] = [
 
 export default function PumpingPage() {
   const { baby, userId, loading } = useBaby()
+  const [unit] = useVolumeUnit()
 
   const [rows, setRows] = useState<PumpingSession[]>([])
   const [side, setSide] = useState<PumpSide>('both')
-  const [oz, setOz] = useState('')
+  const [amount, setAmount] = useState('')
   const [notes, setNotes] = useState('')
   // Defaults to right now; only touch it to log a session you missed
   // in the moment, e.g. catching up after the app was down.
@@ -34,7 +37,7 @@ export default function PumpingPage() {
   // Editing an already-logged session — separate from the log form above.
   const [editingId, setEditingId] = useState<string | null>(null)
   const [eSide, setESide] = useState<PumpSide>('both')
-  const [eOz, setEOz] = useState('')
+  const [eAmount, setEAmount] = useState('')
   const [eNotes, setENotes] = useState('')
   const [eAt, setEAt] = useState('')
 
@@ -51,12 +54,12 @@ export default function PumpingPage() {
     if (!baby || busy) return
     setErr(null)
 
-    const trimmed = oz.trim()
+    const trimmed = amount.trim()
     let amountMl: number | null = null
     if (trimmed !== '') {
       const parsed = Number(trimmed)
       if (!Number.isFinite(parsed)) { setErr('Amount has to be a number.'); return }
-      amountMl = Number(flOzToMl(parsed).toFixed(1))
+      amountMl = Number(unitToMl(parsed, unit).toFixed(1))
     }
 
     const atIso = fromHouseholdInputValue(at)
@@ -69,14 +72,14 @@ export default function PumpingPage() {
 
     if (error) { setErr(`Couldn't save — ${error}`); return }
     setSaved(queued ? 'Saved on this device — will sync when you’re back online' : 'Session logged')
-    setOz(''); setNotes(''); setAt(toHouseholdInputValue(new Date()))
+    setAmount(''); setNotes(''); setAt(toHouseholdInputValue(new Date()))
     refresh(baby.id)
   }
 
   function startEdit(row: PumpingSession) {
     setErr(null)
     setESide(row.side)
-    setEOz(row.amount_ml != null ? (row.amount_ml / ML_PER_FL_OZ).toFixed(1) : '')
+    setEAmount(row.amount_ml != null ? String(mlToUnit(row.amount_ml, unit)) : '')
     setENotes(row.notes ?? '')
     setEAt(toHouseholdInputValue(new Date(row.pumped_at)))
     setEditingId(row.id)
@@ -86,12 +89,12 @@ export default function PumpingPage() {
     if (!editingId || busy) return
     setErr(null)
 
-    const trimmed = eOz.trim()
+    const trimmed = eAmount.trim()
     let amountMl: number | null = null
     if (trimmed !== '') {
       const parsed = Number(trimmed)
       if (!Number.isFinite(parsed)) { setErr('Amount has to be a number.'); return }
-      amountMl = Number(flOzToMl(parsed).toFixed(1))
+      amountMl = Number(unitToMl(parsed, unit).toFixed(1))
     }
 
     setBusy(true)
@@ -157,8 +160,8 @@ export default function PumpingPage() {
                   </button>
                 ))}
               </div>
-              <input className="input" value={oz} onChange={(e) => setOz(e.target.value)}
-                inputMode="decimal" placeholder="oz (optional)" aria-label="Amount, ounces" />
+              <input className="input" value={amount} onChange={(e) => setAmount(e.target.value)}
+                inputMode="decimal" placeholder={`${unit} (optional)`} aria-label={`Amount, ${unit}`} />
               <input className="input" value={notes} onChange={(e) => setNotes(e.target.value)}
                 placeholder="Notes (optional)" aria-label="Notes" />
               <div>
@@ -176,7 +179,7 @@ export default function PumpingPage() {
 
         <Card>
           <Label>In the stash</Label>
-          <div className="value">{mlToFlOz(total)}</div>
+          <div className="value">{formatVolume(total, unit)}</div>
           <div className="meta">
             {counted.length} session{counted.length === 1 ? '' : 's'} counted
             {resetAt && ` since ${longDate(resetAt)}`}
@@ -203,8 +206,8 @@ export default function PumpingPage() {
                       </button>
                     ))}
                   </div>
-                  <input className="input" value={eOz} onChange={(e) => setEOz(e.target.value)}
-                    inputMode="decimal" placeholder="oz (optional)" aria-label="Amount, ounces" />
+                  <input className="input" value={eAmount} onChange={(e) => setEAmount(e.target.value)}
+                    inputMode="decimal" placeholder={`${unit} (optional)`} aria-label={`Amount, ${unit}`} />
                   <input className="input" value={eNotes} onChange={(e) => setENotes(e.target.value)}
                     placeholder="Notes (optional)" aria-label="Notes" />
                   <input type="datetime-local" className="input" value={eAt}
@@ -229,7 +232,7 @@ export default function PumpingPage() {
                     </span>
                   </div>
                   <div className="value">
-                    {row.amount_ml != null ? mlToFlOz(row.amount_ml) : 'No amount'}
+                    {row.amount_ml != null ? formatVolume(row.amount_ml, unit) : 'No amount'}
                     {' · '}{SIDES.find((s) => s.value === row.side)?.label ?? row.side}
                   </div>
                   {row.notes && <div className="meta">{row.notes}</div>}

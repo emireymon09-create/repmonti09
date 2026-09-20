@@ -20,6 +20,7 @@
  */
 
 import { createClient } from '@/lib/supabaseClient'
+import { formatVolume } from '@/lib/format'
 import {
   browserQueueStore, flushQueue, looksOffline, newId,
   type FlushResult, type PendingOp, type PendingWrite,
@@ -27,7 +28,7 @@ import {
 import type {
   ActivityEntry, AppointmentType, Baby, DiaperChange, DiaperType,
   DoctorAppointment, Feeding, FeedingType, GrowthMeasurement,
-  NursingSession, PumpingSession, PumpSide, Result, Side, SleepSession, WithPending,
+  NursingSession, PumpingSession, PumpSide, Result, Side, SleepSession, VolumeUnit, WithPending,
 } from '@/lib/types'
 
 /** Phase 2: 'baby'. Supabase must expose it under API Settings → Exposed schemas. */
@@ -442,7 +443,7 @@ export function setAppointmentCompleted(id: string, completed: boolean): Promise
 export function buildActivity(
   feedings: WithPending<Feeding>[], nursing: WithPending<NursingSession>[],
   diapers: WithPending<DiaperChange>[], sleep: WithPending<SleepSession>[],
-  since: number,
+  since: number, unit: VolumeUnit = 'oz',
 ): ActivityEntry[] {
   const out: ActivityEntry[] = []
   const mark = (row: { pending?: boolean }, text: string) =>
@@ -452,7 +453,7 @@ export function buildActivity(
     out.push({
       id: f.id, at: f.fed_at, kind: 'feeding',
       what: mark(f, f.feeding_type === 'bottle'
-        ? `Bottle${f.amount_ml ? ` · ${f.amount_ml} ml` : ''}`
+        ? `Bottle${f.amount_ml ? ` · ${formatVolume(f.amount_ml, unit)}` : ''}`
         : f.feeding_type === 'solid' ? 'Solids' : 'Nursing (logged as feed)'),
     })
   }

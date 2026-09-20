@@ -11,6 +11,8 @@
  * reason to ship a date library to the browser.
  */
 
+import type { VolumeUnit } from './types'
+
 export const HOUSEHOLD_TZ = 'America/Los_Angeles'
 
 // --------------------------------------------------------------- timezone
@@ -152,6 +154,27 @@ export function mlToFlOz(ml: number): string {
 
 export function flOzToMl(oz: number): number {
   return oz * ML_PER_FL_OZ
+}
+
+/**
+ * Storage is always ml, but display/entry follows the household's
+ * chosen unit (lib/useVolumeUnit.ts) — these three keep that
+ * conversion in one place instead of scattered across pages.
+ */
+export function formatVolume(ml: number, unit: VolumeUnit): string {
+  return unit === 'oz' ? mlToFlOz(ml) : `${Math.round(ml)} ml`
+}
+
+/** A raw ml amount as a plain number in the chosen unit — for
+ * populating an editable input, no unit suffix attached. */
+export function mlToUnit(ml: number, unit: VolumeUnit): number {
+  return unit === 'oz' ? Number((ml / ML_PER_FL_OZ).toFixed(1)) : Math.round(ml)
+}
+
+/** The inverse — an amount typed in the chosen unit, converted to ml
+ * for storage. */
+export function unitToMl(amount: number, unit: VolumeUnit): number {
+  return unit === 'oz' ? flOzToMl(amount) : amount
 }
 
 /** "6 days old" / "5 weeks old" / "3 months old" — null before birth. */

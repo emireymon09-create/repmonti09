@@ -11,11 +11,15 @@ import {
   updateDiaper, updateFeeding, updateNursing, updateSleep,
   voidDiaper, voidFeeding, voidNursing, voidSleep,
 } from '@/lib/db'
+import { useVolumeUnit } from '@/lib/useVolumeUnit'
 import type {
   ActivityEntry, DiaperChange, DiaperType, Feeding, FeedingType,
   NursingSession, Side, SleepSession, WithPending,
 } from '@/lib/types'
-import { clockTime, fromHouseholdInputValue, householdToday, longDate, toHouseholdInputValue } from '@/lib/format'
+import {
+  clockTime, fromHouseholdInputValue, householdToday, longDate, mlToUnit, toHouseholdInputValue,
+  unitToMl,
+} from '@/lib/format'
 
 const HISTORY_LIMIT = 200
 
@@ -64,6 +68,7 @@ function isEditable(kind: ActivityEntry['kind']): kind is EditKind {
 
 export default function HistoryPage() {
   const { baby, loading } = useBaby()
+  const [unit] = useVolumeUnit()
 
   const [days, setDays] = useState<Day[]>([])
   const [feedings, setFeedings] = useState<WithPending<Feeding>[]>([])
@@ -120,9 +125,9 @@ export default function HistoryPage() {
 
     // 0 = the start of time, i.e. no "since today" cutoff — the same
     // merge dashboard uses for Today, just unfiltered.
-    const entries = buildActivity(mFeedings, mNursing, mDiapers, mSleep, 0)
+    const entries = buildActivity(mFeedings, mNursing, mDiapers, mSleep, 0, unit)
     setDays(groupByHouseholdDay(entries))
-  }, [])
+  }, [unit])
 
   useEffect(() => { if (baby) refresh(baby.id) }, [baby, refresh])
 
@@ -134,7 +139,7 @@ export default function HistoryPage() {
       const row = feedings.find((r) => r.id === entry.id)
       if (!row) return
       setFType(row.feeding_type)
-      setFAmount(row.amount_ml != null ? String(row.amount_ml) : '')
+      setFAmount(row.amount_ml != null ? String(mlToUnit(row.amount_ml, unit)) : '')
       setFAt(toHouseholdInputValue(new Date(row.fed_at)))
     } else if (entry.kind === 'diaper') {
       const row = diapers.find((r) => r.id === entry.id)
@@ -167,13 +172,13 @@ export default function HistoryPage() {
     if (editing.kind === 'feeding') {
       const amount = fAmount.trim() === '' ? null : Number(fAmount)
       if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
-        setErr('Amount has to be a number of ml.')
+        setErr(`Amount has to be a number of ${unit}.`)
         setBusy(false)
         return
       }
       result = await updateFeeding(editing.id, {
         feeding_type: fType,
-        amount_ml: fType === 'bottle' ? amount : null,
+        amount_ml: fType === 'bottle' && amount !== null ? unitToMl(amount, unit) : null,
         fed_at: fromHouseholdInputValue(fAt),
       })
     } else if (editing.kind === 'diaper') {
@@ -287,7 +292,7 @@ export default function HistoryPage() {
                             <input
                               className="input narrow" value={fAmount}
                               onChange={(e) => setFAmount(e.target.value)}
-                              inputMode="numeric" placeholder="ml" aria-label="Amount in ml"
+                              inputMode="decimal" placeholder={unit} aria-label={`Amount in ${unit}`}
                             />
                           )}
                           <input

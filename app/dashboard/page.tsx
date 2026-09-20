@@ -12,13 +12,15 @@ import {
 } from '@/lib/db'
 import { useSync } from '@/lib/useSync'
 import { SyncBar } from '@/components/SyncStatus'
+import { useVolumeUnit } from '@/lib/useVolumeUnit'
 import type {
   ActivityEntry, DiaperChange, DiaperType, DoctorAppointment, Feeding,
   NursingSession, Side, SleepSession, WithPending,
 } from '@/lib/types'
 import {
-  ageFrom, apptWhen, clockTime, dueRelative, durationBetween, elapsed, fromHouseholdInputValue,
-  householdToday, lbOzToKg, longDate, startOfHouseholdDay, timeAgo, toHouseholdInputValue,
+  ageFrom, apptWhen, clockTime, dueRelative, durationBetween, elapsed, formatVolume,
+  fromHouseholdInputValue, householdToday, lbOzToKg, longDate, startOfHouseholdDay, timeAgo,
+  toHouseholdInputValue, unitToMl,
 } from '@/lib/format'
 
 /** Newest first, after queued rows have been folded in out of order. */
@@ -30,6 +32,7 @@ function sortDesc<T extends Record<string, unknown>>(rows: T[], key: keyof T): T
 
 export default function Dashboard() {
   const { baby, userId, loading, refreshBaby } = useBaby()
+  const [unit] = useVolumeUnit()
 
   const [feedings, setFeedings] = useState<WithPending<Feeding>[]>([])
   const [diapers, setDiapers] = useState<WithPending<DiaperChange>[]>([])
@@ -43,7 +46,7 @@ export default function Dashboard() {
   const [birthOz, setBirthOz] = useState('')
   const [birthIn, setBirthIn] = useState('')
   const [birthBusy, setBirthBusy] = useState(false)
-  const [bottleMl, setBottleMl] = useState('')
+  const [bottleAmount, setBottleAmount] = useState('')
   const [err, setErr] = useState<string | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -96,8 +99,8 @@ export default function Dashboard() {
     setNursing(sortDesc(mNursing, 'started_at'))
     setSleep(sortDesc(mSleep, 'started_at'))
     setAppt(a.data)
-    setToday(buildActivity(mFeedings, mNursing, mDiapers, mSleep, startOfHouseholdDay()))
-  }, [])
+    setToday(buildActivity(mFeedings, mNursing, mDiapers, mSleep, startOfHouseholdDay(), unit))
+  }, [unit])
 
   const { online, pending, syncing, syncError, reloadPending } = useSync(() => {
     if (baby) refresh(baby.id)
@@ -166,15 +169,16 @@ export default function Dashboard() {
   }
 
   function onBottle() {
-    const raw = bottleMl.trim()
-    const ml = raw === '' ? null : Number(raw)
-    if (ml !== null && (!Number.isFinite(ml) || ml <= 0)) {
-      setErr('Bottle amount has to be a number of ml.')
+    const raw = bottleAmount.trim()
+    const amount = raw === '' ? null : Number(raw)
+    if (amount !== null && (!Number.isFinite(amount) || amount <= 0)) {
+      setErr(`Bottle amount has to be a number of ${unit}.`)
       return
     }
+    const ml = amount === null ? null : unitToMl(amount, unit)
     run('Bottle', async () => {
       const res = await logFeeding(baby!.id, userId, 'bottle', ml, logAt ?? undefined)
-      if (!res.error) setBottleMl('')
+      if (!res.error) setBottleAmount('')
       return res
     })
   }
@@ -329,7 +333,7 @@ export default function Dashboard() {
           <Label>Last feeding</Label>
           <div className="value">
             {lastFeeding
-              ? `${clockTime(lastFeeding.fed_at)} · ${lastFeeding.feeding_type}${lastFeeding.amount_ml ? ` · ${lastFeeding.amount_ml} ml` : ''}`
+              ? `${clockTime(lastFeeding.fed_at)} · ${lastFeeding.feeding_type}${lastFeeding.amount_ml ? ` · ${formatVolume(lastFeeding.amount_ml, unit)}` : ''}`
               : '—'}
           </div>
           {lastFeeding && <div className="meta">{timeAgo(lastFeeding.fed_at, now)}</div>}
@@ -342,11 +346,11 @@ export default function Dashboard() {
           <div className="row-tight">
             <input
               className="input narrow"
-              value={bottleMl}
-              onChange={(e) => setBottleMl(e.target.value)}
-              inputMode="numeric"
-              placeholder="ml"
-              aria-label="Bottle amount in ml"
+              value={bottleAmount}
+              onChange={(e) => setBottleAmount(e.target.value)}
+              inputMode="decimal"
+              placeholder={unit}
+              aria-label={`Bottle amount in ${unit}`}
             />
             <Btn disabled={busy} onClick={onBottle}>Bottle</Btn>
             <Btn variant="quiet" disabled={busy}

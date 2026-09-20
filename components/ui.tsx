@@ -16,6 +16,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabaseClient'
 import { resetPumpingTotal } from '@/lib/db'
+import { useVolumeUnit } from '@/lib/useVolumeUnit'
 
 export function Page({ children }: { children: React.ReactNode }) {
   return <div className="page">{children}</div>
@@ -78,10 +79,20 @@ export function Nav({ babyId }: { babyId?: string }) {
   const router = useRouter()
   const [menuOpen, setMenuOpen] = useState(false)
   const [resetting, setResetting] = useState(false)
+  const [unit, setUnit] = useVolumeUnit()
 
   async function signOut() {
     await createClient().auth.signOut()
     router.push('/login')
+  }
+
+  function switchUnit() {
+    setMenuOpen(false)
+    setUnit(unit === 'oz' ? 'ml' : 'oz')
+    // Every page that shows an amount reads the unit once on mount —
+    // reloading is the simplest way to make the switch take everywhere
+    // at once, matching how "Reset milk total" already refreshes.
+    window.location.reload()
   }
 
   async function resetMilkTotal() {
@@ -124,6 +135,9 @@ export function Nav({ babyId }: { babyId?: string }) {
         </button>
         {menuOpen && (
           <div className="nav-menu" role="menu">
+            <button role="menuitem" className="nav-menu-item" onClick={switchUnit}>
+              Switch to {unit === 'oz' ? 'ml' : 'oz'}
+            </button>
             {babyId && (
               <button role="menuitem" className="nav-menu-item" onClick={resetMilkTotal} disabled={resetting}>
                 {resetting ? 'Resetting…' : 'Reset milk total'}
