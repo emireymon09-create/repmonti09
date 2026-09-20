@@ -1,0 +1,9 @@
+# pnpm 11 lee la configuración del proyecto desde este archivo, no del campo
+# "pnpm" de package.json. Esto NO convierte el repo en un monorepo: no hay
+# clave `packages`. (El monorepo de verdad llega en la fase 2 del Hub, y ahí
+# este directorio pasa a ser apps/amelia.)
+#
+# unrs-resolver es el resolver nativo que arrastra eslint-config-next. Sin este
+# permiso, pnpm bloquea su script de postinstall y `pnpm lint` no arranca.
+allowBuilds:
+  unrs-resolver: true
