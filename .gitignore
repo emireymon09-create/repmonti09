@@ -9,3 +9,4 @@ supabase/.temp
 *.log
 output.txt
 .claude/
+*.tsbuildinfo
