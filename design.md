@@ -83,12 +83,38 @@ todo. En oscuro valen exactamente lo de antes:
 | `--c-danger-soft` / `--c-live-soft` / `--c-accent-soft` | los `rgba(…, .18)` de antes | tintes pastel | Fondos de `Banner` |
 | `--shadow-menu` | la sombra de antes | más suave | Menú del engranaje |
 
-Paleta clara: fondo `#F7EAE3`, tarjeta `#FDF5EF`, elevado `#F3E0D5`, texto
-`#3B2A23`, muted `#6B5147`, acento `#8F4F12`, acción `#F2B5A3` (coral pastel,
-texto oscuro encima), live `#A9D4B6`, danger `#A63A2E`. **Contraste medido**
-(WCAG): texto 11.6:1 sobre fondo; muted ≥5.7:1 sobre fondo, tarjeta y
-elevado; acento ≥5.4:1; texto sobre acción 7.7:1 y sobre live 8.3:1;
-live-ink ≥5.5:1; danger ≥5.0:1.
+Paleta clara: fondo **`#FFFFFF`** (blanco, 21 sep 2026 — antes `#F7EAE3`,
+blush; el resto de la paleta no cambió), tarjeta `#FDF5EF`, elevado `#F3E0D5`,
+texto `#3B2A23`, muted `#6B5147`, acento `#8F4F12`, acción `#F2B5A3` (coral
+pastel, texto oscuro encima), live `#A9D4B6`, danger `#A63A2E`. `--c-bg` no es
+solo el fondo de página: también es el relleno de `.input` y del segmento
+`.seg` del menú (Theme/Language), que en claro ahora son blancos.
+
+**Contraste del tema claro contra el fondo blanco, recalculado el 21 sep 2026**
+(WCAG 2.x, rgba compuestos sobre el fondo; "Antes" es el valor contra el
+`#F7EAE3` anterior). Todo lo que se apoya directo en el fondo mejora:
+
+| Sobre `--c-bg` (`#FFFFFF`) | Ratio | Antes | Mínimo |
+|---|---|---|---|
+| `--c-text` | 13.62:1 | 11.57 | 4.5 |
+| `--c-muted` | 7.26:1 | 6.16 | 4.5 |
+| `--c-accent` (texto, enlaces, eyebrow) | 6.37:1 | 5.41 | 4.5 |
+| `--c-accent` como anillo de foco | 6.37:1 | 5.41 | 3 |
+| `--c-danger` | 6.43:1 | 5.46 | 4.5 |
+| `--c-live-ink` | 6.43:1 | 5.46 | 4.5 |
+| placeholder `#757575` (default de Chromium) | **4.61:1 — ahora pasa AA** | 3.91 | 4.5 |
+| `--c-line` (borde, compuesto `#E4DFDD`) | 1.32:1 | 1.31 | — (decorativo) |
+| `--c-text` sobre los tres `Banner` (`*-soft`) | ≥11.2:1 | ≥9.7 | 4.5 |
+
+Lo que va dentro de tarjetas no cambió: muted ≥5.7:1 sobre tarjeta y elevado;
+texto sobre acción 7.7:1 y sobre live 8.3:1; live-ink ≥5.5:1; danger ≥5.0:1.
+
+**Tarjeta contra fondo: 1.08:1** (`#FDF5EF` sobre blanco; antes 1.09:1 contra
+el blush). El relleno de la tarjeta casi no se distingue del fondo — nunca se
+distinguía mucho: lo que la separa es el borde `--c-line` (1.32:1), igual que
+antes. Cambió el sentido: antes la tarjeta era más clara que el fondo, ahora es
+apenas más oscura. Elevado `#F3E0D5` 1.28:1, acción 1.76:1, live 1.64:1 contra
+el fondo.
 
 **Contraste del tema oscuro, medido el 21 sep 2026** (valores computados por
 el navegador, rgba compuestos sobre su fondo real). Cumplen AA: texto 13.5:1
@@ -103,7 +129,7 @@ decisión explícita):
 | `--c-text` sobre `--c-live` | 3.19:1 | 4.5 | `Btn live` ("Stop nursing"). En la pared el texto es grande (21px bold) y ahí sí pasa el 3:1 |
 | `--c-live-ink` sobre `--c-surface` | 3.50:1 | 4.5 | `.side` ("Right Side"), `.gain-up` |
 | `--c-muted` en `.card.is-past` (opacidad .65) | 4.14:1 | 4.5 | metadata de turnos pasados |
-| placeholder (`#757575`, default de Chromium, sin estilo propio) | 3.63:1 | 4.5 | todos los inputs. **En claro también falla: 3.91:1** |
+| placeholder (`#757575`, default de Chromium, sin estilo propio) | 3.63:1 | 4.5 | todos los inputs. En claro pasa desde el fondo blanco: 4.61:1 |
 | `--c-danger` como texto | 2.78:1 sobre elevado | 4.5 | solo `.nav-menu-item.is-danger`, que hoy no usa ningún componente |
 
 Informativo (1.4.11 no lo exige porque el botón se identifica por su texto):
@@ -193,16 +219,13 @@ y la apariencia es nativa, su tema pisa el nuestro
 padding lateral `0.5em` y un `min-width` del ancho de la fecha más larga. Así
 `width: 100%` se volvía 100% + padding + borde y el campo se salía por la
 derecha de la tarjeta (+18px con fuente de 16px). Sin apariencia nativa ese
-override no corre. **Honestidad:** ningún motor disponible acá reprodujo el bug
-(Chromium headless, también con UA de iPhone/Android, 0 px de desborde antes
-del arreglo; WebKit no se pudo instalar). La causa sale de leer el código de
-WebKit y de simular el override en Chromium: 60/70 inputs desbordaban antes,
-0/70 después, medido a 390/320/600/1440px en los dos temas (Milk, Growth,
-edición de Growth, Doctor, hora pasada del dashboard, edición de History); el
-ícono del calendario de Chromium quedó dentro de la caja en todos los casos.
-**No verificado en un iPhone real.** `select.input` (tipo de turno en Doctor)
-podría recibir el mismo override y no se tocó. Si el reporte vino de Chrome en
-Android, esta causa no lo explica.
+override no corre. **Verificado en un iPhone real** (confirmado por el
+dueño del proyecto el 21 sep 2026, v0.4.0): los campos quedan dentro de la
+tarjeta. Antes de eso ningún motor disponible acá había reproducido el bug; la
+causa salió de leer el código de WebKit y de simular el override en Chromium
+(60/70 inputs desbordaban antes, 0/70 después, a 390/320/600/1440px en los dos
+temas). `select.input` (tipo de turno en Doctor) podría recibir el mismo
+override y no se tocó; no hay reporte de que falle.
 
 **Feed / historial:** `.feed` `.feed-item` `.feed-time` `.feed-what`
 `.feed-actions` `.edit-panel`.
@@ -410,7 +433,8 @@ exportados. **Por definir.**
 - **Estados de carga:** hoy es texto plano `"Loading…"` con clase
   `.empty`. No hay skeleton ni spinner — por definir.
 - **Contraste:** medido en ambos temas (§2). Quedan pares del oscuro bajo AA
-  y el placeholder bajo AA en los dos temas, sin corregir hasta decidirlo.
+  (placeholder incluido), sin corregir hasta decidirlo. En claro, con el fondo
+  blanco, el placeholder pasa AA (4.61:1).
 - **Íconos del nav de teléfono:** seis SVG dibujados a mano en
   `components/ui.tsx`; no son una librería. El engranaje de tablet/pared sigue
   siendo el glifo `⚙`.

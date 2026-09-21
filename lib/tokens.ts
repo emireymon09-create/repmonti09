@@ -31,7 +31,7 @@ export const color = {
  * palette above stays the default and the manifest's colors.
  */
 export const lightColor = {
-  bg: '#F7EAE3',
+  bg: '#FFFFFF',
 } as const
 
 /**

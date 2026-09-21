@@ -4,10 +4,20 @@ Every version of Amelia, newest first. The current version is the `version`
 field in `package.json`; this file is the history. A test fails if the two
 disagree. Shown in the app under the settings gear → Version history.
 
+## [0.4.1] - 2026-09-21
+
+Calmer wording in Spanish and a white background in the light theme.
+
+- In Spanish, diapers are now "Mojado", "Sucio" and "Mojado y sucio", in the
+  same plain tone as "Wet", "Dirty" and "Both" in English.
+- The light theme's page background is white instead of blush. Cards, buttons
+  and the rest of the pastel colors are unchanged; text fields and the Theme
+  and Language switches in the settings menu are white too, and their hint
+  text is easier to read.
+
 ## [0.4.0] - 2026-09-21
 
-Amelia speaks Spanish, and date fields should stay inside their card on an
-iPhone.
+Amelia speaks Spanish, and date fields stay inside their card on an iPhone.
 
 - The whole app is available in Spanish: sign-in, Today, Milk, Growth, Doctor,
   History, the menus and the sync messages. By default it follows the
@@ -19,8 +29,8 @@ iPhone.
 - These release notes stay in English, and so do the technical details some
   error messages carry. The calendar that pops up from a date field follows
   the phone's own language.
-- Date and time fields on an iPhone should no longer run past the right
-  edge of their card.
+- Date and time fields on an iPhone no longer run past the right edge of
+  their card (confirmed on a real iPhone).
 
 ## [0.3.1] - 2026-09-21
 

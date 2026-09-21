@@ -65,7 +65,7 @@
    >= 4.5:1 (measured). The dark palette above stays the default: no
    data-theme attribute, or data-theme="dark", renders exactly as before. */
 :root[data-theme='light'] {
-  --c-bg: #f7eae3;
+  --c-bg: #ffffff;
   --c-surface: #fdf5ef;
   --c-surface-raised: #f3e0d5;
   --c-line: rgba(84, 52, 40, 0.16);
@@ -88,7 +88,7 @@
    share one block between an attribute and a media query. */
 @media (prefers-color-scheme: light) {
   :root[data-theme='system'] {
-    --c-bg: #f7eae3;
+    --c-bg: #ffffff;
     --c-surface: #fdf5ef;
     --c-surface-raised: #f3e0d5;
     --c-line: rgba(84, 52, 40, 0.16);

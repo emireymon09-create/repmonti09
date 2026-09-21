@@ -56,9 +56,21 @@ Nunca rellenes el hueco con una suposición presentada como hecho.
 CHANGELOG.** Da igual el tamaño del cambio: una línea de copy, un arreglo de
 CSS o un batch entero. Si el push llega a `main`, llega con versión nueva.
 
-- **Qué se sube:** `version` en `package.json` (PATCH por defecto; MINOR si el
-  alcance lo pide, criterio en §4.1) **y** una entrada `## [x.y.z] - AAAA-MM-DD`
-  arriba de todo en `CHANGELOG.md`, en inglés y en términos de quien usa la app.
+- **Qué se sube:** `version` en `package.json` **y** una entrada
+  `## [x.y.z] - AAAA-MM-DD` arriba de todo en `CHANGELOG.md`, en inglés y en
+  términos de quien usa la app.
+- **Qué dígito se sube — semver de verdad, según el tipo de cambio, nunca
+  por costumbre:**
+
+  | Tipo de cambio | Dígito | Ejemplo |
+  |---|---|---|
+  | Arreglo de bug, copy, CSS, doc — **sin** funcionalidad nueva visible | **PATCH** `x.y.Z+1` | `0.4.0 → 0.4.1` |
+  | Funcionalidad nueva visible y compatible (el selector de idioma, el tema claro) | **MINOR** `x.Y+1.0` — el PATCH vuelve a 0 | `0.4.1 → 0.5.0` |
+  | Cambio grande o incompatible (rompe datos, la API de dispositivos o la forma de usar la app) | **MAJOR** `X+1.0.0` — MINOR y PATCH vuelven a 0 | `0.5.0 → 1.0.0` |
+
+  Si el push mezcla tipos, manda el mayor: un arreglo + una función nueva es
+  MINOR. Se sube **un** dígito por push, no uno por commit. Nunca se repite ni
+  se retrocede una versión. Detalle en §4.1.
 - **Cuándo:** en el último commit antes del push. Si el push lleva varios
   commits (un batch), un solo bump alcanza — pero **tiene que haber uno**.
 - **Cómo verificarlo antes de pushear** (si no imprime nada, NO pushees):
@@ -209,14 +221,6 @@ pnpm exec tsc --noEmit
 `pnpm build` también corre el type-check de Next, pero `pnpm exec tsc
 --noEmit` es más rápido cuando es lo único que querés saber.
 
-**`pnpm lint` falla dentro de un git worktree bajo `.claude/worktrees/`**
-(visto por dos agentes el 21 sep 2026 y reproducido): `.eslintrc.json` no
-tiene `"root": true`, así que ESLint 8 sigue subiendo directorios, encuentra
-también el `.eslintrc.json` del checkout principal y carga `@next/next` dos
-veces, desde dos `node_modules` distintos → *"ESLint couldn't determine the
-plugin "@next/next" uniquely"*. No es un error del código. Corré el lint en el
-checkout principal, o agregar `"root": true` lo arreglaría (no hecho).
-
 ---
 
 ## 4. Convenciones de commit
@@ -252,10 +256,15 @@ que sea una decisión explícita, no una deriva commit a commit.
 - **vMAJOR.MINOR.PATCH.** La versión actual es `version` en `package.json`; el
   historial es `CHANGELOG.md`. La app muestra las dos en `/version` (engranaje
   → Version history). `tests/unit/changelog.test.ts` falla si no coinciden.
-- **MINOR:** capacidad nueva visible, migración de schema, o cambio
-  incompatible en la API de dispositivos (mientras sea `0.x`).
-  **PATCH:** arreglos sin schema ni capacidad nueva. **1.0.0:** cuando la app
-  esté desplegada y en uso real.
+- **Qué dígito** (la tabla de §0.1 manda):
+  - **PATCH** (`x.y.Z+1`): arreglos de bugs, copy, CSS, docs; sin
+    funcionalidad nueva visible y sin schema.
+  - **MINOR** (`x.Y+1.0`): funcionalidad nueva visible pero compatible, o una
+    migración de schema que la acompaña. El PATCH vuelve a 0.
+  - **MAJOR** (`X+1.0.0`): cambios grandes o incompatibles — incluido un
+    cambio incompatible en la API de dispositivos. Poco frecuente acá. El
+    salto a **1.0.0** está previsto para cuando la app esté desplegada y en
+    uso real.
 - Se sube **una vez por batch**, en el último commit del batch, junto con la
   entrada del CHANGELOG (en inglés, en términos de quien usa la app — mismo
   criterio que los commits). **Y todo push a `main` lleva al menos un bump**,
@@ -435,17 +444,9 @@ y la base.
   porque `app/growth/page.tsx` no usa `mergePending` (a diferencia de
   `app/history/page.tsx` y `app/dashboard/page.tsx`, que sí lo usan). Fuera de
   alcance de este batch.
-- **Verificación en un iPhone real del arreglo de los campos de fecha**
-  (`8c7e320`, 21 sep 2026). Ningún motor disponible acá reprodujo el bug
-  (Chromium headless, también con UA de iPhone/Android, daba 0 px de
-  desborde antes del arreglo; WebKit no se pudo instalar). La causa —
-  `RenderThemeIOS::adjustInputElementButtonStyle` pasa a `content-box`,
-  `padding: 0.5em` y un `min-width` cuando el ancho no es fijo y la apariencia
-  es nativa — sale de **leer el código de WebKit** y de simular ese override en
-  Chromium (60/70 inputs desbordaban antes, 0/70 después). No verificado en
-  iPhone. `select.input` (tipo de turno en Doctor) podría tener el mismo
-  override y **no se tocó**. Si el reporte vino de Chrome en Android, esta
-  causa no lo explica. Detalle en `design.md` §4.
+- `select.input` (tipo de turno en Doctor) podría recibir el mismo override
+  de iOS que tenían los campos de fecha y **no se tocó**; nadie lo reportó
+  como problema. Detalle en `design.md` §4.
 
 ---
 
