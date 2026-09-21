@@ -293,7 +293,7 @@ Según `PROJECT.md`, y salvo que Emilio lo pida explícitamente:
 
 **Construido y funcionando:** auth, dashboard completo (lactancia,
 biberón, sólidos, pañales, sueño, predicciones), Milk (extracción),
-Growth, Doctor, History con editar/borrar, PWA instalable, cola offline,
+Growth con editar/borrar (0008), Doctor, History con editar/borrar, PWA instalable, cola offline,
 RLS en las 11 tablas (y RLS y sin acceso para `anon`/`authenticated` — solo
 `service_role` — en `device_tokens`, la 12ª), los dos
 endpoints de dispositivo, **tokens por dispositivo** (`device_tokens`,
@@ -324,8 +324,6 @@ y la base.
   (el endpoint existe, **nada lo llama**)
 - Uso real de `family_members.role` (la columna existe, nadie la lee →
   hoy todos los miembros tienen los mismos permisos)
-- Corregir o retractar una medición de `growth_measurements` — necesita
-  schema ⇒ `proposals/growth-edit-and-void.md`
 - Idempotencia en los endpoints de dispositivo ⇒
   `proposals/device-tokens-and-idempotency.md`
 

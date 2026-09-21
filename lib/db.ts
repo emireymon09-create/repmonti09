@@ -492,6 +492,7 @@ export async function listGrowth(babyId: string): Promise<Result<GrowthMeasureme
     .from('growth_measurements')
     .select('id, measured_at, weight_kg, height_cm, notes')
     .eq('baby_id', babyId)
+    .is('voided_at', null)
     .order('measured_at', { ascending: false })
   if (error) return fail([] as GrowthMeasurement[], error)
   return ok((rows ?? []) as GrowthMeasurement[])
@@ -511,6 +512,29 @@ export function addGrowth(
     kind: 'insert',
     table: 'growth_measurements',
     row: { id: newId(), ...scope(babyId, userId), ...row },
+  })
+}
+
+/** Correct a measurement typed wrong — the pediatrician's number, not ours. */
+export function updateGrowth(
+  id: string,
+  patch: Partial<{
+    measured_at: string
+    weight_kg: number | null
+    height_cm: number | null
+    notes: string | null
+  }>,
+): Promise<Result<null>> {
+  return write('Edit measurement', { kind: 'update', table: 'growth_measurements', id, patch })
+}
+
+/** Soft-delete: the entry leaves the growth curve, the row stays. */
+export function voidGrowth(id: string): Promise<Result<null>> {
+  return write('Delete measurement', {
+    kind: 'update',
+    table: 'growth_measurements',
+    id,
+    patch: { voided_at: new Date().toISOString() },
   })
 }
 

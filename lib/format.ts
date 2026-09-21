@@ -143,8 +143,7 @@ export function dueRelative(targetIso: string | null, now: number = Date.now()):
 
 export const LB_PER_KG = 2.20462
 
-/** The DB stores metric; the pediatrician's office talks in lb/oz. */
-export function kgToLbOz(kg: number): string {
+export function kgToLbOzParts(kg: number): { lb: number; oz: number } {
   const total = kg * LB_PER_KG
   let lb = Math.floor(total)
   let oz = Math.round((total - lb) * 16)
@@ -152,6 +151,12 @@ export function kgToLbOz(kg: number): string {
     lb += 1
     oz = 0
   }
+  return { lb, oz }
+}
+
+/** The DB stores metric; the pediatrician's office talks in lb/oz. */
+export function kgToLbOz(kg: number): string {
+  const { lb, oz } = kgToLbOzParts(kg)
   return `${lb} lb ${oz} oz`
 }
 
@@ -161,6 +166,99 @@ export function lbOzToKg(lb: number, oz: number): number {
 
 export function cmToIn(cm: number): string {
   return `${(cm / 2.54).toFixed(1)} in`
+}
+
+/** What the growth form holds: the text as typed, in whichever units are showing. */
+export type GrowthInput = {
+  imperial: boolean
+  lb: string
+  oz: string
+  inches: string
+  kg: string
+  cm: string
+}
+
+export type GrowthMetric = { weightKg: number | null; heightCm: number | null }
+
+export function emptyGrowthInput(imperial: boolean): GrowthInput {
+  return { imperial, lb: '', oz: '', inches: '', kg: '', cm: '' }
+}
+
+function growthNumber(value: string): number | null {
+  const trimmed = value.trim()
+  if (trimmed === '') return null
+  const parsed = Number(trimmed)
+  return Number.isFinite(parsed) ? parsed : NaN
+}
+
+/** Form → what the database stores (kg to the gram, cm to the millimetre). */
+export function growthInputToMetric(input: GrowthInput): GrowthMetric | { error: string } {
+  let weightKg: number | null = null
+  let heightCm: number | null = null
+
+  if (input.imperial) {
+    const lb = growthNumber(input.lb)
+    const oz = growthNumber(input.oz)
+    const inches = growthNumber(input.inches)
+    if ([lb, oz, inches].some((v) => v !== null && Number.isNaN(v))) {
+      return { error: 'Weight and height have to be numbers.' }
+    }
+    if (lb !== null || oz !== null) weightKg = lbOzToKg(lb ?? 0, oz ?? 0)
+    if (inches !== null) heightCm = inches * 2.54
+  } else {
+    const kg = growthNumber(input.kg)
+    const cm = growthNumber(input.cm)
+    if ([kg, cm].some((v) => v !== null && Number.isNaN(v))) {
+      return { error: 'Weight and height have to be numbers.' }
+    }
+    weightKg = kg
+    heightCm = cm
+  }
+
+  if (weightKg === null && heightCm === null) return { error: 'Enter a weight, a height, or both.' }
+  return {
+    weightKg: weightKg === null ? null : Number(weightKg.toFixed(3)),
+    heightCm: heightCm === null ? null : Number(heightCm.toFixed(1)),
+  }
+}
+
+/** A stored measurement back into the form, both unit systems filled in. */
+export function growthInputFromMetric(
+  weightKg: number | null,
+  heightCm: number | null,
+  imperial: boolean,
+): GrowthInput {
+  const parts = weightKg === null ? null : kgToLbOzParts(weightKg)
+  return {
+    imperial,
+    lb: parts ? String(parts.lb) : '',
+    oz: parts ? String(parts.oz) : '',
+    inches: heightCm === null ? '' : (heightCm / 2.54).toFixed(1),
+    kg: weightKg === null ? '' : String(weightKg),
+    cm: heightCm === null ? '' : String(heightCm),
+  }
+}
+
+/**
+ * Saving an edit. A field the parent didn't touch keeps its stored value
+ * EXACTLY: lb/oz are rounded to the ounce, so re-deriving an untouched weight
+ * from them would quietly move the growth curve (3.5 kg → 3.487 kg).
+ */
+export function resolveGrowthEdit(
+  base: GrowthInput,
+  edited: GrowthInput,
+  original: GrowthMetric,
+): GrowthMetric | { error: string } {
+  const computed = growthInputToMetric(edited)
+  if ('error' in computed) return computed
+  const sameWeight = edited.imperial
+    ? edited.lb === base.lb && edited.oz === base.oz
+    : edited.kg === base.kg
+  const sameHeight = edited.imperial ? edited.inches === base.inches : edited.cm === base.cm
+  return {
+    weightKg: sameWeight ? original.weightKg : computed.weightKg,
+    heightCm: sameHeight ? original.heightCm : computed.heightCm,
+  }
 }
 
 export const ML_PER_FL_OZ = 29.5735

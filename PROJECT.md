@@ -119,10 +119,14 @@ failing silently:
   `/api/ingest` shows as "detected" and can be closed by hand
 - Next upcoming appointment
 
-**`/growth`:** add and list measurements. Entry defaults to lb/oz + in
-(what the pediatrician's office says out loud) and converts to the
-metric the DB stores; a toggle switches to kg/cm. Each row shows both
-units and the change since the previous visit.
+**`/growth`:** add and list measurements, edit and delete per entry.
+Entry defaults to lb/oz + in (what the pediatrician's office says out
+loud) and converts to the metric the DB stores; a toggle switches to
+kg/cm. Each row shows both units and the change since the previous
+visit. Editing keeps a field the parent didn't touch at its exact
+stored value instead of re-deriving it from rounded lb/oz. Deleting is
+a soft-delete (`voided_at`, 0008): the entry stops counting toward the
+growth curve but the row stays in the database.
 
 **`/appointments`:** upcoming and past, add form, tap to mark done.
 
@@ -186,17 +190,10 @@ database) — useful for quickly showing the design, not for real use.
 - Retry-queue logic on the HA side for when the NUC has no internet
   (data still logs fine locally in HA either way — this is only about
   keeping the cloud copy in sync once connectivity returns)
-- Correcting or retracting a **growth measurement**.
-  `growth_measurements` has no UPDATE policy and no `voided_at` column,
-  so a mis-typed weight is permanent. Schema change ⇒ proposed in
-  `proposals/growth-edit-and-void.md`, demonstrated by a test in
-  `tests/integration/rls.test.ts`.
 
-  *(Editing and retracting **every other** logged entry — feedings,
-  diapers, nursing, sleep, pumping — IS built, and has been since
-  `0006_edit_and_void.sql` plus `updateFeeding`/`voidFeeding` and their
-  siblings in `lib/db.ts`. This section claimed otherwise until
-  2026-09-20.)*
+  *(Editing and retracting logged entries — feedings, diapers, nursing,
+  sleep, pumping, and now growth measurements (`0008`) — IS built.
+  `lib/db.ts` has `update*`/`void*` for all of them.)*
 - Idempotency on the two device endpoints. A retried request (the NUC's
   HA automation, or a double-tap on the Shortcut) still writes twice —
   two rows in `monitor_events`, or two open sleep/nursing sessions ⇒

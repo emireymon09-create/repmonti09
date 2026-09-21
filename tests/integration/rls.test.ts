@@ -122,36 +122,94 @@ describe('una familia no ve a la otra', () => {
  * correspondiente ya se aplicó y hay que actualizar esto.
  */
 describe('huecos conocidos de las policies, documentados', () => {
-  it('growth_measurements no tiene policy de UPDATE: una medición mal cargada es permanente', async () => {
-    const admin = adminClient()
-    const { data: medicion, error: insErr } = await admin
-      .from('growth_measurements')
-      .insert({ baby_id: a.babyId, measured_at: '2026-01-15', weight_kg: 3.5 })
-      .select('id')
-      .single()
-    expect(insErr).toBeNull()
-
-    // El dueño de la fila tampoco la puede corregir: no hay policy de update.
-    const { data, error } = await a.client
-      .from('growth_measurements')
-      .update({ weight_kg: 3.6 })
-      .eq('id', medicion!.id)
-      .select('id')
-    expect(error).toBeNull()
-    expect(data).toEqual([])
-
-    const { data: sigue } = await admin
-      .from('growth_measurements')
-      .select('weight_kg')
-      .eq('id', medicion!.id)
-      .single()
-    expect(Number(sigue!.weight_kg)).toBe(3.5)
-  })
-
   it('families no tiene policy de INSERT: un usuario no puede crear su propia familia', async () => {
     const { error } = await a.client.from('families').insert({ name: 'familia nueva' })
     expect(error).not.toBeNull()
     expect(error!.message.toLowerCase()).toContain('row-level security')
+  })
+})
+
+/** 0008: una medición mal cargada se corrige o se retracta — solo por su familia. */
+describe('growth_measurements se corrige y se retracta', () => {
+  let id: string
+
+  beforeAll(async () => {
+    const { data, error } = await adminClient()
+      .from('growth_measurements')
+      .insert({ baby_id: a.babyId, measured_at: '2026-09-15', weight_kg: 3.5 })
+      .select('id')
+      .single()
+    if (error) throw error
+    id = data.id
+  })
+
+  async function weight() {
+    const { data } = await adminClient()
+      .from('growth_measurements')
+      .select('weight_kg')
+      .eq('id', id)
+      .single()
+    return Number(data!.weight_kg)
+  }
+
+  it('el dueño corrige su medición', async () => {
+    const { data, error } = await a.client
+      .from('growth_measurements')
+      .update({ weight_kg: 4.5 })
+      .eq('id', id)
+      .select('id')
+    expect(error).toBeNull()
+    expect(data).toHaveLength(1)
+    expect(await weight()).toBe(4.5)
+  })
+
+  it('otra familia no la puede corregir', async () => {
+    const { data } = await b.client
+      .from('growth_measurements')
+      .update({ weight_kg: 9.9 })
+      .eq('id', id)
+      .select('id')
+    expect(data ?? []).toEqual([])
+    expect(await weight()).toBe(4.5)
+  })
+
+  it('no se puede mudar la medición al bebé de otra familia', async () => {
+    const { error } = await a.client
+      .from('growth_measurements')
+      .update({ baby_id: b.babyId })
+      .eq('id', id)
+    expect(error).not.toBeNull()
+  })
+
+  it('otra familia no la puede retractar', async () => {
+    const { data } = await b.client
+      .from('growth_measurements')
+      .update({ voided_at: new Date().toISOString() })
+      .eq('id', id)
+      .select('id')
+    expect(data ?? []).toEqual([])
+  })
+
+  it('retractada, desaparece de la lectura de la app pero sigue en la base', async () => {
+    const { error } = await a.client
+      .from('growth_measurements')
+      .update({ voided_at: new Date().toISOString() })
+      .eq('id', id)
+    expect(error).toBeNull()
+
+    // La misma lectura que hace listGrowth() (lib/db.ts).
+    const { data: visibles } = await a.client
+      .from('growth_measurements')
+      .select('id')
+      .eq('baby_id', a.babyId)
+      .is('voided_at', null)
+    expect(visibles!.map((r) => r.id)).not.toContain(id)
+
+    const { data: enLaBase } = await adminClient()
+      .from('growth_measurements')
+      .select('id')
+      .eq('id', id)
+    expect(enLaBase).toHaveLength(1)
   })
 })
 

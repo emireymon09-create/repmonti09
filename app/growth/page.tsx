@@ -5,9 +5,22 @@ import { useBaby } from '@/lib/useBaby'
 import { NoBaby } from '@/components/NoBaby'
 import { Banner, Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
 import { SyncStatus } from '@/components/SyncStatus'
-import { addGrowth, listGrowth } from '@/lib/db'
+import { GrowthFields, UnitToggle } from '@/components/GrowthFields'
+import { addGrowth, listGrowth, updateGrowth, voidGrowth } from '@/lib/db'
 import type { GrowthMeasurement } from '@/lib/types'
-import { cmToIn, householdToday, kgToLbOz, lbOzToKg, measuredOn } from '@/lib/format'
+import {
+  cmToIn,
+  emptyGrowthInput,
+  growthInputFromMetric,
+  growthInputToMetric,
+  householdToday,
+  kgToLbOz,
+  measuredOn,
+  resolveGrowthEdit,
+  type GrowthInput,
+} from '@/lib/format'
+
+const QUEUED = 'Saved on this device — will sync when you’re back online'
 
 export default function GrowthPage() {
   const { baby, userId, loading } = useBaby()
@@ -15,14 +28,18 @@ export default function GrowthPage() {
   const [rows, setRows] = useState<GrowthMeasurement[]>([])
   // The pediatrician's office says lb/oz and inches out loud; the
   // database stores metric. Default to what gets spoken.
-  const [imperial, setImperial] = useState(true)
+  const [input, setInput] = useState<GrowthInput>(() => emptyGrowthInput(true))
   const [date, setDate] = useState(() => householdToday())
-  const [lb, setLb] = useState('')
-  const [oz, setOz] = useState('')
-  const [kg, setKg] = useState('')
-  const [inches, setInches] = useState('')
-  const [cm, setCm] = useState('')
   const [notes, setNotes] = useState('')
+
+  // Editing one row at a time. `editBase` is the form as it was prefilled, so
+  // an untouched weight or height keeps its exact stored value.
+  const [editing, setEditing] = useState<GrowthMeasurement | null>(null)
+  const [editBase, setEditBase] = useState<GrowthInput>(() => emptyGrowthInput(true))
+  const [editInput, setEditInput] = useState<GrowthInput>(() => emptyGrowthInput(true))
+  const [editDate, setEditDate] = useState('')
+  const [editNotes, setEditNotes] = useState('')
+
   const [err, setErr] = useState<string | null>(null)
   const [saved, setSaved] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -37,52 +54,22 @@ export default function GrowthPage() {
     if (baby) refresh(baby.id)
   }, [baby, refresh])
 
-  function num(value: string): number | null {
-    const trimmed = value.trim()
-    if (trimmed === '') return null
-    const parsed = Number(trimmed)
-    return Number.isFinite(parsed) ? parsed : NaN
-  }
-
   async function save(e: React.FormEvent) {
     e.preventDefault()
     if (!baby || busy) return
     setErr(null)
 
-    let weightKg: number | null = null
-    let heightCm: number | null = null
-
-    if (imperial) {
-      const l = num(lb),
-        o = num(oz),
-        i = num(inches)
-      if ([l, o, i].some((v) => v !== null && Number.isNaN(v))) {
-        setErr('Weight and height have to be numbers.')
-        return
-      }
-      if (l !== null || o !== null) weightKg = lbOzToKg(l ?? 0, o ?? 0)
-      if (i !== null) heightCm = i * 2.54
-    } else {
-      const k = num(kg),
-        c = num(cm)
-      if ([k, c].some((v) => v !== null && Number.isNaN(v))) {
-        setErr('Weight and height have to be numbers.')
-        return
-      }
-      weightKg = k
-      heightCm = c
-    }
-
-    if (weightKg === null && heightCm === null) {
-      setErr('Enter a weight, a height, or both.')
+    const metric = growthInputToMetric(input)
+    if ('error' in metric) {
+      setErr(metric.error)
       return
     }
 
     setBusy(true)
     const { error, queued } = await addGrowth(baby.id, userId, {
       measured_at: date,
-      weight_kg: weightKg === null ? null : Number(weightKg.toFixed(3)),
-      height_cm: heightCm === null ? null : Number(heightCm.toFixed(1)),
+      weight_kg: metric.weightKg,
+      height_cm: metric.heightCm,
       notes: notes.trim() || null,
     })
     setBusy(false)
@@ -91,17 +78,73 @@ export default function GrowthPage() {
       setErr(`Couldn't save — ${error}`)
       return
     }
-    setSaved(
-      queued
-        ? 'Saved on this device — will sync when you\u2019re back online'
-        : 'Measurement saved',
-    )
-    setLb('')
-    setOz('')
-    setKg('')
-    setInches('')
-    setCm('')
+    setSaved(queued ? QUEUED : 'Measurement saved')
+    setInput(emptyGrowthInput(input.imperial))
     setNotes('')
+    refresh(baby.id)
+  }
+
+  function startEdit(row: GrowthMeasurement) {
+    setErr(null)
+    setSaved(null)
+    const base = growthInputFromMetric(row.weight_kg, row.height_cm, input.imperial)
+    setEditing(row)
+    setEditBase(base)
+    setEditInput(base)
+    setEditDate(row.measured_at)
+    setEditNotes(row.notes ?? '')
+  }
+
+  async function saveEdit() {
+    if (!baby || !editing || busy) return
+    setErr(null)
+
+    const metric = resolveGrowthEdit(editBase, editInput, {
+      weightKg: editing.weight_kg,
+      heightCm: editing.height_cm,
+    })
+    if ('error' in metric) {
+      setErr(metric.error)
+      return
+    }
+
+    setBusy(true)
+    const { error, queued } = await updateGrowth(editing.id, {
+      measured_at: editDate,
+      weight_kg: metric.weightKg,
+      height_cm: metric.heightCm,
+      notes: editNotes.trim() || null,
+    })
+    setBusy(false)
+
+    if (error) {
+      setErr(`Couldn't save the change — ${error}`)
+      return
+    }
+    setSaved(queued ? QUEUED : 'Measurement updated')
+    setEditing(null)
+    refresh(baby.id)
+  }
+
+  async function remove(row: GrowthMeasurement) {
+    if (!baby || busy) return
+    if (
+      !window.confirm(
+        `Remove the ${measuredOn(row.measured_at)} measurement? It stops counting toward the growth curve.`,
+      )
+    )
+      return
+
+    setBusy(true)
+    setErr(null)
+    const { error, queued } = await voidGrowth(row.id)
+    setBusy(false)
+
+    if (error) {
+      setErr(`Couldn't remove — ${error}`)
+      return
+    }
+    setSaved(queued ? QUEUED : 'Measurement removed')
     refresh(baby.id)
   }
 
@@ -132,9 +175,7 @@ export default function GrowthPage() {
           <form onSubmit={save}>
             <div className="between">
               <Label>New measurement</Label>
-              <button type="button" className="linkish" onClick={() => setImperial((v) => !v)}>
-                {imperial ? 'lb / in' : 'kg / cm'}
-              </button>
+              <UnitToggle value={input} onChange={setInput} />
             </div>
 
             <div className="stack">
@@ -145,55 +186,7 @@ export default function GrowthPage() {
                 onChange={(e) => setDate(e.target.value)}
                 aria-label="Date measured"
               />
-
-              {imperial ? (
-                <div className="row">
-                  <input
-                    className="input"
-                    value={lb}
-                    onChange={(e) => setLb(e.target.value)}
-                    inputMode="decimal"
-                    placeholder="lb"
-                    aria-label="Weight, pounds"
-                  />
-                  <input
-                    className="input"
-                    value={oz}
-                    onChange={(e) => setOz(e.target.value)}
-                    inputMode="decimal"
-                    placeholder="oz"
-                    aria-label="Weight, ounces"
-                  />
-                  <input
-                    className="input"
-                    value={inches}
-                    onChange={(e) => setInches(e.target.value)}
-                    inputMode="decimal"
-                    placeholder="in"
-                    aria-label="Height, inches"
-                  />
-                </div>
-              ) : (
-                <div className="row">
-                  <input
-                    className="input"
-                    value={kg}
-                    onChange={(e) => setKg(e.target.value)}
-                    inputMode="decimal"
-                    placeholder="kg"
-                    aria-label="Weight, kilograms"
-                  />
-                  <input
-                    className="input"
-                    value={cm}
-                    onChange={(e) => setCm(e.target.value)}
-                    inputMode="decimal"
-                    placeholder="cm"
-                    aria-label="Height, centimetres"
-                  />
-                </div>
-              )}
-
+              <GrowthFields value={input} onChange={setInput} />
               <input
                 className="input"
                 value={notes}
@@ -223,23 +216,83 @@ export default function GrowthPage() {
               prev && row.weight_kg != null && prev.weight_kg != null
                 ? row.weight_kg - prev.weight_kg
                 : null
+            const isEditing = editing?.id === row.id
             return (
               <Card key={row.id}>
-                <Label>{measuredOn(row.measured_at)}</Label>
-                <div className="value">
-                  {row.weight_kg != null &&
-                    `${kgToLbOz(row.weight_kg)} (${row.weight_kg.toFixed(2)} kg)`}
-                  {row.weight_kg != null && row.height_cm != null && ' · '}
-                  {row.height_cm != null &&
-                    `${cmToIn(row.height_cm)} (${row.height_cm.toFixed(1)} cm)`}
+                <div className="between">
+                  <Label>{measuredOn(row.measured_at)}</Label>
+                  {!isEditing && (
+                    <span className="feed-actions">
+                      <button
+                        type="button"
+                        className="linkish"
+                        disabled={busy}
+                        onClick={() => startEdit(row)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="linkish"
+                        disabled={busy}
+                        onClick={() => remove(row)}
+                      >
+                        Delete
+                      </button>
+                    </span>
+                  )}
                 </div>
-                {gain !== null && (
-                  <div className={gain >= 0 ? 'gain-up' : 'gain-down'}>
-                    {gain >= 0 ? '+' : '−'}
-                    {kgToLbOz(Math.abs(gain))} since last visit
+
+                {isEditing ? (
+                  <div className="edit-panel">
+                    <div className="between">
+                      <Label>Edit measurement</Label>
+                      <UnitToggle value={editInput} onChange={setEditInput} />
+                    </div>
+                    <div className="stack">
+                      <input
+                        className="input"
+                        type="date"
+                        value={editDate}
+                        onChange={(e) => setEditDate(e.target.value)}
+                        aria-label="Date measured"
+                      />
+                      <GrowthFields value={editInput} onChange={setEditInput} />
+                      <input
+                        className="input"
+                        value={editNotes}
+                        onChange={(e) => setEditNotes(e.target.value)}
+                        placeholder="Notes (optional)"
+                        aria-label="Notes"
+                      />
+                    </div>
+                    <div className="row-tight">
+                      <Btn disabled={busy} onClick={saveEdit}>
+                        {busy ? 'Saving…' : 'Save changes'}
+                      </Btn>
+                      <Btn variant="quiet" onClick={() => setEditing(null)}>
+                        Cancel
+                      </Btn>
+                    </div>
                   </div>
+                ) : (
+                  <>
+                    <div className="value">
+                      {row.weight_kg != null &&
+                        `${kgToLbOz(row.weight_kg)} (${row.weight_kg.toFixed(2)} kg)`}
+                      {row.weight_kg != null && row.height_cm != null && ' · '}
+                      {row.height_cm != null &&
+                        `${cmToIn(row.height_cm)} (${row.height_cm.toFixed(1)} cm)`}
+                    </div>
+                    {gain !== null && (
+                      <div className={gain >= 0 ? 'gain-up' : 'gain-down'}>
+                        {gain >= 0 ? '+' : '−'}
+                        {kgToLbOz(Math.abs(gain))} since last visit
+                      </div>
+                    )}
+                    {row.notes && <div className="meta">{row.notes}</div>}
+                  </>
                 )}
-                {row.notes && <div className="meta">{row.notes}</div>}
               </Card>
             )
           })
