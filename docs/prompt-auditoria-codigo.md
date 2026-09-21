@@ -37,8 +37,10 @@ entero: un auditor que arregla mientras mira deja de mirar.
 > **1. Seguridad**
 > - Usos de `lib/supabaseAdmin.ts` (`service_role`): ¿cuántos hay, y cada uno
 >   está justificado? ¿Alguno entró a un archivo `'use client'`?
-> - Secretos de dispositivo: ¿comparación en tiempo constante? ¿techo de
->   intentos? ¿idempotencia?
+> - Tokens de dispositivo: ¿se buscan por hash (no en texto plano)? ¿se
+>   valida el scope del token contra el endpoint? ¿el bebé sobre el que se
+>   escribe se resuelve dentro de la familia del token, o puede salirse de
+>   ella? ¿techo de intentos? ¿idempotencia?
 > - ¿Algún secreto con prefijo `NEXT_PUBLIC_`? ¿Algún secreto hardcodeado?
 > - Validación del body en cada route handler: tipo, forma, tamaño, rango.
 > - ¿Un body malformado responde 400 o se escapa como 500?

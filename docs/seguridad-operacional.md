@@ -62,19 +62,31 @@ o queda caída.
 
 ---
 
-## 5. Secretos de dispositivo
+## 5. Tokens de dispositivo
 
-`NUC_DEVICE_SECRET` y `QUICK_TOGGLE_SECRET` autentican a los dos endpoints de
-dispositivo. Son **estáticos y compartidos**: identifican "alguien que conoce el
-secreto", no *quién*.
+Los dos endpoints de dispositivo (`/api/ingest`, `/api/quick/nurse`) se
+autentican con un token de la tabla `device_tokens` (migración `0007`), no con
+un secreto único y compartido. Cada token pertenece a **una** familia — y
+opcionalmente está clavado a **un** bebé de esa familia — y trae uno o más
+`scopes` (`ingest`, `quick_nurse`). La base guarda solo el hash sha-256; el
+token en claro se muestra una sola vez, al crearlo.
 
-**Cómo rotarlos:**
+**Crear, listar, revocar** (`scripts/device-token.mts`, corre con
+`service_role` contra el stack de destino):
 
-1. `openssl rand -hex 32`
-2. Actualizar la variable de entorno donde corra la app.
-3. Actualizar el header en la automatización de Home Assistant y en el Shortcut
-   de iOS. Los tres pasos van juntos: no hay período de convivencia hasta que se
-   implemente `proposals/device-tokens-and-idempotency.md`.
+```bash
+pnpm device-token families                                            # ver family_id / baby_id
+pnpm device-token create --family <uuid> [--baby <uuid>] --label <texto> \
+  --scope ingest|quick_nurse [--scope ...]
+pnpm device-token list --family <uuid>
+pnpm device-token revoke --id <uuid>
+```
+
+**Cómo rotar un token:** crear uno nuevo, reconfigurar el dispositivo (la
+automatización de Home Assistant o el Shortcut de iOS) con el token nuevo, y
+recién entonces revocar el viejo con `pnpm device-token revoke`. A diferencia
+del secreto compartido de antes, esto sí admite un período de convivencia: los
+dos tokens son válidos hasta que se revoca el viejo.
 
 **Qué tapa el rate limiting que hay hoy** (`lib/deviceAuth.ts`, 20 intentos por
 minuto y por IP): la fuerza bruta ingenua desde una sola dirección.
@@ -83,11 +95,24 @@ minuto y por IP): la fuerza bruta ingenua desde una sola dirección.
 
 - El contador vive en la memoria de **ese** proceso. Con varias instancias, cada
   una cuenta por su lado; un arranque en frío lo resetea.
+- La clave del contador es el header `x-forwarded-for`, que controla el propio
+  cliente que hace el request: no es una identidad de confianza.
+- El `Map` del contador nunca poda las entradas vencidas.
+- Cuenta también los intentos que **sí** autenticaron, no solo los fallidos: un
+  NUC mandando más de 20 eventos legítimos por minuto empieza a recibir 429.
 - No hay idempotencia: el mismo evento mandado dos veces son dos filas.
-- Y lo más importante: **el secreto no dice a qué familia pertenece**. Quien lo
-  tenga escribe sobre cualquier `baby_id` de la base (hallazgos C1 y C2 de
-  `auditorias/2026-09-20-auditoria-inicial.md`). El arreglo de fondo son tokens
-  hasheados por dispositivo, y está propuesto, no implementado.
+
+**Seguimiento propuesto** (no implementado): contar solo los intentos de auth
+fallidos, o usar como clave el id del token ya autenticado en vez de la IP, y
+podar las entradas vencidas del `Map`.
+
+Lo que esto **sí** cierra (hallazgos C1 y C2 de
+`auditorias/2026-09-20-auditoria-inicial.md`, cerrados el 21 sep 2026): el
+bebé sobre el que un dispositivo escribe sale del token, nunca del body a
+ciegas — no puede salir de la familia del token, y si el token está clavado a
+un bebé, no puede salir de ese bebé. Ver
+`proposals/device-tokens-and-idempotency.md` §4 y §6 para lo que sigue
+propuesto (idempotencia, rate limit distribuido).
 
 ---
 
@@ -105,10 +130,41 @@ docker ps --format '{{.Names}}\t{{.Ports}}'
 - `0.0.0.0:54322->5432/tcp` → **todas las interfaces**, o sea internet, salvo
   que haya un firewall delante.
 
-### ⚠️ Hallazgo real de este VPS (verificado el 20 sep 2026)
+### ✅ Resuelto el 21 sep 2026
 
-El stack local de Supabase que levanta `pnpm exec supabase start` **bindea a
-`0.0.0.0`**, no a localhost. Observado, no supuesto:
+El stack local ya bindea a `127.0.0.1`: `pnpm db:status` y `ss -tln`
+confirmados, ningún `0.0.0.0`.
+
+```
+$ pnpm db:status
+amelia-local-auth-1   Up (healthy)
+amelia-local-db-1     Up (healthy)   127.0.0.1:54322->5432/tcp
+amelia-local-kong-1   Up (healthy)   127.0.0.1:54321->8000/tcp
+amelia-local-rest-1   Up
+
+$ ss -tln | grep -E ':5432[0-9]'
+LISTEN 0  4096  127.0.0.1:54322  0.0.0.0:*
+LISTEN 0  4096  127.0.0.1:54321  0.0.0.0:*
+```
+
+Curl a la IP pública del VPS → `000` (sin respuesta); a `127.0.0.1` → `200`.
+
+**Qué cambió:** se sacó el CLI de Supabase (no tenía forma de fijar el bind —
+ver evidencia E-3 en
+`docs/superpowers/plans/2026-09-21-tokens-crecimiento-stack-versiones.md` §2) y
+`supabase/config.toml`. En su lugar, un `docker-compose.yml` propio en
+`supabase/docker/` que publica cada puerto como `127.0.0.1:puerto:puerto`,
+operado con `pnpm db:up` / `db:down` / `db:reset` / `db:env` / `db:psql` /
+`db:status`. Sin Studio (decisión de Emilio, 21 sep 2026): menos superficie expuesta.
+`next dev` también pasó a `-H 127.0.0.1`.
+
+**Qué hacer de acá en adelante:** el stack propio ya bindea a 127.0.0.1; no
+vuelvas al CLI de Supabase.
+
+### Historia — hallazgo original (verificado el 20 sep 2026, cerrado el 21)
+
+El stack local de Supabase que levantaba `pnpm exec supabase start` **bindeaba
+a `0.0.0.0`**, no a localhost. Observado, no supuesto:
 
 ```
 0.0.0.0:54321->8000/tcp     supabase_kong      (API completa)
@@ -127,18 +183,11 @@ responde en la IP pública desde la propia máquina.
 Por contraste, los contenedores de `fruco-erp` en la misma máquina sí bindean
 bien: `127.0.0.1:5432` y `127.0.0.1:6379`.
 
-**Qué hacer, en orden de preferencia:**
-
-1. **Bajar el stack cuando no se está testeando:** `pnpm exec supabase stop`.
-   Es lo más simple y cierra el tema del todo.
-2. Bloquear el rango `54321-54327` en el firewall del VPS (requiere sudo).
-3. Si el stack tiene que quedar arriba, revisar si la versión del CLI permite
-   fijar el bind en `supabase/config.toml`. **No lo verifiqué.**
-
-Los datos que hay ahí adentro son de prueba y las llaves son las de desarrollo
-que Supabase publica en su propia documentación, así que el riesgo inmediato es
-bajo. El riesgo real es el otro: un Postgres con `postgres/postgres` abierto a
-internet es un punto de apoyo dentro de la máquina.
+Los datos que había ahí adentro eran de prueba y las llaves eran las de
+desarrollo que Supabase publica en su propia documentación, así que el riesgo
+inmediato era bajo. El riesgo real era el otro: un Postgres con
+`postgres/postgres` abierto a internet es un punto de apoyo dentro de la
+máquina. Ver la solución arriba, en "✅ Resuelto el 21 sep 2026".
 
 ---
 
@@ -162,10 +211,12 @@ Todavía no hay deploy (Vercel está previsto, no hecho). Cuando llegue:
 
 - [ ] Las variables de entorno se cargan en el panel de Vercel, no en un archivo
       del repo.
-- [ ] `SUPABASE_SERVICE_ROLE_KEY`, `NUC_DEVICE_SECRET` y `QUICK_TOGGLE_SECRET`
-      **sin** prefijo `NEXT_PUBLIC_`.
-- [ ] `QUICK_TOGGLE_BABY_ID` seteada si la base tiene más de un bebé (si no, el
-      endpoint falla cerrado a propósito).
+- [ ] `SUPABASE_SERVICE_ROLE_KEY` **sin** prefijo `NEXT_PUBLIC_`.
+- [ ] Crear los tokens de los dispositivos reales con `pnpm device-token`
+      contra la base de producción (`pnpm device-token create --family <uuid>
+      [--baby <uuid>] --label <texto> --scope ingest|quick_nurse`) y
+      reconfigurar la automatización de Home Assistant y el Shortcut de iOS
+      con esos tokens.
 - [ ] `pnpm audit` limpio.
 - [ ] `pnpm test:all` en verde contra un stack local antes de subir.
 - [ ] Una corrida de `prompt-auditoria-codigo.md`.
@@ -174,11 +225,11 @@ Todavía no hay deploy (Vercel está previsto, no hecho). Cuando llegue:
 
 ## 9. Historial de incidentes
 
-Arranca vacío. Formato:
+Formato:
 
 | Fecha | Qué pasó | Cómo se detectó | Qué se hizo | Qué cambió para que no vuelva |
 | --- | --- | --- | --- | --- |
-| — | — | — | — | — |
+| 20 sep 2026 | Postgres, Studio y la API del stack local de Supabase escuchaban en `0.0.0.0` (todas las interfaces) en vez de `127.0.0.1`, en un VPS sin sudo para confirmar si un firewall lo tapaba | `docker ps` mostrando `0.0.0.0:puerto->...` + `curl` a la IP pública de la máquina respondiendo | Se reemplazó el CLI de Supabase por un stack propio (`supabase/docker/docker-compose.yml`), operado con `pnpm db:up`/`db:down`/`db:reset`/`db:env`/`db:psql`/`db:status`, que publica cada puerto como `127.0.0.1:puerto:puerto` | Se sacó el CLI de Supabase como dependencia y se borró `supabase/config.toml`; `next dev` pasó a `-H 127.0.0.1` |
 
 Un incidente se anota **aunque no haya tenido consecuencias**. El valor del
 registro está en los que no pasaron a mayores.

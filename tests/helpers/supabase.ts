@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { generateDeviceToken, type DeviceScope } from '@/lib/deviceTokens'
 
 /** Carga .env.test si las variables no vienen ya del entorno. */
 function loadEnv(): void {
@@ -8,10 +9,7 @@ function loadEnv(): void {
   try {
     raw = readFileSync(new URL('../../.env.test', import.meta.url), 'utf8')
   } catch {
-    throw new Error(
-      'Falta .env.test. Levantá el stack con `pnpm exec supabase start` y ' +
-        'corré `bash scripts/test-env.sh`.',
-    )
+    throw new Error('Falta .env.test. Levantá el stack con `pnpm db:up` y corré `pnpm db:env`.')
   }
   for (const line of raw.split('\n')) {
     const m = line.match(/^([A-Z_]+)="?([^"]*)"?$/)
@@ -55,9 +53,9 @@ export type SeededFamily = {
 /**
  * Dos familias completas, cada una con su padre, su bebé y datos propios.
  *
- * La familia A se siembra PRIMERO a propósito: /api/quick/nurse toma el
- * `babies` más antiguo de toda la base, así que "A primero" es lo que hace
- * visible el cruce entre familias.
+ * La familia A se siembra primero: era la que el bug viejo de /api/quick/nurse
+ * se quedaba (C1). Se mantiene el orden para que el test que lo prueba cerrado
+ * siga significando algo.
  */
 export async function seedTwoFamilies(tag: string): Promise<{
   a: SeededFamily
@@ -130,6 +128,34 @@ export async function seedTwoFamilies(tag: string): Promise<{
   }
 
   return { a, b, cleanup }
+}
+
+/**
+ * Un token de dispositivo sembrado directo con service_role, como lo haría
+ * `pnpm device-token create`. Devuelve el token en claro: la base solo tiene el
+ * hash. Se borra en cascada con la familia en cleanup().
+ */
+export async function seedDeviceToken(opts: {
+  familyId: string
+  babyId?: string | null
+  scopes: DeviceScope[]
+  revoked?: boolean
+}): Promise<{ id: string; token: string }> {
+  const { token, hash } = generateDeviceToken()
+  const { data, error } = await adminClient()
+    .from('device_tokens')
+    .insert({
+      family_id: opts.familyId,
+      baby_id: opts.babyId ?? null,
+      label: 'dispositivo de prueba',
+      token_hash: hash,
+      scopes: opts.scopes,
+      revoked_at: opts.revoked ? new Date().toISOString() : null,
+    })
+    .select('id')
+    .single()
+  if (error) throw error
+  return { id: data.id, token }
 }
 
 async function deleteUserByEmail(admin: SupabaseClient, email: string): Promise<void> {

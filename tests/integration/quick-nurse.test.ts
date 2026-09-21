@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   adminClient,
   exposeEnvToRouteHandlers,
+  seedDeviceToken,
   seedTwoFamilies,
   type SeededFamily,
 } from '../helpers/supabase'
@@ -10,29 +11,32 @@ import { resetDeviceRateLimit } from '@/lib/deviceAuth'
 let a: SeededFamily
 let b: SeededFamily
 let cleanup: () => Promise<void>
-
-const SECRET = 'secreto-de-prueba-del-shortcut'
+let pinnedB: string
+let familyA: string
+let ingestOnlyA: string
 
 beforeAll(async () => {
   exposeEnvToRouteHandlers()
-  process.env.QUICK_TOGGLE_SECRET = SECRET
   ;({ a, b, cleanup } = await seedTwoFamilies('quicknurse'))
+  pinnedB = (
+    await seedDeviceToken({ familyId: b.familyId, babyId: b.babyId, scopes: ['quick_nurse'] })
+  ).token
+  familyA = (await seedDeviceToken({ familyId: a.familyId, scopes: ['quick_nurse'] })).token
+  ingestOnlyA = (await seedDeviceToken({ familyId: a.familyId, scopes: ['ingest'] })).token
 })
 afterAll(async () => {
   await cleanup()
-  delete process.env.QUICK_TOGGLE_BABY_ID
 })
 
-// El contador del rate limit es global al proceso.
 beforeEach(() => {
   resetDeviceRateLimit()
 })
 
-async function post(body: unknown, secret: string | null) {
+async function post(body: unknown, token: string | null) {
   const { POST } = await import('@/app/api/quick/nurse/route')
   const { NextRequest } = await import('next/server')
   const headers: Record<string, string> = { 'content-type': 'application/json' }
-  if (secret !== null) headers['x-device-secret'] = secret
+  if (token !== null) headers.authorization = `Bearer ${token}`
   return POST(
     new NextRequest(
       new Request('http://localhost/api/quick/nurse', {
@@ -44,91 +48,73 @@ async function post(body: unknown, secret: string | null) {
   )
 }
 
+async function sessionsOf(babyId: string) {
+  const { data } = await adminClient()
+    .from('nursing_sessions')
+    .select('id, ended_at')
+    .eq('baby_id', babyId)
+  return data ?? []
+}
+
 describe('/api/quick/nurse — autenticación', () => {
-  it('rechaza sin secreto', async () => {
+  it('rechaza sin token', async () => {
     expect((await post({ side: 'left' }, null)).status).toBe(401)
   })
 
-  it('rechaza con secreto incorrecto', async () => {
-    expect((await post({ side: 'left' }, 'otro')).status).toBe(401)
+  it('rechaza un token que no existe', async () => {
+    expect((await post({ side: 'left' }, 'amd_' + 'z'.repeat(43))).status).toBe(401)
+  })
+
+  it('rechaza un token sin el scope quick_nurse', async () => {
+    expect((await post({ side: 'left' }, ingestOnlyA)).status).toBe(403)
   })
 
   it('rechaza un side inválido', async () => {
-    expect((await post({ side: 'arriba' }, SECRET)).status).toBe(400)
+    expect((await post({ side: 'arriba' }, pinnedB)).status).toBe(400)
   })
 })
 
 /**
- * HALLAZGO C1 de docs/auditorias/2026-09-20-auditoria-inicial.md, con el parche
- * aplicado.
- *
- * El endpoint corre con service_role (salta RLS) y antes elegía el `babies` más
- * ANTIGUO de toda la base sin filtrar por familia: con dos familias, el secreto
- * de cualquiera escribía sobre el bebé de la familia más vieja.
- *
- * Estos tests son la versión DADA VUELTA de los que documentaban el bug: ahora
- * el endpoint falla cerrado en vez de adivinar. El arreglo de fondo —resolver
- * el bebé desde el token del dispositivo— sigue siendo
- * proposals/device-tokens-and-idempotency.md §3.
+ * HALLAZGO C1, CERRADO. Antes: el bebé más antiguo de toda la base, después un
+ * parche con QUICK_TOGGLE_BABY_ID. Ahora el bebé sale del token.
  */
 describe('/api/quick/nurse — a qué bebé le escribe', () => {
-  it('con dos familias y sin configurar nada, falla cerrado en vez de adivinar', async () => {
-    delete process.env.QUICK_TOGGLE_BABY_ID
-    const res = await post({ side: 'left' }, SECRET)
-    expect(res.status).toBe(409)
-    expect((await res.json()).error).toContain('more than one baby')
-
-    // Y no escribió nada en ninguna de las dos familias.
-    const admin = adminClient()
-    const { data } = await admin
-      .from('nursing_sessions')
-      .select('id')
-      .in('baby_id', [a.babyId, b.babyId])
-    expect(data).toEqual([])
-  })
-
-  it('con QUICK_TOGGLE_BABY_ID apuntando a B, la sesión aterriza en B', async () => {
-    process.env.QUICK_TOGGLE_BABY_ID = b.babyId
-    const res = await post({ side: 'left' }, SECRET)
+  it('un token clavado a B escribe en B y la familia A no se entera', async () => {
+    const res = await post({ side: 'left' }, pinnedB)
     expect(res.status).toBe(200)
-
-    const admin = adminClient()
-    const { data: enB } = await admin
-      .from('nursing_sessions')
-      .select('id')
-      .eq('baby_id', b.babyId)
-      .is('ended_at', null)
-    const { data: enA } = await admin.from('nursing_sessions').select('id').eq('baby_id', a.babyId)
-
-    expect(enB).toHaveLength(1)
-    expect(enA).toEqual([]) // la familia más vieja ya no se lo queda todo
-
-    // Cerramos la sesión para no dejar estado colgando.
-    await post({ side: 'left' }, SECRET)
+    expect((await res.json()).action).toBe('started')
+    expect(await sessionsOf(a.babyId)).toEqual([])
+    expect((await sessionsOf(b.babyId)).filter((s) => s.ended_at === null)).toHaveLength(1)
+    await post({ side: 'left' }, pinnedB) // cerrar
   })
 
-  it('un QUICK_TOGGLE_BABY_ID que no es uuid es un error de configuración, no un 200', async () => {
-    process.env.QUICK_TOGGLE_BABY_ID = 'la-bebe'
-    expect((await post({ side: 'left' }, SECRET)).status).toBe(500)
+  it('un token de familia con un solo bebé escribe en ese bebé', async () => {
+    expect((await post({ side: 'right' }, familyA)).status).toBe(200)
+    expect(await sessionsOf(a.babyId)).toHaveLength(1)
+    await post({ side: 'right' }, familyA) // cerrar
   })
 
-  it('el toggle sigue el ciclo start -> switch -> end sobre el bebé configurado', async () => {
-    process.env.QUICK_TOGGLE_BABY_ID = b.babyId
-    const admin = adminClient()
+  it('un token de A no puede apuntar al bebé de B con baby_id', async () => {
+    const before = (await sessionsOf(b.babyId)).length
+    expect((await post({ side: 'left', baby_id: b.babyId }, familyA)).status).toBe(403)
+    expect(await sessionsOf(b.babyId)).toHaveLength(before)
+  })
 
-    const started = await post({ side: 'left' }, SECRET)
-    expect((await started.json()).action).toBe('started')
+  it('el toggle sigue el ciclo start -> switch -> end', async () => {
+    expect((await (await post({ side: 'left' }, pinnedB)).json()).action).toBe('started')
+    expect((await (await post({ side: 'right' }, pinnedB)).json()).action).toBe('switched')
+    expect((await (await post({ side: 'right' }, pinnedB)).json()).action).toBe('ended')
+    expect((await sessionsOf(b.babyId)).every((s) => s.ended_at !== null)).toBe(true)
+  })
 
-    const switched = await post({ side: 'right' }, SECRET)
-    expect((await switched.json()).action).toBe('switched')
-
-    const ended = await post({ side: 'right' }, SECRET)
-    expect((await ended.json()).action).toBe('ended')
-
-    const { data } = await admin
-      .from('nursing_sessions')
-      .select('id, ended_at')
-      .eq('baby_id', b.babyId)
-    expect(data!.every((r) => r.ended_at !== null)).toBe(true)
+  it('con dos bebés en la familia y un token de familia, falla cerrado (409)', async () => {
+    const { error } = await adminClient()
+      .from('babies')
+      .insert({ family_id: a.familyId, name: 'Bebe a2', birth_date: '2026-09-01' })
+    expect(error).toBeNull()
+    const before = (await sessionsOf(a.babyId)).length
+    const res = await post({ side: 'left' }, familyA)
+    expect(res.status).toBe(409)
+    expect(await sessionsOf(a.babyId)).toHaveLength(before)
   })
 })

@@ -17,6 +17,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabaseClient'
 import { resetPumpingTotal } from '@/lib/db'
 import { useVolumeUnit } from '@/lib/useVolumeUnit'
+import { APP_VERSION } from '@/lib/version'
 
 export function Page({ children }: { children: React.ReactNode }) {
   return <div className="page">{children}</div>
@@ -172,6 +173,16 @@ export function Nav({ babyId }: { babyId?: string }) {
                 {resetting ? 'Resetting…' : 'Reset milk total'}
               </button>
             )}
+            <button
+              role="menuitem"
+              className="nav-menu-item"
+              onClick={() => {
+                setMenuOpen(false)
+                router.push('/version')
+              }}
+            >
+              Version history · v{APP_VERSION}
+            </button>
             <button role="menuitem" className="nav-menu-item" onClick={signOut}>
               Sign out
             </button>

@@ -8,17 +8,23 @@ import {
   durationBetween,
   dueRelative,
   elapsed,
+  emptyGrowthInput,
   flOzToMl,
   formatVolume,
   fromHouseholdInputValue,
+  type GrowthInput,
+  growthInputFromMetric,
+  growthInputToMetric,
   householdToday,
   HOUSEHOLD_TZ,
   kgToLbOz,
+  kgToLbOzParts,
   lbOzToKg,
   longDate,
   measuredOn,
   mlToFlOz,
   mlToUnit,
+  resolveGrowthEdit,
   startOfHouseholdDay,
   timeAgo,
   toHouseholdInputValue,
@@ -172,5 +178,91 @@ describe(`bajo TZ=${SYSTEM_TZ}`, () => {
     expect(ageFrom('2025-10-15', now)).toBe('3 months old')
     expect(ageFrom('2026-02-01', now)).toBeNull() // todavía no nació
     expect(ageFrom(null, now)).toBeNull()
+  })
+
+  describe('growth form ↔ metric', () => {
+    const imperial = (p: Partial<GrowthInput>): GrowthInput => ({ ...emptyGrowthInput(true), ...p })
+    const metric = (p: Partial<GrowthInput>): GrowthInput => ({ ...emptyGrowthInput(false), ...p })
+
+    it('kgToLbOzParts redondea igual que kgToLbOz', () => {
+      expect(kgToLbOzParts(3.5)).toEqual({ lb: 7, oz: 11 })
+      expect(kgToLbOzParts(3.62873)).toEqual({ lb: 8, oz: 0 })
+    })
+
+    it('lb/oz/in a kg/cm, con el redondeo que guarda la base', () => {
+      expect(growthInputToMetric(imperial({ lb: '8', oz: '0', inches: '20' }))).toEqual({
+        weightKg: 3.629,
+        heightCm: 50.8,
+      })
+    })
+
+    it('solo onzas cuenta como peso', () => {
+      expect(growthInputToMetric(imperial({ oz: '8' }))).toEqual({
+        weightKg: 0.227,
+        heightCm: null,
+      })
+    })
+
+    it('kg/cm pasan tal cual', () => {
+      expect(growthInputToMetric(metric({ kg: '3.5', cm: '50' }))).toEqual({
+        weightKg: 3.5,
+        heightCm: 50,
+      })
+    })
+
+    it('texto que no es número es un error, no un cero', () => {
+      expect(growthInputToMetric(imperial({ lb: 'ocho' }))).toEqual({
+        error: 'Weight and height have to be numbers.',
+      })
+    })
+
+    it('nada cargado es un error', () => {
+      expect(growthInputToMetric(imperial({}))).toEqual({
+        error: 'Enter a weight, a height, or both.',
+      })
+    })
+
+    it('growthInputFromMetric llena las dos unidades', () => {
+      expect(growthInputFromMetric(3.5, 50, true)).toEqual({
+        imperial: true,
+        lb: '7',
+        oz: '11',
+        inches: '19.7',
+        kg: '3.5',
+        cm: '50',
+      })
+      expect(growthInputFromMetric(null, null, false)).toEqual(emptyGrowthInput(false))
+    })
+
+    it('editar solo otra cosa no le cambia el peso por redondeo de onzas', () => {
+      const original = { weightKg: 3.5, heightCm: 50 }
+      const base = growthInputFromMetric(3.5, 50, true)
+      // 7 lb 11 oz reconvertido serían 3.487 kg: eso NO tiene que pasar.
+      expect(resolveGrowthEdit(base, { ...base }, original)).toEqual(original)
+    })
+
+    it('editar el peso sí lo recalcula; la talla intacta queda exacta', () => {
+      const base = growthInputFromMetric(3.5, 50, true)
+      expect(
+        resolveGrowthEdit(base, { ...base, lb: '8', oz: '0' }, { weightKg: 3.5, heightCm: 50 }),
+      ).toEqual({ weightKg: 3.629, heightCm: 50 })
+    })
+
+    it('pasar a kg/cm sin tocar nada tampoco cambia nada', () => {
+      const base = growthInputFromMetric(3.5, 50, true)
+      expect(
+        resolveGrowthEdit(base, { ...base, imperial: false }, { weightKg: 3.5, heightCm: 50 }),
+      ).toEqual({ weightKg: 3.5, heightCm: 50 })
+    })
+
+    it('borrar la talla la deja en null', () => {
+      const base = growthInputFromMetric(3.5, 50, false)
+      expect(resolveGrowthEdit(base, { ...base, cm: '' }, { weightKg: 3.5, heightCm: 50 })).toEqual(
+        {
+          weightKg: 3.5,
+          heightCm: null,
+        },
+      )
+    })
   })
 })

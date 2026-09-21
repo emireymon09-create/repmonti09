@@ -87,10 +87,12 @@ instrucción "mandá esto al browser". Hoy solo la URL y la anon key lo llevan, 
 las dos son públicas a propósito.
 
 Los dos endpoints que corren con `service_role` —`/api/ingest` y
-`/api/quick/nurse`— se autentican con un secreto de dispositivo
-(`lib/deviceAuth.ts`), no con una sesión de usuario, y tienen hallazgos abiertos
-en `auditorias/2026-09-20-auditoria-inicial.md` (C1 y C2). Leelos antes de tocar
-cualquiera de los dos.
+`/api/quick/nurse`— se autentican con un token por dispositivo (tabla
+`device_tokens`, migración `0007`), enviado como `Authorization: Bearer
+<token>`, no con un secreto compartido ni con una sesión de usuario. El bebé
+sobre el que se escribe se resuelve dentro de la familia del token
+(`lib/deviceAuth.ts`) y nunca puede salir de ella. Los hallazgos C1 y C2 de
+`auditorias/2026-09-20-auditoria-inicial.md` se cerraron el 21 sep 2026.
 
 ---
 
@@ -123,9 +125,8 @@ eso la suite unitaria corre cuatro veces, bajo `UTC`,
 
 Sobre `voided_at`: **toda lectura filtra con `.is('voided_at', null)`.** Una
 lectura que no filtra es la forma en que el borrado lógico se convierte en bug.
-Hoy las cinco tablas que tienen la columna la filtran;
-`growth_measurements` no tiene la columna todavía y por eso hay una propuesta
-(`proposals/growth-edit-and-void.md`).
+Hoy las seis tablas que tienen la columna la filtran; `growth_measurements` la
+sumó en la migración `0008`.
 
 ---
 
@@ -154,9 +155,11 @@ campo todavía, así que el bug estaba latente. Lo agarró un test, no una lectu
 
 ## 8. Migraciones
 
-- **Nunca edites una migración ya aplicada.** `0001`…`0006` son historia.
-- **Este repo dejó de numerar.** Por ADR 0003 la numeración pasa al agente del
-  Hub. Lo que corresponde acá es **proponer**, en `proposals/`.
+- **Nunca edites una migración ya aplicada.** `0001`…`0008` son historia.
+- **Quién numera.** Por defecto, un cambio de schema se **propone** en
+  `proposals/` para el agente del Hub (ADR 0003). Excepción: cuando Emilio pide
+  explícitamente implementarlo en este repo, se numera acá con el siguiente
+  número libre (así nacieron `0007` y `0008`, 21 sep 2026).
 - `supabase/schema.sql` es una vista consolidada de referencia. La fuente de
   verdad son los archivos de `supabase/migrations/`.
 
@@ -180,9 +183,9 @@ Detalles completos en `design.md`.
 
 | Tipo | Qué cubre | Necesita | Comando |
 | --- | --- | --- | --- |
-| Unit | `lib/format.ts`, `lib/queue.ts` | Nada | `pnpm test` |
+| Unit | `lib/format.ts`, `lib/queue.ts`, `lib/deviceTokens.ts`, `lib/changelog.ts` (y que coincida con la versión de `package.json`) | Nada | `pnpm test` |
 | Unit × 4 TZ | lo mismo, bajo cuatro timezones | Nada | `pnpm test:tz` |
-| Integración | RLS, endpoints de dispositivo | Docker + `pnpm exec supabase start` | `pnpm test:integration` |
+| Integración | RLS (incluye corregir/retractar `growth_measurements` sin cruzar familias), endpoints de dispositivo | Docker + `pnpm db:up` | `pnpm test:integration` |
 | Todo | | Docker | `pnpm test:all` |
 
 **Lo que NO hay:** tests de componentes ni de páginas. No los inventes de
@@ -226,7 +229,7 @@ Si te escuchás diciendo alguna de estas, pará.
 
 > **"Total RLS lo tapa."**
 > RLS tapa el acceso del usuario. No tapa un route handler con `service_role`,
-> que es exactamente donde están los dos hallazgos críticos de este repo.
+> que es exactamente donde estaban (C1/C2, cerrados el 21 sep 2026).
 
 > **"Esto lo valido en la página."**
 > Entonces no está validado. La página es una de varias entradas, y ninguna
