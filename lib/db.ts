@@ -609,42 +609,36 @@ export function buildActivity(
   const out: ActivityEntry[] = []
   const mark = (row: { pending?: boolean }, text: string) =>
     row.pending ? `${text} · not synced yet` : text
+  // `what` names the kind itself (the Today feed shows it alone); `detail`
+  // leaves the kind out, for views that already label it ("Diaper · Wet").
+  const entry = (
+    row: { id: string; pending?: boolean },
+    at: string,
+    kind: ActivityEntry['kind'],
+    what: string,
+    detail: string,
+  ) => out.push({ id: row.id, at, kind, what: mark(row, what), detail: mark(row, detail) })
+  const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
   for (const f of feedings) {
-    out.push({
-      id: f.id,
-      at: f.fed_at,
-      kind: 'feeding',
-      what: mark(
-        f,
-        f.feeding_type === 'bottle'
-          ? `Bottle${f.amount_ml ? ` · ${formatVolume(f.amount_ml, unit)}` : ''}`
-          : f.feeding_type === 'solid'
-            ? 'Solids'
-            : 'Nursing (logged as feed)',
-      ),
-    })
+    const text =
+      f.feeding_type === 'bottle'
+        ? `Bottle${f.amount_ml ? ` · ${formatVolume(f.amount_ml, unit)}` : ''}`
+        : f.feeding_type === 'solid'
+          ? 'Solids'
+          : 'Nursing (logged as feed)'
+    entry(f, f.fed_at, 'feeding', text, text)
   }
   for (const n of nursing) {
-    if (n.ended_at)
-      out.push({ id: n.id, at: n.ended_at, kind: 'nursing', what: mark(n, `Nursed · ${n.side}`) })
+    if (n.ended_at) entry(n, n.ended_at, 'nursing', `Nursed · ${n.side}`, `${cap(n.side)} side`)
   }
   for (const d of diapers) {
-    out.push({
-      id: d.id,
-      at: d.changed_at,
-      kind: 'diaper',
-      what: mark(d, `Diaper · ${d.diaper_type}`),
-    })
+    entry(d, d.changed_at, 'diaper', `Diaper · ${d.diaper_type}`, cap(d.diaper_type))
   }
   for (const s of sleep) {
     if (s.ended_at) {
-      out.push({
-        id: s.id,
-        at: s.ended_at,
-        kind: 'sleep',
-        what: mark(s, s.source === 'nuc_derived' ? 'Woke (detected)' : 'Woke'),
-      })
+      const text = s.source === 'nuc_derived' ? 'Woke (detected)' : 'Woke'
+      entry(s, s.ended_at, 'sleep', text, text)
     }
   }
 

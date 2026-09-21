@@ -103,7 +103,10 @@ export type ActivityEntry = {
   id: string
   at: string
   kind: 'feeding' | 'nursing' | 'diaper' | 'sleep' | 'growth'
+  /** Stands on its own: "Diaper · wet". */
   what: string
+  /** For a view that already labels the kind: "Wet". */
+  detail: string
 }
 
 export const APPOINTMENT_TYPE_LABELS: Record<AppointmentType, string> = {

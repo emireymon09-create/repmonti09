@@ -311,7 +311,7 @@ export default function HistoryPage() {
                         <span className="feed-time">{clockTime(entry.at)}</span>
                         <span className="feed-what">
                           <span className="meta">{KIND_LABEL[entry.kind]} · </span>
-                          {entry.what}
+                          {entry.detail}
                         </span>
                         {isEditable(entry.kind) && !isEditing && (
                           <span className="feed-actions">
