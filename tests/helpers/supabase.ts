@@ -8,10 +8,7 @@ function loadEnv(): void {
   try {
     raw = readFileSync(new URL('../../.env.test', import.meta.url), 'utf8')
   } catch {
-    throw new Error(
-      'Falta .env.test. Levantá el stack con `pnpm exec supabase start` y ' +
-        'corré `bash scripts/test-env.sh`.',
-    )
+    throw new Error('Falta .env.test. Levantá el stack con `pnpm db:up` y corré `pnpm db:env`.')
   }
   for (const line of raw.split('\n')) {
     const m = line.match(/^([A-Z_]+)="?([^"]*)"?$/)

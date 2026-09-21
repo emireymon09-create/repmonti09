@@ -44,7 +44,7 @@ pnpm test:all             # unit × 4 TZ + integración (necesita Docker)
 - [ ] Si `pnpm test:integration` no se pudo correr (Docker apagado), se **dice**
       que no se corrió. No se da por bueno.
 - [ ] **Se probó contra el Supabase local**, no solo se leyó. Levantar con
-      `pnpm exec supabase start`.
+      `pnpm db:up`.
 
 ### Lo que se revisa a ojo
 

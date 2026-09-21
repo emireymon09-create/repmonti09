@@ -1,0 +1,76 @@
+# Stack local de Supabase para Amelia, SIN el CLI.
+#
+# Por qué existe: `supabase start` (CLI 2.117) publica cada puerto como
+# `-p puerto:puerto`, o sea en 0.0.0.0, y no tiene clave de config para
+# cambiarlo. En este VPS eso dejaba Postgres (postgres/postgres) y Studio sin
+# auth en la IP pública. Acá cada puerto se publica como 127.0.0.1:p:p, igual
+# que fruco-erp. Ver docs/seguridad-operacional.md §6.
+#
+# Mismas imágenes que ya había bajado el CLI: no hay pull nuevo.
+# Se opera con scripts/local-stack.sh (pnpm db:up / db:down / db:reset).
+name: amelia-local
+
+services:
+  db:
+    image: public.ecr.aws/supabase/postgres:17.6.1.167
+    ports: ['127.0.0.1:54322:5432']
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+      JWT_SECRET: ${JWT_SECRET}
+    volumes:
+      - ./roles.sql:/docker-entrypoint-initdb.d/init-scripts/99-roles.sql:ro
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD', 'pg_isready', '-U', 'postgres', '-h', 'localhost']
+      interval: 2s
+      retries: 30
+
+  auth:
+    image: public.ecr.aws/supabase/gotrue:v2.196.0
+    depends_on: { db: { condition: service_healthy } }
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0 # dentro de la red de compose; no se publica
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: http://127.0.0.1:54321
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD}@db:5432/postgres
+      GOTRUE_SITE_URL: http://localhost:3000
+      GOTRUE_DISABLE_SIGNUP: 'false'
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_EXP: 3600
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: 'true'
+      # Lo mismo que enable_confirmations = false del config.toml viejo.
+      GOTRUE_MAILER_AUTOCONFIRM: 'true'
+    healthcheck:
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost:9999/health']
+      interval: 2s
+      retries: 30
+
+  rest:
+    image: public.ecr.aws/supabase/postgrest:v16.2
+    depends_on: { db: { condition: service_healthy } }
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD}@db:5432/postgres
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_DB_USE_LEGACY_GUCS: 'false'
+
+  kong:
+    image: public.ecr.aws/supabase/kong:2.8.1
+    depends_on: [auth, rest]
+    ports: ['127.0.0.1:54321:8000']
+    environment:
+      KONG_DATABASE: 'off'
+      KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: cors
+    volumes: ['./kong.yml:/home/kong/kong.yml:ro']
+
+volumes:
+  db-data:

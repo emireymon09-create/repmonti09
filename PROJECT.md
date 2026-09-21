@@ -75,8 +75,10 @@ whenever that sync gets built.
   phase 0, and this directory becomes `apps/amelia` inside it.
 - **No cloud Supabase project — and this app must not create one.**
   Per ADR 0001 the cloud database is shared and the Hub agent creates
-  it. Local development runs against `supabase start` (Docker) as
-  before.
+  it. Local development runs against a self-owned `docker-compose.yml`
+  in `supabase/docker/` (Docker), operated with `pnpm db:up` /
+  `db:env` / `db:reset` / `db:down` — not the Supabase CLI, which
+  could not be made to bind to anything but `0.0.0.0`.
 - **No Vercel deployment yet.**
 - The app runs and is testable on Emilio's machine right now via the
   local Supabase stack.
@@ -211,9 +213,9 @@ database) — useful for quickly showing the design, not for real use.
 ## Next steps
 
 1. ~~Init git locally~~ — done, `main`, `.gitignore` in place.
-2. **Keep building UI locally** against `supabase start`. Nothing in
-   the backend change blocks this, and it is the right thing to be
-   doing before Amelia arrives.
+2. **Keep building UI locally** against `pnpm db:up` (the self-owned
+   stack in `supabase/docker/`). Nothing in the backend change blocks
+   this, and it is the right thing to be doing before Amelia arrives.
 3. **Do not create another GitHub repo for this directory.** One remote
    already exists (`emireymon09-create/repmonti09`). The monorepo
    (ADR 0003) is the Hub agent's phase 0; this directory becomes
@@ -297,7 +299,10 @@ What it left **open**, on purpose:
   the baby from a device token.
 - **`/api/ingest` cross-family write (CRITICAL).** Same root cause; same
   proposal.
-- **The local Supabase stack binds to `0.0.0.0`**, not to localhost. On
-  the VPS this repo lives on, Studio and the API answer on the public
-  interface. Not verified whether a firewall covers it — no sudo. See
-  `docs/seguridad-operacional.md` §6.
+- **Resolved 2026-09-21.** The local stack used to bind to `0.0.0.0`
+  (the Supabase CLI has no config key for the bind — traced into the
+  binary, see `docs/superpowers/plans/2026-09-21-tokens-crecimiento-stack-versiones.md`
+  evidence E-3). Replaced with a self-owned `docker-compose.yml` in
+  `supabase/docker/` that publishes every port as `127.0.0.1:port:port`.
+  `pnpm db:status` and `ss -tln` confirm only `127.0.0.1`, no `0.0.0.0`.
+  See `docs/seguridad-operacional.md` §6.

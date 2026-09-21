@@ -5,7 +5,7 @@
   "packageManager": "pnpm@11.7.0",
   "scripts": {
     "preinstall": "node scripts/only-pnpm.mjs",
-    "dev": "next dev",
+    "dev": "next dev -H 127.0.0.1",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
@@ -15,7 +15,13 @@
     "test": "vitest run tests/unit",
     "test:tz": "bash scripts/test-tz.sh",
     "test:integration": "vitest run tests/integration",
-    "test:all": "pnpm test:tz && pnpm test:integration"
+    "test:all": "pnpm test:tz && pnpm test:integration",
+    "db:up": "bash scripts/local-stack.sh up",
+    "db:down": "bash scripts/local-stack.sh down",
+    "db:reset": "bash scripts/local-stack.sh reset",
+    "db:env": "bash scripts/local-stack.sh env",
+    "db:psql": "bash scripts/local-stack.sh psql",
+    "db:status": "bash scripts/local-stack.sh status"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.1",
@@ -32,7 +38,6 @@
     "eslint-config-next": "14.2.35",
     "eslint-config-prettier": "^9.1.2",
     "prettier": "^3.9.8",
-    "supabase": "^2.117.0",
     "typescript": "^5.5.0",
     "vitest": "^2.1.9"
   }

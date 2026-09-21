@@ -11,3 +11,4 @@ output.txt
 .claude/
 *.tsbuildinfo
 .env.test
+supabase/docker/.env

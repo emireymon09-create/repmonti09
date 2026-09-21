@@ -109,6 +109,10 @@ middleware.ts      Guard de auth server-side. NO reemplaza a RLS: evita que una
 public/sw.js       Service worker: que la app ABRA sin conexión.
 tests/             Vitest. unit/ no necesita nada; integration/ necesita el
                    stack local levantado.
+supabase/docker/   Stack local de Supabase sin el CLI (docker-compose.yml,
+                   kong.yml, roles.sql). Escucha solo en 127.0.0.1.
+scripts/local-stack.sh   Opera el stack (pnpm db:up / db:down / db:reset / db:env
+                   / db:psql / db:status).
 ```
 
 ---
@@ -121,17 +125,22 @@ corepack enable             # una sola vez por máquina
 pnpm install
 
 # Base de datos local (necesita Docker corriendo)
-# El CLI de Supabase es devDependency: NO se instala global.
-pnpm exec supabase start    # levanta Postgres + Auth + API + Studio
-pnpm exec supabase db reset # re-aplica las migraciones desde cero
-pnpm exec supabase stop     # bajalo al terminar (bindea a 0.0.0.0)
-# Studio local: http://localhost:54323
+# Stack propio en supabase/docker/ — escucha solo en 127.0.0.1, no el CLI de
+# Supabase (bindeaba a 0.0.0.0). Ver supabase/docker/docker-compose.yml.
+pnpm db:up                  # genera claves la primera vez, levanta y migra
+pnpm db:env                 # escribe .env.test y las 3 claves de Supabase en .env.local
+pnpm db:reset                # baja, BORRA el volumen y levanta de cero
+pnpm db:down                 # baja los contenedores (los datos quedan en el volumen)
+pnpm db:psql                 # psql como postgres
+pnpm db:status                # contenedores y puertos — tienen que decir 127.0.0.1
 
 # Entorno
-cp .env.local.example .env.local   # y completá con lo que imprime supabase start
+cp .env.local.example .env.local   # y completá con `pnpm db:env`
 
 # Desarrollo
-pnpm dev                    # http://localhost:3000
+pnpm dev                    # http://127.0.0.1:3000 — escucha solo en 127.0.0.1;
+                             # para probar desde el teléfono en la LAN hace falta
+                             # un túnel/SSH, a propósito
 
 # Build / producción
 pnpm build
@@ -142,7 +151,6 @@ pnpm test                   # unit (lib/format.ts, lib/queue.ts). Sin Docker
 pnpm test:tz                # los mismos, bajo UTC / LA / Tokio / Kiritimati
 pnpm test:integration       # RLS + endpoints. NECESITA el stack local
 pnpm test:all               # test:tz + test:integration
-bash scripts/test-env.sh    # escribe .env.test leyendo el estado real del stack
 
 # Lint / format
 pnpm lint
@@ -332,11 +340,13 @@ y la base.
    vive en la memoria de un proceso: con varias instancias no sirve. Y
    sigue sin haber idempotencia. ADR 0005 pide tokens hasheados por
    dispositivo; propuesto, no implementado.
-5. El stack local de Supabase **bindea a `0.0.0.0`**, no a localhost. En
-   este VPS, Studio y la API responden en la interfaz pública. No pude
-   verificar si un firewall lo tapa (no hay sudo). Mientras tanto:
-   `pnpm exec supabase stop` al terminar. Ver
-   `docs/seguridad-operacional.md` §6.
+5. **Cerrada el 21 sep 2026.** El CLI de Supabase no tiene forma de fijar el
+   bind (E-3: el binario arma `-p puerto:puerto`, sin IP, y no hay clave de
+   config que lo cambie). Se reemplazó por un `docker-compose.yml` propio en
+   `supabase/docker/` que publica cada puerto como `127.0.0.1:puerto:puerto`
+   (E-4: mismo patrón validado en un spike, 29/29 tests). `pnpm db:status`
+   confirma `127.0.0.1:54321->8000/tcp` y `127.0.0.1:54322->5432/tcp`, sin
+   ningún `0.0.0.0`. Ver `docs/seguridad-operacional.md` §6.
 
 ---
 

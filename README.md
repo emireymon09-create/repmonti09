@@ -26,8 +26,10 @@ la nube y sin nada desplegado todavía.
   prohibidos en este repo** — hay un guard de `preinstall` que aborta si detecta
   otro gestor.
 
-El CLI de Supabase **no se instala global**: es una devDependency y se invoca
-con `pnpm exec supabase`. Queda fijado por el lockfile.
+No hay CLI de Supabase en este repo: el stack local es un `docker-compose.yml`
+propio en `supabase/docker/`, operado con `scripts/local-stack.sh` (`pnpm
+db:*`). El CLI publicaba sus puertos en `0.0.0.0` sin forma de evitarlo; este
+stack escucha **solo en 127.0.0.1**.
 
 ---
 
@@ -35,45 +37,43 @@ con `pnpm exec supabase`. Queda fijado por el lockfile.
 
 ```bash
 pnpm install
-pnpm exec supabase start     # la primera vez baja imágenes, tarda unos minutos
-cp .env.local.example .env.local
-pnpm dev
+pnpm db:up          # genera claves de esta máquina, levanta y aplica migraciones
+pnpm db:env         # escribe .env.test y las 3 claves de Supabase en .env.local
+pnpm dev            # http://127.0.0.1:3000
 ```
 
-`supabase start` imprime al terminar un bloque con `API URL`, `anon key` y
-`service_role key`. Esos tres valores van a `.env.local`:
+`pnpm db:env` escribe `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+y `SUPABASE_SERVICE_ROLE_KEY` directo en `.env.local` (creándolo desde
+`.env.local.example` si no existe). No hace falta copiar nada a mano.
 
-| Variable de `.env.local` | Sale de |
-| --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | `API URL` |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `anon key` |
-| `SUPABASE_SERVICE_ROLE_KEY` | `service_role key` — **nunca** con prefijo `NEXT_PUBLIC_` |
-
-Las seis migraciones de `supabase/migrations/` se aplican solas en
-`supabase start`. Para re-aplicarlas desde cero:
+Las seis migraciones de `supabase/migrations/` se aplican solas en `pnpm
+db:up`. Para re-aplicarlas desde cero (**borra el volumen**):
 
 ```bash
-pnpm exec supabase db reset
+pnpm db:reset
 ```
 
-Studio local: `http://localhost:54323`. La app: `http://localhost:3000/login`.
+Sin Studio (P-3): no se levanta. La app: `http://127.0.0.1:3000/login`. `pnpm
+dev` también escucha solo en `127.0.0.1` — para probar desde el teléfono en la
+LAN hace falta un túnel/SSH, a propósito.
 
-> **Antes de irte:** `pnpm exec supabase stop`. El stack bindea a `0.0.0.0`, no
-> a localhost — o sea que en un VPS queda expuesto salvo que haya un firewall
-> delante. Detalle en `docs/seguridad-operacional.md` §6.
+> **Antes de irte:** `pnpm db:down`. El stack ya escucha solo en `127.0.0.1` —
+> el hallazgo de Postgres/Studio/API expuestos en la IP pública quedó resuelto
+> el 21 sep 2026. Detalle en `docs/seguridad-operacional.md` §6.
 
 ---
 
 ## Primera cuenta
 
+Sin Studio (P-3), las filas de alta se insertan por SQL con `pnpm db:psql`:
+
 1. En `/login`, registrate con cualquier email y contraseña. Es local: no hay
    envío de mails y la cuenta queda activa al instante.
-2. Abrí **Studio** (`http://localhost:54323`) → Table Editor.
-3. `families` → insertá una fila (por ejemplo, name: "Reyes Family").
-4. Pestaña **Authentication** → copiá el UUID de tu usuario.
-5. `family_members` → insertá una fila con ese `family_id` y ese `user_id`.
-6. `babies` → insertá la fila de la bebé con el mismo `family_id`.
-7. Refrescá `/dashboard`.
+2. `pnpm db:psql` → `insert into families (name) values ('Reyes Family') returning id;`
+3. `select id from auth.users where email = 'tu@email';` → copiá el UUID.
+4. `insert into family_members (family_id, user_id) values ('<family_id>', '<user_id>');`
+5. `insert into babies (family_id, name, birth_date) values ('<family_id>', 'Nombre', '2026-01-01');`
+6. Refrescá `/dashboard`.
 
 **Por qué a mano y no desde la app:** `families` y `family_members` **no tienen
 policy de INSERT**. Es deliberado — dar de alta una familia es una operación de
@@ -95,8 +95,8 @@ pnpm test:all          # test:tz + test:integration
 Los de integración necesitan el stack levantado y el archivo `.env.test`:
 
 ```bash
-pnpm exec supabase start
-bash scripts/test-env.sh   # escribe .env.test leyendo el estado real del stack
+pnpm db:up
+pnpm db:env   # escribe .env.test leyendo el estado real del stack
 pnpm test:integration
 ```
 

@@ -105,10 +105,41 @@ docker ps --format '{{.Names}}\t{{.Ports}}'
 - `0.0.0.0:54322->5432/tcp` → **todas las interfaces**, o sea internet, salvo
   que haya un firewall delante.
 
-### ⚠️ Hallazgo real de este VPS (verificado el 20 sep 2026)
+### ✅ Resuelto el 21 sep 2026
 
-El stack local de Supabase que levanta `pnpm exec supabase start` **bindea a
-`0.0.0.0`**, no a localhost. Observado, no supuesto:
+El stack local ya bindea a `127.0.0.1`: `pnpm db:status` y `ss -tln`
+confirmados, ningún `0.0.0.0`.
+
+```
+$ pnpm db:status
+amelia-local-auth-1   Up (healthy)
+amelia-local-db-1     Up (healthy)   127.0.0.1:54322->5432/tcp
+amelia-local-kong-1   Up (healthy)   127.0.0.1:54321->8000/tcp
+amelia-local-rest-1   Up
+
+$ ss -tln | grep -E ':5432[0-9]'
+LISTEN 0  4096  127.0.0.1:54322  0.0.0.0:*
+LISTEN 0  4096  127.0.0.1:54321  0.0.0.0:*
+```
+
+Curl a la IP pública del VPS → `000` (sin respuesta); a `127.0.0.1` → `200`.
+
+**Qué cambió:** se sacó el CLI de Supabase (no tenía forma de fijar el bind —
+ver evidencia E-3 en
+`docs/superpowers/plans/2026-09-21-tokens-crecimiento-stack-versiones.md`) y
+`supabase/config.toml`. En su lugar, un `docker-compose.yml` propio en
+`supabase/docker/` que publica cada puerto como `127.0.0.1:puerto:puerto`,
+operado con `pnpm db:up` / `db:down` / `db:reset` / `db:env` / `db:psql` /
+`db:status`. Sin Studio (decisión de Emilio, P-3): menos superficie expuesta.
+`next dev` también pasó a `-H 127.0.0.1`.
+
+**Qué hacer de acá en adelante:** el stack propio ya bindea a 127.0.0.1; no
+vuelvas al CLI de Supabase.
+
+### Historia — hallazgo original (verificado el 20 sep 2026, cerrado el 21)
+
+El stack local de Supabase que levantaba `pnpm exec supabase start` **bindeaba
+a `0.0.0.0`**, no a localhost. Observado, no supuesto:
 
 ```
 0.0.0.0:54321->8000/tcp     supabase_kong      (API completa)
@@ -127,18 +158,11 @@ responde en la IP pública desde la propia máquina.
 Por contraste, los contenedores de `fruco-erp` en la misma máquina sí bindean
 bien: `127.0.0.1:5432` y `127.0.0.1:6379`.
 
-**Qué hacer, en orden de preferencia:**
-
-1. **Bajar el stack cuando no se está testeando:** `pnpm exec supabase stop`.
-   Es lo más simple y cierra el tema del todo.
-2. Bloquear el rango `54321-54327` en el firewall del VPS (requiere sudo).
-3. Si el stack tiene que quedar arriba, revisar si la versión del CLI permite
-   fijar el bind en `supabase/config.toml`. **No lo verifiqué.**
-
-Los datos que hay ahí adentro son de prueba y las llaves son las de desarrollo
-que Supabase publica en su propia documentación, así que el riesgo inmediato es
-bajo. El riesgo real es el otro: un Postgres con `postgres/postgres` abierto a
-internet es un punto de apoyo dentro de la máquina.
+Los datos que había ahí adentro eran de prueba y las llaves eran las de
+desarrollo que Supabase publica en su propia documentación, así que el riesgo
+inmediato era bajo. El riesgo real era el otro: un Postgres con
+`postgres/postgres` abierto a internet es un punto de apoyo dentro de la
+máquina. Ver la solución arriba, en "✅ Resuelto el 21 sep 2026".
 
 ---
 
@@ -174,11 +198,11 @@ Todavía no hay deploy (Vercel está previsto, no hecho). Cuando llegue:
 
 ## 9. Historial de incidentes
 
-Arranca vacío. Formato:
+Formato:
 
 | Fecha | Qué pasó | Cómo se detectó | Qué se hizo | Qué cambió para que no vuelva |
 | --- | --- | --- | --- | --- |
-| — | — | — | — | — |
+| 20 sep 2026 | Postgres, Studio y la API del stack local de Supabase escuchaban en `0.0.0.0` (todas las interfaces) en vez de `127.0.0.1`, en un VPS sin sudo para confirmar si un firewall lo tapaba | `docker ps` mostrando `0.0.0.0:puerto->...` + `curl` a la IP pública de la máquina respondiendo | Se reemplazó el CLI de Supabase por un stack propio (`supabase/docker/docker-compose.yml`), operado con `pnpm db:up`/`db:down`/`db:reset`/`db:env`/`db:psql`/`db:status`, que publica cada puerto como `127.0.0.1:puerto:puerto` | Se sacó el CLI de Supabase como dependencia y se borró `supabase/config.toml`; `next dev` pasó a `-H 127.0.0.1` |
 
 Un incidente se anota **aunque no haya tenido consecuencias**. El valor del
 registro está en los que no pasaron a mayores.

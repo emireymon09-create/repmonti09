@@ -182,7 +182,7 @@ Detalles completos en `design.md`.
 | --- | --- | --- | --- |
 | Unit | `lib/format.ts`, `lib/queue.ts` | Nada | `pnpm test` |
 | Unit × 4 TZ | lo mismo, bajo cuatro timezones | Nada | `pnpm test:tz` |
-| Integración | RLS, endpoints de dispositivo | Docker + `pnpm exec supabase start` | `pnpm test:integration` |
+| Integración | RLS, endpoints de dispositivo | Docker + `pnpm db:up` | `pnpm test:integration` |
 | Todo | | Docker | `pnpm test:all` |
 
 **Lo que NO hay:** tests de componentes ni de páginas. No los inventes de
