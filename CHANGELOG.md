@@ -4,6 +4,17 @@ Every version of Amelia, newest first. The current version is the `version`
 field in `package.json`; this file is the history. A test fails if the two
 disagree. Shown in the app under the settings gear → Version history.
 
+## [0.3.1] - 2026-09-21
+
+Easier to get around on a phone.
+
+- On a phone, the tabs move to a bar at the bottom of the screen, within reach
+  of your thumb, with an icon and a name for each one. All five tabs and the
+  settings gear fit on one line; tablets and the wall screen are unchanged.
+- History no longer repeats the kind of entry: "Diaper · Wet" instead of
+  "Diaper · Diaper · wet", and "Nursing · Left side" instead of "Nursing ·
+  Nursed · left".
+
 ## [0.3.0] - 2026-09-21
 
 A light, pastel theme, and a tidier app on both the phone and the wall screen.

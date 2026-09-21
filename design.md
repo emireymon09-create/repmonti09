@@ -84,7 +84,26 @@ Paleta clara: fondo `#F7EAE3`, tarjeta `#FDF5EF`, elevado `#F3E0D5`, texto
 texto oscuro encima), live `#A9D4B6`, danger `#A63A2E`. **Contraste medido**
 (WCAG): texto 11.6:1 sobre fondo; muted ≥5.7:1 sobre fondo, tarjeta y
 elevado; acento ≥5.4:1; texto sobre acción 7.7:1 y sobre live 8.3:1;
-live-ink ≥5.5:1; danger ≥5.0:1. El tema oscuro sigue sin medir.
+live-ink ≥5.5:1; danger ≥5.0:1.
+
+**Contraste del tema oscuro, medido el 21 sep 2026** (valores computados por
+el navegador, rgba compuestos sobre su fondo real). Cumplen AA: texto 13.5:1
+sobre fondo, 11.1:1 sobre tarjeta, 9.8:1 sobre elevado; muted 9.2 / 7.6 /
+6.7:1; acento 7.8:1 sobre fondo y 6.4:1 sobre tarjeta; texto sobre acento
+7.8:1; texto sobre acción 6.1:1; texto en los tres `Banner` ≥9.5:1.
+**No cumplen AA** (sin cambios, a propósito — el oscuro no se toca sin una
+decisión explícita):
+
+| Par | Ratio | Mínimo | Dónde |
+|---|---|---|---|
+| `--c-text` sobre `--c-live` | 3.19:1 | 4.5 | `Btn live` ("Stop nursing"). En la pared el texto es grande (21px bold) y ahí sí pasa el 3:1 |
+| `--c-live-ink` sobre `--c-surface` | 3.50:1 | 4.5 | `.side` ("Right Side"), `.gain-up` |
+| `--c-muted` en `.card.is-past` (opacidad .65) | 4.14:1 | 4.5 | metadata de turnos pasados |
+| placeholder (`#757575`, default de Chromium, sin estilo propio) | 3.63:1 | 4.5 | todos los inputs. **En claro también falla: 3.91:1** |
+| `--c-danger` como texto | 2.78:1 sobre elevado | 4.5 | solo `.nav-menu-item.is-danger`, que hoy no usa ningún componente |
+
+Informativo (1.4.11 no lo exige porque el botón se identifica por su texto):
+el relleno de `--c-action` contra la tarjeta es 1.83:1.
 
 **Regla de economía del color:** el borde de color se gasta en **un solo
 lugar** — la tarjeta de una sesión en curso (`.card.is-live`, borde
@@ -96,7 +115,9 @@ jerarquía.
 
 ## 3. Escala: teléfono y pared
 
-Un solo breakpoint: **1180px** (`surface.wallMinWidth` en `lib/tokens.ts`).
+Un solo breakpoint de escala: **1180px** (`surface.wallMinWidth` en
+`lib/tokens.ts`). Aparte, y solo para la forma del nav, hay uno de layout en
+**600px** (barra inferior por debajo; ver §4).
 Por encima, `:root` redefine los tokens; ningún componente se reescribe.
 
 | Token | Teléfono | Pared (≥1180px) |
@@ -136,7 +157,7 @@ Destinados a mudarse a `packages/ui` cuando llegue el monorepo.
 | `Label` | `.label` | Mayúsculas, `letter-spacing .09em`, color `--c-muted` |
 | `Btn` | `.btn` | Variantes `action` (default), `quiet`, `live`. `flex: 1`, `min-height: var(--tap)` |
 | `Banner` | `.banner` | Tipos `error` / `ok` / `warn`. Lleva `role="status"` |
-| `Nav` | `.nav` | 5 tabs + menú de engranaje |
+| `Nav` | `.nav` | 5 tabs + menú de engranaje. En teléfono (<600px) es una barra inferior fija, ver §4 "Navegación" |
 | `SyncBar` | `.syncbar` | En `components/SyncStatus.tsx`. Estado offline / pendientes. `role="status"`, y `.has-pending` cuando la cola no está vacía |
 | `SyncStatus` | — | En `components/SyncStatus.tsx`. El que cablea `useSync()` con `SyncBar`; es lo que las páginas montan |
 | `NoBaby` | — | En `components/NoBaby.tsx`. Estado vacío cuando no hay perfil de bebé |
@@ -162,6 +183,19 @@ otros cuatro viven en archivos propios.
 `.feed-actions` `.edit-panel`.
 
 **Navegación (5 tabs fijos):** Today · Milk · Growth · Doctor · History.
+**En teléfono (`max-width: 599px`) la barra baja al borde inferior** (21 sep
+2026): fija, con ícono + label siempre visible por destino y el engranaje como
+sexto ítem ("Settings"), cuyo menú abre hacia arriba. Por qué: los 5 tabs +
+engranaje no entran en una línea por debajo de ~480px ("History" caía sola a
+una segunda fila), y abajo quedan al alcance del pulgar a una mano. Se
+descartó ícono-solo (a las 3 AM un ícono de "Milk" o "History" no se adivina)
+y el scroll horizontal (esconde justo el tab que no entraba). Es el mismo
+markup: los íconos (`NavIcon` en `components/ui.tsx`, SVG de trazo en
+`currentColor`) se ocultan por encima de 599px, donde el nav de pills queda
+exactamente como antes. El destino activo se marca con `--c-accent` y un
+relleno suave (`--c-accent-soft`) detrás del ícono. `.page` suma padding
+inferior para que la barra no tape el final de la página, y la barra respeta
+`env(safe-area-inset-bottom)`.
 El tab activo se marca con `aria-current="page"` y se pinta con
 `--c-accent` sobre `--c-bg` (`--c-on-accent`). El menú de engranaje es la
 "Configuración" y contiene: Theme (Light / Dark / System), cambiar oz↔ml,
@@ -274,8 +308,8 @@ Todo esto ya está en `app/globals.css` y `app/layout.tsx`:
   `lightColor.bg` (`lib/tokens.ts`). El manifest sigue en oscuro.
   **No se bloquea el zoom del usuario.**
 
-**Contraste:** no hay ratios de contraste medidos ni documentados en el
-repo. **Por definir.**
+**Contraste:** medido en los dos temas — ver §2 (claro y oscuro), con los
+pares que no llegan a AA listados.
 
 ---
 
@@ -305,13 +339,16 @@ exportados. **Por definir.**
 
 ## 8. Huecos conocidos
 
-- **Contraste** no medido ni documentado — por definir.
 - **Íconos:** no hay fuente vectorial versionada — por definir.
 - **Tokens de movimiento / duración:** no existen. Hoy no hay animaciones
   salvo el guard de `prefers-reduced-motion` — por definir.
 - **Estados de carga:** hoy es texto plano `"Loading…"` con clase
   `.empty`. No hay skeleton ni spinner — por definir.
-- **Contraste del tema oscuro** sin medir (el claro sí, ver §2).
+- **Contraste:** medido en ambos temas (§2). Quedan pares del oscuro bajo AA
+  y el placeholder bajo AA en los dos temas, sin corregir hasta decidirlo.
+- **Íconos del nav de teléfono:** seis SVG dibujados a mano en
+  `components/ui.tsx`; no son una librería. El engranaje de tablet/pared sigue
+  siendo el glifo `⚙`.
 - **`docs/design/preview.html`** es una preview visual standalone (storage
   temporal del browser, sin backend). **Puede desincronizarse del dashboard
   real** — no lo trates como fuente de verdad de diseño. Vivía en la raíz

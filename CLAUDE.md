@@ -9,6 +9,10 @@ Para **trabajar** (no para entender el proyecto), la doc operativa vive en
 `docs/`: manual de buenas prácticas, checklist de cada cambio, prompt de
 auditoría y seguridad operacional. Índice: `docs/README.md`.
 
+**Y antes de cualquier `git push` a `main`: subir la versión y escribir su
+entrada en `CHANGELOG.md`.** Sin excepción. Ver §0.1. Tiene el mismo peso que
+leer este archivo al empezar: no es opcional ni "si te acordás".
+
 ---
 
 ## 0. Regla número uno — investigar antes de hablar
@@ -43,6 +47,34 @@ En este repo esto no es teórico. Ejemplos reales de doc que miente:
 
 Si no pudiste verificar algo, decilo explícitamente: *"no lo verifiqué"*.
 Nunca rellenes el hueco con una suposición presentada como hecho.
+
+---
+
+## 0.1 Regla obligatoria — todo push a main lleva versión nueva
+
+**Ningún push a `main` sale sin un bump de versión y su entrada en el
+CHANGELOG.** Da igual el tamaño del cambio: una línea de copy, un arreglo de
+CSS o un batch entero. Si el push llega a `main`, llega con versión nueva.
+
+- **Qué se sube:** `version` en `package.json` (PATCH por defecto; MINOR si el
+  alcance lo pide, criterio en §4.1) **y** una entrada `## [x.y.z] - AAAA-MM-DD`
+  arriba de todo en `CHANGELOG.md`, en inglés y en términos de quien usa la app.
+- **Cuándo:** en el último commit antes del push. Si el push lleva varios
+  commits (un batch), un solo bump alcanza — pero **tiene que haber uno**.
+- **Cómo verificarlo antes de pushear** (si no imprime nada, NO pushees):
+
+  ```bash
+  git fetch origin && git diff origin/main -- package.json | grep '^+.*"version"'
+  ```
+
+  Y `pnpm test` tiene que pasar: `tests/unit/changelog.test.ts` falla si la
+  primera entrada del CHANGELOG no coincide con `package.json`.
+- **Si ya se pusheó sin bump:** el próximo push lo corrige con su propio bump y
+  una entrada que cubra también lo que salió sin versión. No se reescribe el
+  historial de `main`.
+
+Esta regla existe porque se olvidó. No la reinterpretes como "una vez por
+batch, cuando haya un batch": la unidad es **el push**.
 
 ---
 
@@ -147,7 +179,7 @@ pnpm start
 
 # Tests
 pnpm test                   # unit (lib/format.ts, lib/queue.ts, lib/deviceTokens.ts,
-                             # lib/changelog.ts). Sin Docker
+                             # lib/changelog.ts, buildActivity de lib/db.ts). Sin Docker
 pnpm test:tz                # los mismos, bajo UTC / LA / Tokio / Kiritimati
 pnpm test:integration       # RLS + endpoints. NECESITA el stack local
 pnpm test:all               # test:tz + test:integration
@@ -205,7 +237,8 @@ que sea una decisión explícita, no una deriva commit a commit.
   esté desplegada y en uso real.
 - Se sube **una vez por batch**, en el último commit del batch, junto con la
   entrada del CHANGELOG (en inglés, en términos de quien usa la app — mismo
-  criterio que los commits).
+  criterio que los commits). **Y todo push a `main` lleva al menos un bump**,
+  sea batch o un cambio suelto — regla obligatoria de §0.1.
 
 ---
 
@@ -325,6 +358,7 @@ tests**.
 | `lib/queue.ts` — orden de replay, descartes, `looksOffline`, `newId` | `tests/unit/queue.test.ts` |
 | `lib/deviceTokens.ts` — formato del token, hash, scopes | `tests/unit/deviceTokens.test.ts` |
 | `lib/changelog.ts` — parseo del CHANGELOG y que su primera entrada coincida con `version` de `package.json` | `tests/unit/changelog.test.ts` |
+| `buildActivity` de `lib/db.ts` — texto del feed de Today y de History (sin repetir el tipo) | `tests/unit/activity.test.ts` |
 | Aislamiento entre familias por RLS, por el camino real (PostgREST + JWT) | `tests/integration/rls.test.ts` |
 | Corregir y retractar `growth_measurements` sin cruzar de familia | `tests/integration/rls.test.ts` |
 | Los dos endpoints de dispositivo: auth, validación, rate limit, scoping | `tests/integration/{ingest,quick-nurse}.test.ts` |
@@ -405,6 +439,8 @@ y la base.
 - [ ] `lib/supabaseAdmin.ts` no entró a ningún `'use client'`
 - [ ] Si tocaste el schema: migración **nueva**, con RLS y GRANTs
 - [ ] Si algo quedó sin verificar, lo dijiste explícitamente
+- [ ] Si vas a pushear a `main`: versión subida + entrada en `CHANGELOG.md`
+      (§0.1 — sin excepción)
 
 Reportá el resultado real. Si algo falla, mostrá la salida. Si salteaste
 un paso, decilo.
