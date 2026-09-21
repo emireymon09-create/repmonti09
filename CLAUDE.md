@@ -128,15 +128,13 @@ pnpm install
 # Base de datos local (necesita Docker corriendo)
 # Stack propio en supabase/docker/ — escucha solo en 127.0.0.1, no el CLI de
 # Supabase (bindeaba a 0.0.0.0). Ver supabase/docker/docker-compose.yml.
-pnpm db:up                  # genera claves la primera vez, levanta y migra
-pnpm db:env                 # escribe .env.test y las 3 claves de Supabase en .env.local
-pnpm db:reset                # baja, BORRA el volumen y levanta de cero
-pnpm db:down                 # baja los contenedores (los datos quedan en el volumen)
-pnpm db:psql                 # psql como postgres
-pnpm db:status                # contenedores y puertos — tienen que decir 127.0.0.1
-
-# Entorno
-cp .env.local.example .env.local   # y completá con `pnpm db:env`
+pnpm db:up       # genera claves la primera vez, levanta y migra
+pnpm db:env      # escribe .env.test y las 3 claves de Supabase en .env.local
+                 # (crea .env.local desde .env.local.example si no existe)
+pnpm db:reset    # baja, BORRA el volumen y levanta de cero
+pnpm db:down     # baja los contenedores (los datos quedan en el volumen)
+pnpm db:psql     # psql como postgres
+pnpm db:status   # contenedores y puertos — tienen que decir 127.0.0.1
 
 # Desarrollo
 pnpm dev                    # http://127.0.0.1:3000 — escucha solo en 127.0.0.1;
@@ -148,7 +146,8 @@ pnpm build
 pnpm start
 
 # Tests
-pnpm test                   # unit (lib/format.ts, lib/queue.ts). Sin Docker
+pnpm test                   # unit (lib/format.ts, lib/queue.ts, lib/deviceTokens.ts,
+                             # lib/changelog.ts). Sin Docker
 pnpm test:tz                # los mismos, bajo UTC / LA / Tokio / Kiritimati
 pnpm test:integration       # RLS + endpoints. NECESITA el stack local
 pnpm test:all               # test:tz + test:integration
@@ -323,7 +322,10 @@ tests**.
 |---|---|
 | `lib/format.ts` — fechas, horas, DST, unidades, edad | `tests/unit/format.test.ts`, bajo cuatro TZ |
 | `lib/queue.ts` — orden de replay, descartes, `looksOffline`, `newId` | `tests/unit/queue.test.ts` |
+| `lib/deviceTokens.ts` — formato del token, hash, scopes | `tests/unit/deviceTokens.test.ts` |
+| `lib/changelog.ts` — parseo del CHANGELOG y que su primera entrada coincida con `version` de `package.json` | `tests/unit/changelog.test.ts` |
 | Aislamiento entre familias por RLS, por el camino real (PostgREST + JWT) | `tests/integration/rls.test.ts` |
+| Corregir y retractar `growth_measurements` sin cruzar de familia | `tests/integration/rls.test.ts` |
 | Los dos endpoints de dispositivo: auth, validación, rate limit, scoping | `tests/integration/{ingest,quick-nurse}.test.ts` |
 
 **NO hay tests de componentes ni de páginas.** Lo que se cubre es `lib/`
@@ -340,6 +342,12 @@ y la base.
   hoy todos los miembros tienen los mismos permisos)
 - Idempotencia en los endpoints de dispositivo ⇒
   `proposals/device-tokens-and-idempotency.md`
+- Honestidad de estado offline en `/growth`: una edición o un borrado
+  encolados sin conexión muestran el banner "Saved on this device", pero la
+  fila se queda con sus valores viejos y sin marca de "not synced yet",
+  porque `app/growth/page.tsx` no usa `mergePending` (a diferencia de
+  `app/history/page.tsx` y `app/dashboard/page.tsx`, que sí lo usan). Fuera de
+  alcance de este batch.
 
 ---
 
@@ -359,16 +367,25 @@ y la base.
    bebé y sin `baby_id`), el endpoint **falla cerrado** (409) en vez de
    adivinar. Demostrado en `tests/integration/{ingest,quick-nurse}.test.ts`.
 4. Los tokens de dispositivo siguen siendo estáticos (no rotan solos) y el
-   techo de intentos (`lib/deviceAuth.ts`, 20 por minuto y por IP) vive en
-   la memoria de un proceso: con varias instancias no sirve, y un arranque
-   en frío lo resetea. Y sigue sin haber idempotencia: el mismo evento
-   mandado dos veces son dos filas. Ambos, propuestos y no implementados
-   ⇒ `proposals/device-tokens-and-idempotency.md` §4 y §6.
+   techo de intentos (`lib/deviceAuth.ts`, 20 por minuto y por IP) tiene
+   varios problemas sin resolver: vive en la memoria de un proceso (con varias
+   instancias no sirve, y un arranque en frío lo resetea); la clave es el
+   header `x-forwarded-for`, que controla el propio cliente; el `Map` nunca
+   expira sus entradas; y cuenta también los intentos que **sí** autenticaron,
+   así que un NUC mandando más de 20 eventos por minuto legítimos empieza a
+   recibir 429. Seguimiento propuesto: contar solo los intentos de auth
+   fallidos, o usar como clave el id del token ya autenticado, y podar las
+   entradas vencidas. Y sigue sin haber idempotencia: el mismo evento
+   mandado dos veces son dos filas. Ninguno implementado ⇒
+   `proposals/device-tokens-and-idempotency.md` §4 y §6.
 5. **Cerrada el 21 sep 2026.** El CLI de Supabase no tiene forma de fijar el
-   bind (E-3: el binario arma `-p puerto:puerto`, sin IP, y no hay clave de
-   config que lo cambie). Se reemplazó por un `docker-compose.yml` propio en
-   `supabase/docker/` que publica cada puerto como `127.0.0.1:puerto:puerto`
-   (E-4: mismo patrón validado en un spike, 29/29 tests). `pnpm db:status`
+   bind (evidencia E-3: el binario arma `-p puerto:puerto`, sin IP, y no hay
+   clave de config que lo cambie). Se reemplazó por un `docker-compose.yml`
+   propio en `supabase/docker/` que publica cada puerto como
+   `127.0.0.1:puerto:puerto` (evidencia E-4: mismo patrón validado en un
+   spike, 29/29 tests). E-3 y E-4 están en
+   `docs/superpowers/plans/2026-09-21-tokens-crecimiento-stack-versiones.md`
+   §2. `pnpm db:status`
    confirma `127.0.0.1:54321->8000/tcp` y `127.0.0.1:54322->5432/tcp`, sin
    ningún `0.0.0.0`. Ver `docs/seguridad-operacional.md` §6.
 

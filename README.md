@@ -46,14 +46,14 @@ pnpm dev            # http://127.0.0.1:3000
 y `SUPABASE_SERVICE_ROLE_KEY` directo en `.env.local` (creándolo desde
 `.env.local.example` si no existe). No hace falta copiar nada a mano.
 
-Las seis migraciones de `supabase/migrations/` se aplican solas en `pnpm
+Las migraciones de `supabase/migrations/` se aplican solas en `pnpm
 db:up`. Para re-aplicarlas desde cero (**borra el volumen**):
 
 ```bash
 pnpm db:reset
 ```
 
-Sin Studio (P-3): no se levanta. La app: `http://127.0.0.1:3000/login`. `pnpm
+Sin Studio (decisión de Emilio, 21 sep 2026): no se levanta. La app: `http://127.0.0.1:3000/login`. `pnpm
 dev` también escucha solo en `127.0.0.1` — para probar desde el teléfono en la
 LAN hace falta un túnel/SSH, a propósito.
 
@@ -65,7 +65,7 @@ LAN hace falta un túnel/SSH, a propósito.
 
 ## Primera cuenta
 
-Sin Studio (P-3), las filas de alta se insertan por SQL con `pnpm db:psql`:
+Sin Studio (decisión de Emilio, 21 sep 2026), las filas de alta se insertan por SQL con `pnpm db:psql`:
 
 1. En `/login`, registrate con cualquier email y contraseña. Es local: no hay
    envío de mails y la cuenta queda activa al instante.
@@ -86,7 +86,8 @@ como M4.
 ## Tests
 
 ```bash
-pnpm test              # unit: lib/format.ts y lib/queue.ts. No necesita Docker
+pnpm test              # unit: lib/format.ts, lib/queue.ts, lib/deviceTokens.ts,
+                        # lib/changelog.ts. No necesita Docker
 pnpm test:tz           # los mismos, bajo UTC / Los Angeles / Tokio / Kiritimati
 pnpm test:integration  # RLS y endpoints de dispositivo. NECESITA el stack local
 pnpm test:all          # test:tz + test:integration
@@ -141,11 +142,8 @@ el Supabase local).
   existe; **nada lo llama** todavía.
 - Uso real de `family_members.role`. La columna existe y nadie la lee: hoy todos
   los miembros de una familia tienen los mismos permisos.
-- Corregir o retractar una medición de `growth_measurements`. Necesita cambio de
-  schema ⇒ `proposals/growth-edit-and-void.md`.
-- Tokens por dispositivo e idempotencia en los endpoints de dispositivo. Hay dos
-  hallazgos críticos abiertos por esto ⇒
-  `proposals/device-tokens-and-idempotency.md`.
+- Idempotencia en los endpoints de dispositivo ⇒
+  `proposals/device-tokens-and-idempotency.md` §4.
 
 ---
 
@@ -157,7 +155,7 @@ el Supabase local).
 | `PROJECT.md` | Arquitectura y estado; documento de traspaso hacia la sesión del Hub. |
 | `design.md` | UI/UX: tokens, escala, componentes, patrones de interacción. |
 | `docs/README.md` | Doc **operativa**: buenas prácticas, checklist de cada cambio, prompt de auditoría, seguridad. |
-| `proposals/` | Cambios de schema propuestos. Este repo ya no numera migraciones (ADR 0003). |
+| `proposals/` | Cambios de schema propuestos. Por defecto se proponen; se numeran acá solo cuando Emilio lo pide explícitamente (CLAUDE.md §5.2). |
 
 ---
 

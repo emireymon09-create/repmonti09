@@ -95,7 +95,16 @@ minuto y por IP): la fuerza bruta ingenua desde una sola dirección.
 
 - El contador vive en la memoria de **ese** proceso. Con varias instancias, cada
   una cuenta por su lado; un arranque en frío lo resetea.
+- La clave del contador es el header `x-forwarded-for`, que controla el propio
+  cliente que hace el request: no es una identidad de confianza.
+- El `Map` del contador nunca poda las entradas vencidas.
+- Cuenta también los intentos que **sí** autenticaron, no solo los fallidos: un
+  NUC mandando más de 20 eventos legítimos por minuto empieza a recibir 429.
 - No hay idempotencia: el mismo evento mandado dos veces son dos filas.
+
+**Seguimiento propuesto** (no implementado): contar solo los intentos de auth
+fallidos, o usar como clave el id del token ya autenticado en vez de la IP, y
+podar las entradas vencidas del `Map`.
 
 Lo que esto **sí** cierra (hallazgos C1 y C2 de
 `auditorias/2026-09-20-auditoria-inicial.md`, cerrados el 21 sep 2026): el
@@ -142,11 +151,11 @@ Curl a la IP pública del VPS → `000` (sin respuesta); a `127.0.0.1` → `200`
 
 **Qué cambió:** se sacó el CLI de Supabase (no tenía forma de fijar el bind —
 ver evidencia E-3 en
-`docs/superpowers/plans/2026-09-21-tokens-crecimiento-stack-versiones.md`) y
+`docs/superpowers/plans/2026-09-21-tokens-crecimiento-stack-versiones.md` §2) y
 `supabase/config.toml`. En su lugar, un `docker-compose.yml` propio en
 `supabase/docker/` que publica cada puerto como `127.0.0.1:puerto:puerto`,
 operado con `pnpm db:up` / `db:down` / `db:reset` / `db:env` / `db:psql` /
-`db:status`. Sin Studio (decisión de Emilio, P-3): menos superficie expuesta.
+`db:status`. Sin Studio (decisión de Emilio, 21 sep 2026): menos superficie expuesta.
 `next dev` también pasó a `-H 127.0.0.1`.
 
 **Qué hacer de acá en adelante:** el stack propio ya bindea a 127.0.0.1; no
