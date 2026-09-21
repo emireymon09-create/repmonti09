@@ -219,34 +219,10 @@ export default function GrowthPage() {
             const isEditing = editing?.id === row.id
             return (
               <Card key={row.id}>
-                <div className="between">
-                  <Label>{measuredOn(row.measured_at)}</Label>
-                  {!isEditing && (
-                    <span className="feed-actions">
-                      <button
-                        type="button"
-                        className="linkish"
-                        disabled={busy}
-                        onClick={() => startEdit(row)}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        className="linkish"
-                        disabled={busy}
-                        onClick={() => remove(row)}
-                      >
-                        Delete
-                      </button>
-                    </span>
-                  )}
-                </div>
-
                 {isEditing ? (
-                  <div className="edit-panel">
+                  <div className="stack">
                     <div className="between">
-                      <Label>Edit measurement</Label>
+                      <Label>Editing · {measuredOn(row.measured_at)}</Label>
                       <UnitToggle value={editInput} onChange={setEditInput} />
                     </div>
                     <div className="stack">
@@ -266,7 +242,7 @@ export default function GrowthPage() {
                         aria-label="Notes"
                       />
                     </div>
-                    <div className="row-tight">
+                    <div className="row">
                       <Btn disabled={busy} onClick={saveEdit}>
                         {busy ? 'Saving…' : 'Save changes'}
                       </Btn>
@@ -277,6 +253,30 @@ export default function GrowthPage() {
                   </div>
                 ) : (
                   <>
+                    <div className="between">
+                      <Label>{measuredOn(row.measured_at)}</Label>
+                      {/* One entry open at a time: while another is being
+                          edited, these wait, so no second form or confirm
+                          can open on top of unsaved changes. */}
+                      <span className="feed-actions">
+                        <button
+                          type="button"
+                          className="linkish"
+                          disabled={busy || editing !== null}
+                          onClick={() => startEdit(row)}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="linkish"
+                          disabled={busy || editing !== null}
+                          onClick={() => remove(row)}
+                        >
+                          Delete
+                        </button>
+                      </span>
+                    </div>
                     <div className="value">
                       {row.weight_kg != null &&
                         `${kgToLbOz(row.weight_kg)} (${row.weight_kg.toFixed(2)} kg)`}

@@ -318,7 +318,7 @@ export default function HistoryPage() {
                             <button
                               type="button"
                               className="linkish"
-                              disabled={busy}
+                              disabled={busy || editing !== null}
                               onClick={() => startEdit(entry)}
                             >
                               Edit
@@ -326,7 +326,7 @@ export default function HistoryPage() {
                             <button
                               type="button"
                               className="linkish"
-                              disabled={busy}
+                              disabled={busy || editing !== null}
                               onClick={() => deleteEntry(entry)}
                             >
                               Delete

@@ -11,12 +11,13 @@
  * Destined for `packages/ui` when the monorepo lands.
  */
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabaseClient'
 import { resetPumpingTotal } from '@/lib/db'
 import { useVolumeUnit } from '@/lib/useVolumeUnit'
+import { useTheme, type Theme } from '@/lib/theme'
 import { APP_VERSION } from '@/lib/version'
 
 export function Page({ children }: { children: React.ReactNode }) {
@@ -88,6 +89,12 @@ export function Banner({
   )
 }
 
+const THEMES: { value: Theme; label: string }[] = [
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+  { value: 'system', label: 'System' },
+]
+
 const TABS = [
   { href: '/dashboard', label: 'Today' },
   { href: '/pumping', label: 'Milk' },
@@ -102,6 +109,30 @@ export function Nav({ babyId }: { babyId?: string }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [resetting, setResetting] = useState(false)
   const [unit, setUnit] = useVolumeUnit()
+  const [theme, setTheme] = useTheme()
+  const settingsRef = useRef<HTMLDivElement>(null)
+  const gearRef = useRef<HTMLButtonElement>(null)
+
+  // onBlur alone can't close the menu: Safari on iOS never focuses a tapped
+  // button, so a tap elsewhere wouldn't blur anything. Close on any press
+  // outside, and on Escape (focus back to the gear, where it came from).
+  useEffect(() => {
+    if (!menuOpen) return
+    function onPointerDown(e: PointerEvent) {
+      if (!settingsRef.current?.contains(e.target as Node)) setMenuOpen(false)
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return
+      setMenuOpen(false)
+      gearRef.current?.focus()
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [menuOpen])
 
   async function signOut() {
     await createClient().auth.signOut()
@@ -119,8 +150,9 @@ export function Nav({ babyId }: { babyId?: string }) {
 
   async function resetMilkTotal() {
     if (!babyId || resetting) return
-    if (!window.confirm('Zero out the "in the stash" total? Past sessions stay in History.')) return
+    // Close the menu first: the confirm must never sit on top of it.
     setMenuOpen(false)
+    if (!window.confirm('Zero out the "in the stash" total? Past sessions stay in History.')) return
     setResetting(true)
     const { error } = await resetPumpingTotal(babyId)
     setResetting(false)
@@ -144,12 +176,14 @@ export function Nav({ babyId }: { babyId?: string }) {
         </Link>
       ))}
       <div
+        ref={settingsRef}
         className="nav-settings"
         onBlur={(e) => {
           if (!e.currentTarget.contains(e.relatedTarget as Node)) setMenuOpen(false)
         }}
       >
         <button
+          ref={gearRef}
           className="gear"
           aria-label="Settings"
           aria-haspopup="menu"
@@ -159,7 +193,26 @@ export function Nav({ babyId }: { babyId?: string }) {
           {'\u2699'}
         </button>
         {menuOpen && (
-          <div className="nav-menu" role="menu">
+          <div className="nav-menu" role="menu" aria-label="Settings">
+            <div className="nav-menu-group" role="group" aria-labelledby="theme-label">
+              <div className="label" id="theme-label">
+                Theme
+              </div>
+              <div className="seg">
+                {THEMES.map((t) => (
+                  <button
+                    key={t.value}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={theme === t.value}
+                    className="seg-btn"
+                    onClick={() => setTheme(t.value)}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <button role="menuitem" className="nav-menu-item" onClick={switchUnit}>
               Switch to {unit === 'oz' ? 'ml' : 'oz'}
             </button>

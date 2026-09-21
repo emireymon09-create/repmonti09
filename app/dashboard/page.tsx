@@ -340,7 +340,7 @@ export default function Dashboard() {
         </Banner>
       )}
 
-      <div className="row-tight" style={{ flexWrap: 'wrap' }}>
+      <div className="row-tight row-wrap log-time">
         {!showTimeEditor ? (
           <Btn
             variant="quiet"

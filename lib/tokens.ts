@@ -26,6 +26,15 @@ export const color = {
 } as const
 
 /**
+ * The pastel light theme (app/globals.css, `:root[data-theme='light']`).
+ * Only what a non-CSS consumer needs: the browser chrome color. The dark
+ * palette above stays the default and the manifest's colors.
+ */
+export const lightColor = {
+  bg: '#F7EAE3',
+} as const
+
+/**
  * Two surfaces, one component set.
  *
  * ARCHITECTURE.md makes the 27" wall HMI the primary target and phones

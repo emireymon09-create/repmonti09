@@ -24,6 +24,15 @@
   --c-action: #8c3b2e;
   --c-live: #5c8a6b;
   --c-danger: #c4574a;
+  /* Roles the dark palette covers with the colors above, but a light one
+     cannot: text on the accent, "live" as ink rather than as a fill, and
+     the soft banner fills. In dark they resolve to exactly the old values. */
+  --c-on-accent: var(--c-bg);
+  --c-live-ink: var(--c-live);
+  --c-danger-soft: rgba(196, 87, 74, 0.18);
+  --c-live-soft: rgba(92, 138, 107, 0.18);
+  --c-accent-soft: rgba(232, 163, 61, 0.18);
+  --shadow-menu: 0 12px 28px -12px rgba(0, 0, 0, 0.6);
 
   /* --- type scale: phone --- */
   --t-label: 11px;
@@ -49,6 +58,55 @@
   --cols: 1;
 
   color-scheme: dark;
+}
+
+/* Light theme — pastel, chosen under Settings (lib/theme.ts). Warm blush
+   canvas, cocoa ink, coral and sage as soft fills; every text pair is
+   >= 4.5:1 (measured). The dark palette above stays the default: no
+   data-theme attribute, or data-theme="dark", renders exactly as before. */
+:root[data-theme='light'] {
+  --c-bg: #f7eae3;
+  --c-surface: #fdf5ef;
+  --c-surface-raised: #f3e0d5;
+  --c-line: rgba(84, 52, 40, 0.16);
+  --c-text: #3b2a23;
+  --c-muted: #6b5147;
+  --c-accent: #8f4f12;
+  --c-action: #f2b5a3;
+  --c-live: #a9d4b6;
+  --c-danger: #a63a2e;
+  --c-on-accent: #fdf5ef;
+  --c-live-ink: #2f6a45;
+  --c-danger-soft: rgba(214, 110, 96, 0.18);
+  --c-live-soft: rgba(120, 180, 140, 0.24);
+  --c-accent-soft: rgba(232, 163, 61, 0.22);
+  --shadow-menu: 0 12px 28px -12px rgba(84, 52, 40, 0.35);
+
+  color-scheme: light;
+}
+/* "System" follows the device. Same values as above — CSS has no way to
+   share one block between an attribute and a media query. */
+@media (prefers-color-scheme: light) {
+  :root[data-theme='system'] {
+    --c-bg: #f7eae3;
+    --c-surface: #fdf5ef;
+    --c-surface-raised: #f3e0d5;
+    --c-line: rgba(84, 52, 40, 0.16);
+    --c-text: #3b2a23;
+    --c-muted: #6b5147;
+    --c-accent: #8f4f12;
+    --c-action: #f2b5a3;
+    --c-live: #a9d4b6;
+    --c-danger: #a63a2e;
+    --c-on-accent: #fdf5ef;
+    --c-live-ink: #2f6a45;
+    --c-danger-soft: rgba(214, 110, 96, 0.18);
+    --c-live-soft: rgba(120, 180, 140, 0.24);
+    --c-accent-soft: rgba(232, 163, 61, 0.22);
+    --shadow-menu: 0 12px 28px -12px rgba(84, 52, 40, 0.35);
+
+    color-scheme: light;
+  }
 }
 
 /* The wall screen. Same components, bigger everything, more columns. */
@@ -152,10 +210,14 @@ body {
   gap: var(--s-3);
   margin-top: var(--s-3);
 }
+.row-wrap {
+  flex-wrap: wrap;
+}
 .between {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--s-4);
 }
 .spread {
   display: flex;
@@ -179,7 +241,7 @@ body {
 /* A session in progress. The only place a colored edge is spent — it is
    the one thing that has to read from across the room. */
 .card.is-live {
-  border-color: var(--c-live);
+  border-color: var(--c-live-ink);
 }
 .card.is-past {
   opacity: 0.65;
@@ -212,6 +274,23 @@ body {
   font-size: var(--t-title);
   margin: 0 0 var(--s-5);
   font-weight: 700;
+}
+/* A page title with an action beside it: the gap below lives on the row,
+   so the title and the action center on each other. */
+.page-head {
+  margin-bottom: var(--s-5);
+}
+.page-head .title {
+  margin: 0;
+}
+/* A heading between groups of cards (Doctor: Upcoming / Past). */
+.section-label {
+  font-weight: 400;
+  margin: var(--s-6) 0 var(--s-3);
+}
+.lead {
+  font-size: var(--t-body);
+  margin: 0;
 }
 .eyebrow {
   font-size: var(--t-meta);
@@ -247,7 +326,7 @@ body {
   line-height: 1.05;
 }
 .side {
-  color: var(--c-live);
+  color: var(--c-live-ink);
   font-weight: 600;
   text-transform: capitalize;
   font-size: var(--t-body);
@@ -372,7 +451,7 @@ body {
 .tab[aria-current='page'] {
   background: var(--c-accent);
   border-color: var(--c-accent);
-  color: var(--c-bg);
+  color: var(--c-on-accent);
 }
 
 .nav-settings {
@@ -402,7 +481,7 @@ body {
   top: calc(100% + var(--s-2));
   right: 0;
   z-index: 10;
-  min-width: 160px;
+  min-width: 15em;
   background: var(--c-surface-raised);
   border: 1px solid var(--c-line);
   border-radius: var(--r-control);
@@ -410,7 +489,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--s-1);
-  box-shadow: 0 12px 28px -12px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--shadow-menu);
 }
 .nav-menu-item {
   text-align: left;
@@ -431,6 +510,43 @@ body {
 .nav-menu-item.is-danger {
   color: var(--c-danger);
 }
+.nav-menu-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Theme picker inside the settings menu: three segments, one chosen. */
+.nav-menu-group {
+  padding: var(--s-3) var(--s-4) var(--s-2);
+  border-bottom: 1px solid var(--c-line);
+  margin-bottom: var(--s-1);
+}
+.seg {
+  display: flex;
+  gap: var(--s-1);
+  margin-top: var(--s-2);
+  padding: var(--s-1);
+  border-radius: var(--r-control);
+  background: var(--c-bg);
+  border: 1px solid var(--c-line);
+}
+.seg-btn {
+  flex: 1;
+  min-height: 44px;
+  padding: var(--s-2) var(--s-3);
+  border: none;
+  border-radius: var(--r-control);
+  background: none;
+  color: var(--c-muted);
+  font-size: var(--t-meta);
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+.seg-btn[aria-checked='true'] {
+  background: var(--c-accent);
+  color: var(--c-on-accent);
+}
 
 /* --------------------------------------------------------------- feedback */
 
@@ -441,21 +557,21 @@ body {
   font-size: var(--t-body);
 }
 .banner.error {
-  background: rgba(196, 87, 74, 0.18);
+  background: var(--c-danger-soft);
   border: 1px solid var(--c-danger);
 }
 .banner.ok {
-  background: rgba(92, 138, 107, 0.18);
-  border: 1px solid var(--c-live);
+  background: var(--c-live-soft);
+  border: 1px solid var(--c-live-ink);
 }
 .banner.warn {
-  background: rgba(232, 163, 61, 0.18);
+  background: var(--c-accent-soft);
   border: 1px solid var(--c-accent);
 }
 
 .gain-up {
   font-size: var(--t-meta);
-  color: var(--c-live);
+  color: var(--c-live-ink);
   margin-top: var(--s-1);
 }
 .gain-down {
@@ -485,10 +601,14 @@ body {
   color: var(--c-muted);
   font-size: var(--t-meta);
   flex: none;
-  width: 7.5em;
+  /* "12:59 PM" at the meta size, plus breathing room. Wider stole the
+     phone column from the entry itself. */
+  width: 5.5em;
 }
 .feed-what {
   font-size: var(--t-body);
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .feed-actions {
   margin-left: auto;
@@ -496,11 +616,21 @@ body {
   display: flex;
   gap: var(--s-4);
 }
+/* Edit / Delete are text, but still get the 44px touch floor. */
+.feed-actions .linkish {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+.linkish:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
 .edit-panel {
   display: flex;
   flex-direction: column;
   gap: var(--s-3);
-  padding: 0 0 var(--s-4);
+  padding: var(--s-3) 0 var(--s-4);
   border-bottom: 1px solid var(--c-line);
 }
 
@@ -546,11 +676,26 @@ body {
   background: var(--c-accent);
 }
 .dot.syncing {
-  background: var(--c-live);
+  background: var(--c-live-ink);
 }
 
 .pending-tag {
   color: var(--c-accent);
   font-size: var(--t-meta);
   margin-top: var(--s-1);
+}
+
+/* --------------------------------------------------------------- dashboard */
+
+/* "Log a missed session…" and its time editor sit between the header and
+   the card grid; without this they touch the first row of cards. */
+.log-time {
+  margin-bottom: var(--col-gap);
+}
+.page-head + .section-label {
+  margin-top: 0;
+}
+/* Version history: the release summary, then its list of changes. */
+.meta + .feed {
+  margin-top: var(--s-3);
 }

@@ -109,7 +109,7 @@ export default function AppointmentsPage() {
   return (
     <Page>
       <Nav babyId={baby.id} />
-      <div className="between">
+      <div className="between page-head">
         <h1 className="title">Doctor</h1>
         <button
           className="pill"
@@ -184,7 +184,7 @@ export default function AppointmentsPage() {
         </Card>
       )}
 
-      <Label>Upcoming</Label>
+      <h2 className="label section-label">Upcoming</h2>
       <Grid>
         {upcoming.length === 0 ? (
           <Card>
@@ -199,7 +199,7 @@ export default function AppointmentsPage() {
 
       {past.length > 0 && (
         <>
-          <Label>Past</Label>
+          <h2 className="label section-label">Past</h2>
           <Grid>
             {past.map((appt) => (
               <ApptCard key={appt.id} appt={appt} onToggle={toggleCompleted} busy={busy} past />

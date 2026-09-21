@@ -192,14 +192,13 @@ export default function PumpingPage() {
             <div className="stack">
               <div className="row">
                 {SIDES.map((s) => (
-                  <button
+                  <Btn
                     key={s.value}
-                    type="button"
-                    className={side === s.value ? 'btn' : 'btn quiet'}
+                    variant={side === s.value ? 'action' : 'quiet'}
                     onClick={() => setSide(s.value)}
                   >
                     {s.label}
-                  </button>
+                  </Btn>
                 ))}
               </div>
               <input
@@ -260,14 +259,13 @@ export default function PumpingPage() {
                   <Label>Edit session</Label>
                   <div className="row">
                     {SIDES.map((s) => (
-                      <button
+                      <Btn
                         key={s.value}
-                        type="button"
-                        className={eSide === s.value ? 'btn' : 'btn quiet'}
+                        variant={eSide === s.value ? 'action' : 'quiet'}
                         onClick={() => setESide(s.value)}
                       >
                         {s.label}
-                      </button>
+                      </Btn>
                     ))}
                   </div>
                   <input
@@ -293,7 +291,7 @@ export default function PumpingPage() {
                     max={toHouseholdInputValue(new Date())}
                     aria-label="Time it happened"
                   />
-                  <div className="row-tight">
+                  <div className="row">
                     <Btn disabled={busy} onClick={saveEdit}>
                       Save
                     </Btn>
@@ -312,7 +310,7 @@ export default function PumpingPage() {
                       <button
                         type="button"
                         className="linkish"
-                        disabled={busy}
+                        disabled={busy || editingId !== null}
                         onClick={() => startEdit(row)}
                       >
                         Edit
@@ -320,7 +318,7 @@ export default function PumpingPage() {
                       <button
                         type="button"
                         className="linkish"
-                        disabled={busy}
+                        disabled={busy || editingId !== null}
                         onClick={() => deleteRow(row.id)}
                       >
                         Delete
