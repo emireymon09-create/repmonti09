@@ -130,6 +130,11 @@ growth curve but the row stays in the database.
 
 **`/appointments`:** upcoming and past, add form, tap to mark done.
 
+**`/version`:** the current version and the full change history, read from
+`CHANGELOG.md` and `package.json`'s `version` field — reachable from the
+settings gear on every page. `tests/unit/changelog.test.ts` fails if the two
+ever disagree.
+
 **Built to the Hub conventions, not around them.** The UI is a Family
 Hub surface first and a standalone app second:
 

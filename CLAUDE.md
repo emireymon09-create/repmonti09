@@ -195,6 +195,19 @@ Fix: grant table privileges to authenticated role (RLS was blocked by missing GR
 **Mantené este estilo.** Si alguna vez se migra a Conventional Commits,
 que sea una decisión explícita, no una deriva commit a commit.
 
+### 4.1 Versionado
+
+- **vMAJOR.MINOR.PATCH.** La versión actual es `version` en `package.json`; el
+  historial es `CHANGELOG.md`. La app muestra las dos en `/version` (engranaje
+  → Version history). `tests/unit/changelog.test.ts` falla si no coinciden.
+- **MINOR:** capacidad nueva visible, migración de schema, o cambio
+  incompatible en la API de dispositivos (mientras sea `0.x`).
+  **PATCH:** arreglos sin schema ni capacidad nueva. **1.0.0:** cuando la app
+  esté desplegada y en uso real.
+- Se sube **una vez por batch**, en el último commit del batch, junto con la
+  entrada del CHANGELOG (en inglés, en términos de quien usa la app — mismo
+  criterio que los commits).
+
 ---
 
 ## 5. Reglas operativas
@@ -300,7 +313,8 @@ endpoints de dispositivo, **tokens por dispositivo** (`device_tokens`,
 0007 — cada dispositivo tiene el suyo, revocable, clavado a una familia y
 opcionalmente a un bebé; reemplazó a los secretos compartidos
 `NUC_DEVICE_SECRET`/`QUICK_TOGGLE_SECRET`), **middleware de auth
-server-side**, **lockfile de pnpm**, **lint y format**, y **una suite de
+server-side**, **lockfile de pnpm**, **lint y format**, **historial de
+versiones en `/version`** (engranaje → Version history), y **una suite de
 tests**.
 
 **Alcance exacto de los tests** (que no es "hay tests" a secas):
