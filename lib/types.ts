@@ -109,9 +109,4 @@ export type ActivityEntry = {
   detail: string
 }
 
-export const APPOINTMENT_TYPE_LABELS: Record<AppointmentType, string> = {
-  checkup: 'Checkup',
-  vaccine: 'Vaccine',
-  sick_visit: 'Sick visit',
-  other: 'Other',
-}
+// Appointment type names live in the dictionaries (lib/i18n, `apptType.*`).

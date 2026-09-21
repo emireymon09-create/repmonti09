@@ -8,6 +8,7 @@ import { SyncStatus } from '@/components/SyncStatus'
 import { GrowthFields, UnitToggle } from '@/components/GrowthFields'
 import { addGrowth, listGrowth, updateGrowth, voidGrowth } from '@/lib/db'
 import type { GrowthMeasurement } from '@/lib/types'
+import { useT } from '@/lib/i18n/react'
 import {
   cmToIn,
   emptyGrowthInput,
@@ -20,10 +21,9 @@ import {
   type GrowthInput,
 } from '@/lib/format'
 
-const QUEUED = 'Saved on this device — will sync when you’re back online'
-
 export default function GrowthPage() {
   const { baby, userId, loading } = useBaby()
+  const { t, lang } = useT()
 
   const [rows, setRows] = useState<GrowthMeasurement[]>([])
   // The pediatrician's office says lb/oz and inches out loud; the
@@ -44,11 +44,14 @@ export default function GrowthPage() {
   const [saved, setSaved] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const refresh = useCallback(async (babyId: string) => {
-    const { data, error } = await listGrowth(babyId)
-    if (error) setErr(`Couldn't load measurements — ${error}`)
-    setRows(data)
-  }, [])
+  const refresh = useCallback(
+    async (babyId: string) => {
+      const { data, error } = await listGrowth(babyId)
+      if (error) setErr(t('growth.couldNotLoad', { error }))
+      setRows(data)
+    },
+    [t],
+  )
 
   useEffect(() => {
     if (baby) refresh(baby.id)
@@ -59,7 +62,7 @@ export default function GrowthPage() {
     if (!baby || busy) return
     setErr(null)
 
-    const metric = growthInputToMetric(input)
+    const metric = growthInputToMetric(input, lang)
     if ('error' in metric) {
       setErr(metric.error)
       return
@@ -75,10 +78,10 @@ export default function GrowthPage() {
     setBusy(false)
 
     if (error) {
-      setErr(`Couldn't save — ${error}`)
+      setErr(t('common.couldNotSave', { error }))
       return
     }
-    setSaved(queued ? QUEUED : 'Measurement saved')
+    setSaved(queued ? t('common.queued') : t('growth.saved'))
     setInput(emptyGrowthInput(input.imperial))
     setNotes('')
     refresh(baby.id)
@@ -99,10 +102,12 @@ export default function GrowthPage() {
     if (!baby || !editing || busy) return
     setErr(null)
 
-    const metric = resolveGrowthEdit(editBase, editInput, {
-      weightKg: editing.weight_kg,
-      heightCm: editing.height_cm,
-    })
+    const metric = resolveGrowthEdit(
+      editBase,
+      editInput,
+      { weightKg: editing.weight_kg, heightCm: editing.height_cm },
+      lang,
+    )
     if ('error' in metric) {
       setErr(metric.error)
       return
@@ -118,21 +123,17 @@ export default function GrowthPage() {
     setBusy(false)
 
     if (error) {
-      setErr(`Couldn't save the change — ${error}`)
+      setErr(t('growth.couldNotSaveChange', { error }))
       return
     }
-    setSaved(queued ? QUEUED : 'Measurement updated')
+    setSaved(queued ? t('common.queued') : t('growth.updated'))
     setEditing(null)
     refresh(baby.id)
   }
 
   async function remove(row: GrowthMeasurement) {
     if (!baby || busy) return
-    if (
-      !window.confirm(
-        `Remove the ${measuredOn(row.measured_at)} measurement? It stops counting toward the growth curve.`,
-      )
-    )
+    if (!window.confirm(t('growth.removeConfirm', { date: measuredOn(row.measured_at, lang) })))
       return
 
     setBusy(true)
@@ -141,17 +142,17 @@ export default function GrowthPage() {
     setBusy(false)
 
     if (error) {
-      setErr(`Couldn't remove — ${error}`)
+      setErr(t('growth.couldNotRemove', { error }))
       return
     }
-    setSaved(queued ? QUEUED : 'Measurement removed')
+    setSaved(queued ? t('common.queued') : t('growth.removed'))
     refresh(baby.id)
   }
 
   if (loading)
     return (
       <Page>
-        <p className="empty">Loading…</p>
+        <p className="empty">{t('common.loading')}</p>
       </Page>
     )
   if (!baby)
@@ -165,7 +166,7 @@ export default function GrowthPage() {
   return (
     <Page>
       <Nav babyId={baby.id} />
-      <h1 className="title">Growth</h1>
+      <h1 className="title">{t('growth.title')}</h1>
       <SyncStatus />
       {err && <Banner kind="error">{err}</Banner>}
       {saved && !err && <Banner kind="ok">{saved}</Banner>}
@@ -174,7 +175,7 @@ export default function GrowthPage() {
         <Card>
           <form onSubmit={save}>
             <div className="between">
-              <Label>New measurement</Label>
+              <Label>{t('growth.new')}</Label>
               <UnitToggle value={input} onChange={setInput} />
             </div>
 
@@ -184,21 +185,21 @@ export default function GrowthPage() {
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                aria-label="Date measured"
+                aria-label={t('growth.dateMeasured')}
               />
               <GrowthFields value={input} onChange={setInput} />
               <input
                 className="input"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Notes (optional)"
-                aria-label="Notes"
+                placeholder={t('common.notesOptional')}
+                aria-label={t('common.notes')}
               />
             </div>
 
             <div className="row-tight">
               <Btn type="submit" disabled={busy}>
-                {busy ? 'Saving…' : 'Save measurement'}
+                {busy ? t('common.saving') : t('growth.saveMeasurement')}
               </Btn>
             </div>
           </form>
@@ -206,7 +207,7 @@ export default function GrowthPage() {
 
         {rows.length === 0 ? (
           <Card>
-            <div className="empty">No measurements recorded yet.</div>
+            <div className="empty">{t('growth.empty')}</div>
           </Card>
         ) : (
           rows.map((row, index) => {
@@ -222,7 +223,9 @@ export default function GrowthPage() {
                 {isEditing ? (
                   <div className="stack">
                     <div className="between">
-                      <Label>Editing · {measuredOn(row.measured_at)}</Label>
+                      <Label>
+                        {t('growth.editing', { date: measuredOn(row.measured_at, lang) })}
+                      </Label>
                       <UnitToggle value={editInput} onChange={setEditInput} />
                     </div>
                     <div className="stack">
@@ -231,30 +234,30 @@ export default function GrowthPage() {
                         type="date"
                         value={editDate}
                         onChange={(e) => setEditDate(e.target.value)}
-                        aria-label="Date measured"
+                        aria-label={t('growth.dateMeasured')}
                       />
                       <GrowthFields value={editInput} onChange={setEditInput} />
                       <input
                         className="input"
                         value={editNotes}
                         onChange={(e) => setEditNotes(e.target.value)}
-                        placeholder="Notes (optional)"
-                        aria-label="Notes"
+                        placeholder={t('common.notesOptional')}
+                        aria-label={t('common.notes')}
                       />
                     </div>
                     <div className="row">
                       <Btn disabled={busy} onClick={saveEdit}>
-                        {busy ? 'Saving…' : 'Save changes'}
+                        {busy ? t('common.saving') : t('growth.saveChanges')}
                       </Btn>
                       <Btn variant="quiet" onClick={() => setEditing(null)}>
-                        Cancel
+                        {t('common.cancel')}
                       </Btn>
                     </div>
                   </div>
                 ) : (
                   <>
                     <div className="between">
-                      <Label>{measuredOn(row.measured_at)}</Label>
+                      <Label>{measuredOn(row.measured_at, lang)}</Label>
                       {/* One entry open at a time: while another is being
                           edited, these wait, so no second form or confirm
                           can open on top of unsaved changes. */}
@@ -265,7 +268,7 @@ export default function GrowthPage() {
                           disabled={busy || editing !== null}
                           onClick={() => startEdit(row)}
                         >
-                          Edit
+                          {t('common.edit')}
                         </button>
                         <button
                           type="button"
@@ -273,7 +276,7 @@ export default function GrowthPage() {
                           disabled={busy || editing !== null}
                           onClick={() => remove(row)}
                         >
-                          Delete
+                          {t('common.delete')}
                         </button>
                       </span>
                     </div>
@@ -286,8 +289,9 @@ export default function GrowthPage() {
                     </div>
                     {gain !== null && (
                       <div className={gain >= 0 ? 'gain-up' : 'gain-down'}>
-                        {gain >= 0 ? '+' : '−'}
-                        {kgToLbOz(Math.abs(gain))} since last visit
+                        {t('growth.sinceLast', {
+                          change: `${gain >= 0 ? '+' : '−'}${kgToLbOz(Math.abs(gain))}`,
+                        })}
                       </div>
                     )}
                     {row.notes && <div className="meta">{row.notes}</div>}

@@ -1,15 +1,16 @@
 'use client'
 
 import { Card } from '@/components/ui'
+import { useT } from '@/lib/i18n/react'
 
 export function NoBaby() {
+  const { t } = useT()
   return (
     <Card>
-      <p className="lead">No baby profile found for your account yet.</p>
+      <p className="lead">{t('noBaby.lead')}</p>
       <p className="note">
-        Add a row in Supabase (Table Editor &gt; babies). Your user has to be in{' '}
-        <code>family_members</code> for the same <code>family_id</code> first, or the RLS policy
-        will hide it from you.
+        {t('noBaby.note1')} <code>family_members</code> {t('noBaby.note2')} <code>family_id</code>
+        {t('noBaby.note3')}
       </p>
     </Card>
   )

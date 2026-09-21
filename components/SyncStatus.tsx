@@ -2,6 +2,7 @@
 
 import { useSync } from '@/lib/useSync'
 import type { PendingWrite } from '@/lib/queue'
+import { useT } from '@/lib/i18n/react'
 
 export function SyncBar({
   online,
@@ -12,6 +13,7 @@ export function SyncBar({
   pending: PendingWrite[]
   syncing?: boolean
 }) {
+  const { t } = useT()
   // Connected and nothing waiting: say nothing.
   if (online && pending.length === 0) return null
 
@@ -20,13 +22,13 @@ export function SyncBar({
 
   let message: string
   if (count === 0) {
-    message = 'Offline. Anything you log is kept on this device.'
+    message = t('sync.offline')
   } else if (syncing) {
-    message = `Syncing ${count} ${count === 1 ? 'entry' : 'entries'}…`
+    message = t('sync.syncing', { count })
   } else if (online) {
-    message = `${count} ${count === 1 ? 'entry' : 'entries'} still to sync.`
+    message = t('sync.toSync', { count })
   } else {
-    message = `Offline · ${count} ${count === 1 ? 'entry' : 'entries'} saved on this device, not synced yet.`
+    message = t('sync.offlinePending', { count })
   }
 
   return (

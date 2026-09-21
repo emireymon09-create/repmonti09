@@ -2,6 +2,8 @@ import './globals.css'
 import type { Metadata, Viewport } from 'next'
 import { ServiceWorker } from '@/components/ServiceWorker'
 import { THEME_BOOT_SCRIPT } from '@/lib/themeBoot'
+import { LANG_BOOT_SCRIPT } from '@/lib/i18n/boot'
+import { I18nProvider } from '@/lib/i18n/react'
 
 export const metadata: Metadata = {
   title: 'Amelia',
@@ -28,14 +30,15 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    // suppressHydrationWarning: the boot script sets data-theme on <html>
-    // before React hydrates, so the attribute legitimately differs.
+    // suppressHydrationWarning: the boot scripts set data-theme and lang on
+    // <html> before React hydrates, so those attributes legitimately differ.
     <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
+        <script dangerouslySetInnerHTML={{ __html: LANG_BOOT_SCRIPT }} />
       </head>
       <body>
-        {children}
+        <I18nProvider>{children}</I18nProvider>
         <ServiceWorker />
       </body>
     </html>

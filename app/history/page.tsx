@@ -23,6 +23,8 @@ import {
   voidSleep,
 } from '@/lib/db'
 import { useVolumeUnit } from '@/lib/useVolumeUnit'
+import { useT } from '@/lib/i18n/react'
+import type { Lang } from '@/lib/i18n'
 import type {
   ActivityEntry,
   DiaperChange,
@@ -55,7 +57,7 @@ type Day = { key: string; label: string; entries: ActivityEntry[] }
  * "now". Entries arrive newest-first (buildActivity's own sort), so
  * grouping in order naturally keeps days newest-first too.
  */
-function groupByHouseholdDay(entries: ActivityEntry[]): Day[] {
+function groupByHouseholdDay(entries: ActivityEntry[], lang: Lang): Day[] {
   const days: Day[] = []
   const byKey = new Map<string, Day>()
 
@@ -63,7 +65,7 @@ function groupByHouseholdDay(entries: ActivityEntry[]): Day[] {
     const key = householdToday(new Date(entry.at))
     let day = byKey.get(key)
     if (!day) {
-      day = { key, label: longDate(entry.at), entries: [] }
+      day = { key, label: longDate(entry.at, lang), entries: [] }
       byKey.set(key, day)
       days.push(day)
     }
@@ -71,14 +73,6 @@ function groupByHouseholdDay(entries: ActivityEntry[]): Day[] {
   }
 
   return days
-}
-
-const KIND_LABEL: Record<ActivityEntry['kind'], string> = {
-  feeding: 'Feeding',
-  nursing: 'Nursing',
-  diaper: 'Diaper',
-  sleep: 'Sleep',
-  growth: 'Growth',
 }
 
 /** Only these four kinds have a raw row + edit/void functions behind them. */
@@ -92,6 +86,7 @@ function isEditable(kind: ActivityEntry['kind']): kind is EditKind {
 export default function HistoryPage() {
   const { baby, loading } = useBaby()
   const [unit] = useVolumeUnit()
+  const { t, lang } = useT()
 
   const [days, setDays] = useState<Day[]>([])
   const [feedings, setFeedings] = useState<WithPending<Feeding>[]>([])
@@ -142,7 +137,7 @@ export default function HistoryPage() {
       ])
 
       const firstError = [f, d, n, s].find((r) => r.error)?.error
-      if (firstError && navigator.onLine) setErr(`Couldn't load history — ${firstError}`)
+      if (firstError && navigator.onLine) setErr(t('history.couldNotLoad', { error: firstError }))
 
       const mFeedings = mergePending(f.data, 'feedings', queued)
       const mDiapers = mergePending(d.data, 'diaper_changes', queued)
@@ -156,10 +151,10 @@ export default function HistoryPage() {
 
       // 0 = the start of time, i.e. no "since today" cutoff — the same
       // merge dashboard uses for Today, just unfiltered.
-      const entries = buildActivity(mFeedings, mNursing, mDiapers, mSleep, 0, unit)
-      setDays(groupByHouseholdDay(entries))
+      const entries = buildActivity(mFeedings, mNursing, mDiapers, mSleep, 0, unit, lang)
+      setDays(groupByHouseholdDay(entries, lang))
     },
-    [unit],
+    [unit, lang, t],
   )
 
   useEffect(() => {
@@ -207,7 +202,7 @@ export default function HistoryPage() {
     if (editing.kind === 'feeding') {
       const amount = fAmount.trim() === '' ? null : Number(fAmount)
       if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
-        setErr(`Amount has to be a number of ${unit}.`)
+        setErr(t('history.amountNotNumber', { unit }))
         setBusy(false)
         return
       }
@@ -235,10 +230,10 @@ export default function HistoryPage() {
     }
 
     if (result.error) {
-      setErr(`Couldn't save — ${result.error}`)
+      setErr(t('common.couldNotSave', { error: result.error }))
     } else {
       setEditing(null)
-      confirm('Saved')
+      confirm(t('common.saved'))
       await refresh(baby.id)
     }
     setBusy(false)
@@ -246,7 +241,7 @@ export default function HistoryPage() {
 
   async function deleteEntry(entry: ActivityEntry) {
     if (!baby || busy || !isEditable(entry.kind)) return
-    if (!window.confirm('Remove this entry from History? Nothing else changes.')) return
+    if (!window.confirm(t('history.removeConfirm'))) return
 
     const { kind, id } = entry
     setBusy(true)
@@ -262,10 +257,10 @@ export default function HistoryPage() {
             : await voidSleep(id)
 
     if (result.error) {
-      setErr(`Couldn't delete — ${result.error}`)
+      setErr(t('common.couldNotDelete', { error: result.error }))
     } else {
       if (editing?.id === id) setEditing(null)
-      confirm('Deleted')
+      confirm(t('common.deleted'))
       await refresh(baby.id)
     }
     setBusy(false)
@@ -274,7 +269,7 @@ export default function HistoryPage() {
   if (loading)
     return (
       <Page>
-        <p className="empty">Loading…</p>
+        <p className="empty">{t('common.loading')}</p>
       </Page>
     )
   if (!baby)
@@ -288,7 +283,7 @@ export default function HistoryPage() {
   return (
     <Page>
       <Nav babyId={baby.id} />
-      <h1 className="title">History</h1>
+      <h1 className="title">{t('history.title')}</h1>
       <SyncStatus />
       {err && <Banner kind="error">{err}</Banner>}
       {flash && !err && <Banner kind="ok">{flash}</Banner>}
@@ -296,7 +291,7 @@ export default function HistoryPage() {
       <Grid>
         {days.length === 0 ? (
           <Card>
-            <div className="empty">Nothing logged yet.</div>
+            <div className="empty">{t('history.empty')}</div>
           </Card>
         ) : (
           days.map((day) => (
@@ -308,9 +303,9 @@ export default function HistoryPage() {
                   return (
                     <div key={`${entry.kind}-${entry.id}`}>
                       <div className="feed-item">
-                        <span className="feed-time">{clockTime(entry.at)}</span>
+                        <span className="feed-time">{clockTime(entry.at, lang)}</span>
                         <span className="feed-what">
-                          <span className="meta">{KIND_LABEL[entry.kind]} · </span>
+                          <span className="meta">{t(`history.kind.${entry.kind}`)} · </span>
                           {entry.detail}
                         </span>
                         {isEditable(entry.kind) && !isEditing && (
@@ -321,7 +316,7 @@ export default function HistoryPage() {
                               disabled={busy || editing !== null}
                               onClick={() => startEdit(entry)}
                             >
-                              Edit
+                              {t('common.edit')}
                             </button>
                             <button
                               type="button"
@@ -329,7 +324,7 @@ export default function HistoryPage() {
                               disabled={busy || editing !== null}
                               onClick={() => deleteEntry(entry)}
                             >
-                              Delete
+                              {t('common.delete')}
                             </button>
                           </span>
                         )}
@@ -338,13 +333,13 @@ export default function HistoryPage() {
                       {isEditing && editing.kind === 'feeding' && (
                         <div className="edit-panel">
                           <div className="row">
-                            {(['bottle', 'solid', 'nursing'] as FeedingType[]).map((t) => (
+                            {(['bottle', 'solid', 'nursing'] as FeedingType[]).map((type) => (
                               <Btn
-                                key={t}
-                                variant={fType === t ? 'action' : 'quiet'}
-                                onClick={() => setFType(t)}
+                                key={type}
+                                variant={fType === type ? 'action' : 'quiet'}
+                                onClick={() => setFType(type)}
                               >
-                                {t[0].toUpperCase() + t.slice(1)}
+                                {t(`feedingButton.${type}`)}
                               </Btn>
                             ))}
                           </div>
@@ -355,7 +350,7 @@ export default function HistoryPage() {
                               onChange={(e) => setFAmount(e.target.value)}
                               inputMode="decimal"
                               placeholder={unit}
-                              aria-label={`Amount in ${unit}`}
+                              aria-label={t('history.amountIn', { unit })}
                             />
                           )}
                           <input
@@ -364,14 +359,14 @@ export default function HistoryPage() {
                             value={fAt}
                             onChange={(e) => setFAt(e.target.value)}
                             max={toHouseholdInputValue()}
-                            aria-label="Time it happened"
+                            aria-label={t('common.timeItHappened')}
                           />
                           <div className="row-tight">
                             <Btn disabled={busy} onClick={saveEdit}>
-                              Save
+                              {t('common.save')}
                             </Btn>
                             <Btn variant="quiet" onClick={() => setEditing(null)}>
-                              Cancel
+                              {t('common.cancel')}
                             </Btn>
                           </div>
                         </div>
@@ -380,13 +375,13 @@ export default function HistoryPage() {
                       {isEditing && editing.kind === 'diaper' && (
                         <div className="edit-panel">
                           <div className="row">
-                            {(['wet', 'dirty', 'both'] as DiaperType[]).map((t) => (
+                            {(['wet', 'dirty', 'both'] as DiaperType[]).map((type) => (
                               <Btn
-                                key={t}
-                                variant={dType === t ? 'action' : 'quiet'}
-                                onClick={() => setDType(t)}
+                                key={type}
+                                variant={dType === type ? 'action' : 'quiet'}
+                                onClick={() => setDType(type)}
                               >
-                                {t[0].toUpperCase() + t.slice(1)}
+                                {t(`diaperButton.${type}`)}
                               </Btn>
                             ))}
                           </div>
@@ -396,14 +391,14 @@ export default function HistoryPage() {
                             value={dAt}
                             onChange={(e) => setDAt(e.target.value)}
                             max={toHouseholdInputValue()}
-                            aria-label="Time it happened"
+                            aria-label={t('common.timeItHappened')}
                           />
                           <div className="row-tight">
                             <Btn disabled={busy} onClick={saveEdit}>
-                              Save
+                              {t('common.save')}
                             </Btn>
                             <Btn variant="quiet" onClick={() => setEditing(null)}>
-                              Cancel
+                              {t('common.cancel')}
                             </Btn>
                           </div>
                         </div>
@@ -418,12 +413,12 @@ export default function HistoryPage() {
                                 variant={nSide === s ? 'action' : 'quiet'}
                                 onClick={() => setNSide(s)}
                               >
-                                {s[0].toUpperCase() + s.slice(1)}
+                                {t(`sideButton.${s}`)}
                               </Btn>
                             ))}
                           </div>
                           <label className="label" htmlFor="nursing-start">
-                            Started
+                            {t('common.started')}
                           </label>
                           <input
                             id="nursing-start"
@@ -434,7 +429,7 @@ export default function HistoryPage() {
                             max={toHouseholdInputValue()}
                           />
                           <label className="label" htmlFor="nursing-end">
-                            Ended
+                            {t('common.ended')}
                           </label>
                           <input
                             id="nursing-end"
@@ -446,10 +441,10 @@ export default function HistoryPage() {
                           />
                           <div className="row-tight">
                             <Btn disabled={busy} onClick={saveEdit}>
-                              Save
+                              {t('common.save')}
                             </Btn>
                             <Btn variant="quiet" onClick={() => setEditing(null)}>
-                              Cancel
+                              {t('common.cancel')}
                             </Btn>
                           </div>
                         </div>
@@ -458,7 +453,7 @@ export default function HistoryPage() {
                       {isEditing && editing.kind === 'sleep' && (
                         <div className="edit-panel">
                           <label className="label" htmlFor="sleep-start">
-                            Started
+                            {t('common.started')}
                           </label>
                           <input
                             id="sleep-start"
@@ -469,7 +464,7 @@ export default function HistoryPage() {
                             max={toHouseholdInputValue()}
                           />
                           <label className="label" htmlFor="sleep-end">
-                            Ended
+                            {t('common.ended')}
                           </label>
                           <input
                             id="sleep-end"
@@ -481,10 +476,10 @@ export default function HistoryPage() {
                           />
                           <div className="row-tight">
                             <Btn disabled={busy} onClick={saveEdit}>
-                              Save
+                              {t('common.save')}
                             </Btn>
                             <Btn variant="quiet" onClick={() => setEditing(null)}>
-                              Cancel
+                              {t('common.cancel')}
                             </Btn>
                           </div>
                         </div>

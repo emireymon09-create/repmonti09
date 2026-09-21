@@ -9,9 +9,14 @@
  *
  * Dependency-free on purpose; this is a handful of functions, not a
  * reason to ship a date library to the browser.
+ *
+ * Every function that produces words takes the interface language last,
+ * defaulting to English (lib/i18n). The language changes the words and the
+ * Intl locale — never the timezone: that is always the household's.
  */
 
 import type { VolumeUnit } from './types'
+import { intlLocale, translate, type Lang } from './i18n'
 
 export const HOUSEHOLD_TZ = 'America/Los_Angeles'
 
@@ -42,36 +47,40 @@ function tzOffsetMs(at: Date): number {
   return asIfUtc - at.getTime()
 }
 
-function fmt(iso: string | number | Date, opts: Intl.DateTimeFormatOptions): string {
-  return new Date(iso).toLocaleString([], { timeZone: HOUSEHOLD_TZ, ...opts })
+function fmt(iso: string | number | Date, opts: Intl.DateTimeFormatOptions, lang: Lang): string {
+  return new Date(iso).toLocaleString(intlLocale(lang), { timeZone: HOUSEHOLD_TZ, ...opts })
 }
 
 // --------------------------------------------------------------- display
 
-export function clockTime(iso: string | null | undefined): string {
+export function clockTime(iso: string | null | undefined, lang: Lang = 'en'): string {
   if (!iso) return '—'
-  return fmt(iso, { hour: 'numeric', minute: '2-digit' })
+  return fmt(iso, { hour: 'numeric', minute: '2-digit' }, lang)
 }
 
-export function longDate(iso: string | number | Date): string {
-  return fmt(iso, { weekday: 'long', month: 'long', day: 'numeric' })
+export function longDate(iso: string | number | Date, lang: Lang = 'en'): string {
+  return fmt(iso, { weekday: 'long', month: 'long', day: 'numeric' }, lang)
 }
 
-export function apptWhen(iso: string): string {
-  return fmt(iso, {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
+export function apptWhen(iso: string, lang: Lang = 'en'): string {
+  return fmt(
+    iso,
+    {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    },
+    lang,
+  )
 }
 
-export function measuredOn(dateOnly: string): string {
+export function measuredOn(dateOnly: string, lang: Lang = 'en'): string {
   // A date column has no time; render the calendar date as written
   // rather than shifting it across midnight into another day.
   const [y, m, d] = dateOnly.split('-').map(Number)
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString([], {
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(intlLocale(lang), {
     timeZone: 'UTC',
     month: 'long',
     day: 'numeric',
@@ -83,24 +92,32 @@ export function measuredOn(dateOnly: string): string {
  * Relative inside a day, absolute past it.
  * "just now" · "42m ago" · "3h 10m ago" · "Mon 2:14 PM" · "Aug 28, 2:14 PM"
  */
-export function timeAgo(iso: string | null | undefined, now: number = Date.now()): string {
-  if (!iso) return 'never'
+export function timeAgo(
+  iso: string | null | undefined,
+  now: number = Date.now(),
+  lang: Lang = 'en',
+): string {
+  if (!iso) return translate(lang, 'time.never')
   const then = new Date(iso).getTime()
   const diff = now - then
 
-  if (diff < 60_000) return 'just now'
+  if (diff < 60_000) return translate(lang, 'time.justNow')
   const mins = Math.floor(diff / 60_000)
-  if (mins < 60) return `${mins}m ago`
+  if (mins < 60) return translate(lang, 'time.minsAgo', { m: mins })
   const hrs = Math.floor(mins / 60)
   const rem = mins % 60
-  if (hrs < 24) return rem ? `${hrs}h ${rem}m ago` : `${hrs}h ago`
+  if (hrs < 24) {
+    return rem
+      ? translate(lang, 'time.hoursMinsAgo', { h: hrs, m: rem })
+      : translate(lang, 'time.hoursAgo', { h: hrs })
+  }
 
   // Past a day: absolute. Within the week the weekday is more legible
   // than a date; beyond it, name the date.
   const days = Math.floor(hrs / 24)
   return days < 7
-    ? fmt(then, { weekday: 'short', hour: 'numeric', minute: '2-digit' })
-    : fmt(then, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+    ? fmt(then, { weekday: 'short', hour: 'numeric', minute: '2-digit' }, lang)
+    : fmt(then, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }, lang)
 }
 
 /** Live stopwatch for a session in progress: "7:42" / "1:07:42". */
@@ -114,13 +131,15 @@ export function elapsed(startIso: string, now: number = Date.now()): string {
 }
 
 /** Length of a finished session: "24 min" / "2h 15m". */
-export function durationBetween(startIso: string, endIso: string): string {
+export function durationBetween(startIso: string, endIso: string, lang: Lang = 'en'): string {
   const mins = Math.round((new Date(endIso).getTime() - new Date(startIso).getTime()) / 60_000)
-  if (mins < 1) return 'under a minute'
-  if (mins < 60) return `${mins} min`
+  if (mins < 1) return translate(lang, 'duration.underMinute')
+  if (mins < 60) return translate(lang, 'duration.mins', { m: mins })
   const h = Math.floor(mins / 60)
   const m = mins % 60
-  return m ? `${h}h ${m}m` : `${h}h`
+  return m
+    ? translate(lang, 'duration.hoursMins', { h, m })
+    : translate(lang, 'duration.hours', { h })
 }
 
 /**
@@ -128,15 +147,22 @@ export function durationBetween(startIso: string, endIso: string): string {
  * overdue" · "due now". Signed on purpose — a predicted feeding or nap
  * that's already passed is exactly the thing worth surfacing.
  */
-export function dueRelative(targetIso: string | null, now: number = Date.now()): string | null {
+export function dueRelative(
+  targetIso: string | null,
+  now: number = Date.now(),
+  lang: Lang = 'en',
+): string | null {
   if (!targetIso) return null
   const diffMin = Math.round((new Date(targetIso).getTime() - now) / 60_000)
-  if (Math.abs(diffMin) < 1) return 'due now'
+  if (Math.abs(diffMin) < 1) return translate(lang, 'due.now')
   const mins = Math.abs(diffMin)
   const h = Math.floor(mins / 60)
   const m = mins % 60
-  const span = h > 0 ? `${h}h ${m}m` : `${m}m`
-  return diffMin > 0 ? `due in ${span}` : `${span} overdue`
+  const span =
+    h > 0 ? translate(lang, 'span.hoursMins', { h, m }) : translate(lang, 'span.mins', { m })
+  return diffMin > 0
+    ? translate(lang, 'due.in', { span })
+    : translate(lang, 'due.overdue', { span })
 }
 
 // --------------------------------------------------------------- units
@@ -192,7 +218,10 @@ function growthNumber(value: string): number | null {
 }
 
 /** Form → what the database stores (kg to the gram, cm to the millimetre). */
-export function growthInputToMetric(input: GrowthInput): GrowthMetric | { error: string } {
+export function growthInputToMetric(
+  input: GrowthInput,
+  lang: Lang = 'en',
+): GrowthMetric | { error: string } {
   let weightKg: number | null = null
   let heightCm: number | null = null
 
@@ -201,7 +230,7 @@ export function growthInputToMetric(input: GrowthInput): GrowthMetric | { error:
     const oz = growthNumber(input.oz)
     const inches = growthNumber(input.inches)
     if ([lb, oz, inches].some((v) => v !== null && Number.isNaN(v))) {
-      return { error: 'Weight and height have to be numbers.' }
+      return { error: translate(lang, 'growth.errNumbers') }
     }
     if (lb !== null || oz !== null) weightKg = lbOzToKg(lb ?? 0, oz ?? 0)
     if (inches !== null) heightCm = inches * 2.54
@@ -209,13 +238,13 @@ export function growthInputToMetric(input: GrowthInput): GrowthMetric | { error:
     const kg = growthNumber(input.kg)
     const cm = growthNumber(input.cm)
     if ([kg, cm].some((v) => v !== null && Number.isNaN(v))) {
-      return { error: 'Weight and height have to be numbers.' }
+      return { error: translate(lang, 'growth.errNumbers') }
     }
     weightKg = kg
     heightCm = cm
   }
 
-  if (weightKg === null && heightCm === null) return { error: 'Enter a weight, a height, or both.' }
+  if (weightKg === null && heightCm === null) return { error: translate(lang, 'growth.errEmpty') }
   return {
     weightKg: weightKg === null ? null : Number(weightKg.toFixed(3)),
     heightCm: heightCm === null ? null : Number(heightCm.toFixed(1)),
@@ -248,8 +277,9 @@ export function resolveGrowthEdit(
   base: GrowthInput,
   edited: GrowthInput,
   original: GrowthMetric,
+  lang: Lang = 'en',
 ): GrowthMetric | { error: string } {
-  const computed = growthInputToMetric(edited)
+  const computed = growthInputToMetric(edited, lang)
   if ('error' in computed) return computed
   const sameWeight = edited.imperial
     ? edited.lb === base.lb && edited.oz === base.oz
@@ -297,6 +327,7 @@ export function unitToMl(amount: number, unit: VolumeUnit): number {
 export function ageFrom(
   birthDate: string | null | undefined,
   now: Date = new Date(),
+  lang: Lang = 'en',
 ): string | null {
   if (!birthDate) return null
   const [y, m, d] = birthDate.split('-').map(Number)
@@ -309,9 +340,9 @@ export function ageFrom(
   )
   const days = Math.floor((todayUtc - bornUtc) / 86_400_000)
   if (days < 0) return null
-  if (days < 14) return `${days} day${days === 1 ? '' : 's'} old`
-  if (days < 60) return `${Math.floor(days / 7)} weeks old`
-  return `${Math.floor(days / 30.44)} months old`
+  if (days < 14) return translate(lang, 'age.days', { count: days })
+  if (days < 60) return translate(lang, 'age.weeks', { count: Math.floor(days / 7) })
+  return translate(lang, 'age.months', { count: Math.floor(days / 30.44) })
 }
 
 // --------------------------------------------------------------- form values

@@ -19,6 +19,8 @@ import { resetPumpingTotal } from '@/lib/db'
 import { useVolumeUnit } from '@/lib/useVolumeUnit'
 import { useTheme, type Theme } from '@/lib/theme'
 import { APP_VERSION } from '@/lib/version'
+import { useLanguageChoice, useT } from '@/lib/i18n/react'
+import type { LangChoice, MessageKey } from '@/lib/i18n'
 
 export function Page({ children }: { children: React.ReactNode }) {
   return <div className="page">{children}</div>
@@ -89,10 +91,18 @@ export function Banner({
   )
 }
 
-const THEMES: { value: Theme; label: string }[] = [
-  { value: 'light', label: 'Light' },
-  { value: 'dark', label: 'Dark' },
-  { value: 'system', label: 'System' },
+const THEMES: { value: Theme; label: MessageKey }[] = [
+  { value: 'light', label: 'theme.light' },
+  { value: 'dark', label: 'theme.dark' },
+  { value: 'system', label: 'theme.system' },
+]
+
+// Same shape as the theme picker, right under it. "System" first: it is what
+// a device gets until someone chooses, and it follows the phone's language.
+const LANGUAGES: { value: LangChoice; label: MessageKey }[] = [
+  { value: 'system', label: 'language.system' },
+  { value: 'en', label: 'language.en' },
+  { value: 'es', label: 'language.es' },
 ]
 
 // Stroke icons for the phone's bottom bar, drawn on a 24-unit grid in
@@ -137,11 +147,11 @@ function NavIcon({ name }: { name: keyof typeof ICONS }) {
 }
 
 const TABS = [
-  { href: '/dashboard', label: 'Today', icon: 'today' },
-  { href: '/pumping', label: 'Milk', icon: 'milk' },
-  { href: '/growth', label: 'Growth', icon: 'growth' },
-  { href: '/appointments', label: 'Doctor', icon: 'doctor' },
-  { href: '/history', label: 'History', icon: 'history' },
+  { href: '/dashboard', label: 'nav.today', icon: 'today' },
+  { href: '/pumping', label: 'nav.milk', icon: 'milk' },
+  { href: '/growth', label: 'nav.growth', icon: 'growth' },
+  { href: '/appointments', label: 'nav.doctor', icon: 'doctor' },
+  { href: '/history', label: 'nav.history', icon: 'history' },
 ] as const
 
 export function Nav({ babyId }: { babyId?: string }) {
@@ -151,6 +161,8 @@ export function Nav({ babyId }: { babyId?: string }) {
   const [resetting, setResetting] = useState(false)
   const [unit, setUnit] = useVolumeUnit()
   const [theme, setTheme] = useTheme()
+  const [langChoice, setLangChoice] = useLanguageChoice()
+  const { t } = useT()
   const settingsRef = useRef<HTMLDivElement>(null)
   const gearRef = useRef<HTMLButtonElement>(null)
 
@@ -193,12 +205,12 @@ export function Nav({ babyId }: { babyId?: string }) {
     if (!babyId || resetting) return
     // Close the menu first: the confirm must never sit on top of it.
     setMenuOpen(false)
-    if (!window.confirm('Zero out the "in the stash" total? Past sessions stay in History.')) return
+    if (!window.confirm(t('menu.resetConfirm'))) return
     setResetting(true)
     const { error } = await resetPumpingTotal(babyId)
     setResetting(false)
     if (error) {
-      window.alert(`Couldn't reset — ${error}`)
+      window.alert(t('menu.resetFailed', { error }))
       return
     }
     window.location.reload()
@@ -214,7 +226,7 @@ export function Nav({ babyId }: { babyId?: string }) {
           aria-current={pathname === tab.href ? 'page' : undefined}
         >
           <NavIcon name={tab.icon} />
-          {tab.label}
+          {t(tab.label)}
         </Link>
       ))}
       <div
@@ -227,7 +239,7 @@ export function Nav({ babyId }: { babyId?: string }) {
         <button
           ref={gearRef}
           className="gear"
-          aria-label="Settings"
+          aria-label={t('nav.settings')}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           onClick={() => setMenuOpen((v) => !v)}
@@ -237,32 +249,54 @@ export function Nav({ babyId }: { babyId?: string }) {
           </span>
           <NavIcon name="settings" />
           <span className="gear-label" aria-hidden="true">
-            Settings
+            {t('nav.settings')}
           </span>
         </button>
         {menuOpen && (
-          <div className="nav-menu" role="menu" aria-label="Settings">
+          <div className="nav-menu" role="menu" aria-label={t('nav.settings')}>
             <div className="nav-menu-group" role="group" aria-labelledby="theme-label">
               <div className="label" id="theme-label">
-                Theme
+                {t('menu.theme')}
               </div>
               <div className="seg">
-                {THEMES.map((t) => (
+                {THEMES.map((option) => (
                   <button
-                    key={t.value}
+                    key={option.value}
                     type="button"
                     role="menuitemradio"
-                    aria-checked={theme === t.value}
+                    aria-checked={theme === option.value}
                     className="seg-btn"
-                    onClick={() => setTheme(t.value)}
+                    onClick={() => setTheme(option.value)}
                   >
-                    {t.label}
+                    {t(option.label)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="nav-menu-group" role="group" aria-labelledby="language-label">
+              <div className="label" id="language-label">
+                {t('menu.language')}
+              </div>
+              <div className="seg">
+                {LANGUAGES.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={langChoice === option.value}
+                    className="seg-btn"
+                    // Each language is named in itself; this tells a screen
+                    // reader to read "Español" with Spanish rules.
+                    lang={option.value === 'system' ? undefined : option.value}
+                    onClick={() => setLangChoice(option.value)}
+                  >
+                    {t(option.label)}
                   </button>
                 ))}
               </div>
             </div>
             <button role="menuitem" className="nav-menu-item" onClick={switchUnit}>
-              Switch to {unit === 'oz' ? 'ml' : 'oz'}
+              {t('menu.switchUnit', { unit: unit === 'oz' ? 'ml' : 'oz' })}
             </button>
             {babyId && (
               <button
@@ -271,7 +305,7 @@ export function Nav({ babyId }: { babyId?: string }) {
                 onClick={resetMilkTotal}
                 disabled={resetting}
               >
-                {resetting ? 'Resetting…' : 'Reset milk total'}
+                {resetting ? t('menu.resetting') : t('menu.resetMilk')}
               </button>
             )}
             <button
@@ -282,10 +316,10 @@ export function Nav({ babyId }: { babyId?: string }) {
                 router.push('/version')
               }}
             >
-              Version history · v{APP_VERSION}
+              {t('menu.versionHistory', { version: APP_VERSION })}
             </button>
             <button role="menuitem" className="nav-menu-item" onClick={signOut}>
-              Sign out
+              {t('menu.signOut')}
             </button>
           </div>
         )}

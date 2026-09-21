@@ -7,6 +7,8 @@ import { Banner, Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
 import { SyncStatus } from '@/components/SyncStatus'
 import { logPumping, recentPumping, totalPumped, updatePumping, voidPumping } from '@/lib/db'
 import { useVolumeUnit } from '@/lib/useVolumeUnit'
+import { useT } from '@/lib/i18n/react'
+import type { MessageKey } from '@/lib/i18n'
 import type { PumpingSession, PumpSide } from '@/lib/types'
 import {
   clockTime,
@@ -18,15 +20,16 @@ import {
   unitToMl,
 } from '@/lib/format'
 
-const SIDES: { value: PumpSide; label: string }[] = [
-  { value: 'left', label: 'Left' },
-  { value: 'right', label: 'Right' },
-  { value: 'both', label: 'Both' },
+const SIDES: { value: PumpSide; label: MessageKey }[] = [
+  { value: 'left', label: 'sideButton.left' },
+  { value: 'right', label: 'sideButton.right' },
+  { value: 'both', label: 'sideButton.both' },
 ]
 
 export default function PumpingPage() {
   const { baby, userId, loading } = useBaby()
   const [unit] = useVolumeUnit()
+  const { t, lang } = useT()
 
   const [rows, setRows] = useState<PumpingSession[]>([])
   const [side, setSide] = useState<PumpSide>('both')
@@ -46,11 +49,14 @@ export default function PumpingPage() {
   const [eNotes, setENotes] = useState('')
   const [eAt, setEAt] = useState('')
 
-  const refresh = useCallback(async (babyId: string) => {
-    const { data, error } = await recentPumping(babyId, 100)
-    if (error) setErr(`Couldn't load sessions — ${error}`)
-    setRows(data)
-  }, [])
+  const refresh = useCallback(
+    async (babyId: string) => {
+      const { data, error } = await recentPumping(babyId, 100)
+      if (error) setErr(t('milk.couldNotLoad', { error }))
+      setRows(data)
+    },
+    [t],
+  )
 
   useEffect(() => {
     if (baby) refresh(baby.id)
@@ -66,7 +72,7 @@ export default function PumpingPage() {
     if (trimmed !== '') {
       const parsed = Number(trimmed)
       if (!Number.isFinite(parsed)) {
-        setErr('Amount has to be a number.')
+        setErr(t('milk.amountNotNumber'))
         return
       }
       amountMl = Number(unitToMl(parsed, unit).toFixed(1))
@@ -86,10 +92,10 @@ export default function PumpingPage() {
     setBusy(false)
 
     if (error) {
-      setErr(`Couldn't save — ${error}`)
+      setErr(t('common.couldNotSave', { error }))
       return
     }
-    setSaved(queued ? 'Saved on this device — will sync when you’re back online' : 'Session logged')
+    setSaved(queued ? t('common.queued') : t('milk.logged'))
     setAmount('')
     setNotes('')
     setAt(toHouseholdInputValue(new Date()))
@@ -114,7 +120,7 @@ export default function PumpingPage() {
     if (trimmed !== '') {
       const parsed = Number(trimmed)
       if (!Number.isFinite(parsed)) {
-        setErr('Amount has to be a number.')
+        setErr(t('milk.amountNotNumber'))
         return
       }
       amountMl = Number(unitToMl(parsed, unit).toFixed(1))
@@ -130,17 +136,17 @@ export default function PumpingPage() {
     setBusy(false)
 
     if (error) {
-      setErr(`Couldn't save — ${error}`)
+      setErr(t('common.couldNotSave', { error }))
       return
     }
-    setSaved('Saved')
+    setSaved(t('common.saved'))
     setEditingId(null)
     if (baby) refresh(baby.id)
   }
 
   async function deleteRow(id: string) {
     if (busy) return
-    if (!window.confirm('Remove this session? It comes out of the stash total too.')) return
+    if (!window.confirm(t('milk.removeConfirm'))) return
 
     setBusy(true)
     setErr(null)
@@ -148,18 +154,18 @@ export default function PumpingPage() {
     setBusy(false)
 
     if (error) {
-      setErr(`Couldn't delete — ${error}`)
+      setErr(t('common.couldNotDelete', { error }))
       return
     }
     if (editingId === id) setEditingId(null)
-    setSaved('Deleted')
+    setSaved(t('common.deleted'))
     if (baby) refresh(baby.id)
   }
 
   if (loading)
     return (
       <Page>
-        <p className="empty">Loading…</p>
+        <p className="empty">{t('common.loading')}</p>
       </Page>
     )
   if (!baby)
@@ -180,7 +186,7 @@ export default function PumpingPage() {
   return (
     <Page>
       <Nav babyId={baby.id} />
-      <h1 className="title">Milk</h1>
+      <h1 className="title">{t('milk.title')}</h1>
       <SyncStatus />
       {err && <Banner kind="error">{err}</Banner>}
       {saved && !err && <Banner kind="ok">{saved}</Banner>}
@@ -188,7 +194,7 @@ export default function PumpingPage() {
       <Grid>
         <Card>
           <form onSubmit={save}>
-            <Label>Log a pumping session</Label>
+            <Label>{t('milk.logTitle')}</Label>
             <div className="stack">
               <div className="row">
                 {SIDES.map((s) => (
@@ -197,7 +203,7 @@ export default function PumpingPage() {
                     variant={side === s.value ? 'action' : 'quiet'}
                     onClick={() => setSide(s.value)}
                   >
-                    {s.label}
+                    {t(s.label)}
                   </Btn>
                 ))}
               </div>
@@ -206,19 +212,19 @@ export default function PumpingPage() {
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 inputMode="decimal"
-                placeholder={`${unit} (optional)`}
-                aria-label={`Amount, ${unit}`}
+                placeholder={t('common.unitOptional', { unit })}
+                aria-label={t('milk.amount', { unit })}
               />
               <input
                 className="input"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Notes (optional)"
-                aria-label="Notes"
+                placeholder={t('common.notesOptional')}
+                aria-label={t('common.notes')}
               />
               <div>
                 <label className="label" htmlFor="pump-at">
-                  When (defaults to now)
+                  {t('milk.when')}
                 </label>
                 <input
                   id="pump-at"
@@ -232,31 +238,31 @@ export default function PumpingPage() {
             </div>
             <div className="row-tight">
               <Btn type="submit" disabled={busy}>
-                {busy ? 'Saving…' : 'Log session'}
+                {busy ? t('common.saving') : t('milk.logSession')}
               </Btn>
             </div>
           </form>
         </Card>
 
         <Card>
-          <Label>In the stash</Label>
+          <Label>{t('milk.inStash')}</Label>
           <div className="value">{formatVolume(total, unit)}</div>
           <div className="meta">
-            {counted.length} session{counted.length === 1 ? '' : 's'} counted
-            {resetAt && ` since ${longDate(resetAt)}`}
+            {t('milk.counted', { count: counted.length })}
+            {resetAt && t('milk.since', { date: longDate(resetAt, lang) })}
           </div>
         </Card>
 
         {rows.length === 0 ? (
           <Card>
-            <div className="empty">No sessions logged yet.</div>
+            <div className="empty">{t('milk.empty')}</div>
           </Card>
         ) : (
           rows.map((row) => (
             <Card key={row.id}>
               {editingId === row.id ? (
                 <div className="stack">
-                  <Label>Edit session</Label>
+                  <Label>{t('milk.editSession')}</Label>
                   <div className="row">
                     {SIDES.map((s) => (
                       <Btn
@@ -264,7 +270,7 @@ export default function PumpingPage() {
                         variant={eSide === s.value ? 'action' : 'quiet'}
                         onClick={() => setESide(s.value)}
                       >
-                        {s.label}
+                        {t(s.label)}
                       </Btn>
                     ))}
                   </div>
@@ -273,15 +279,15 @@ export default function PumpingPage() {
                     value={eAmount}
                     onChange={(e) => setEAmount(e.target.value)}
                     inputMode="decimal"
-                    placeholder={`${unit} (optional)`}
-                    aria-label={`Amount, ${unit}`}
+                    placeholder={t('common.unitOptional', { unit })}
+                    aria-label={t('milk.amount', { unit })}
                   />
                   <input
                     className="input"
                     value={eNotes}
                     onChange={(e) => setENotes(e.target.value)}
-                    placeholder="Notes (optional)"
-                    aria-label="Notes"
+                    placeholder={t('common.notesOptional')}
+                    aria-label={t('common.notes')}
                   />
                   <input
                     type="datetime-local"
@@ -289,14 +295,14 @@ export default function PumpingPage() {
                     value={eAt}
                     onChange={(e) => setEAt(e.target.value)}
                     max={toHouseholdInputValue(new Date())}
-                    aria-label="Time it happened"
+                    aria-label={t('common.timeItHappened')}
                   />
                   <div className="row">
                     <Btn disabled={busy} onClick={saveEdit}>
-                      Save
+                      {t('common.save')}
                     </Btn>
                     <Btn variant="quiet" onClick={() => setEditingId(null)}>
-                      Cancel
+                      {t('common.cancel')}
                     </Btn>
                   </div>
                 </div>
@@ -304,7 +310,7 @@ export default function PumpingPage() {
                 <>
                   <div className="between">
                     <Label>
-                      {longDate(row.pumped_at)} · {clockTime(row.pumped_at)}
+                      {longDate(row.pumped_at, lang)} · {clockTime(row.pumped_at, lang)}
                     </Label>
                     <span className="feed-actions">
                       <button
@@ -313,7 +319,7 @@ export default function PumpingPage() {
                         disabled={busy || editingId !== null}
                         onClick={() => startEdit(row)}
                       >
-                        Edit
+                        {t('common.edit')}
                       </button>
                       <button
                         type="button"
@@ -321,14 +327,14 @@ export default function PumpingPage() {
                         disabled={busy || editingId !== null}
                         onClick={() => deleteRow(row.id)}
                       >
-                        Delete
+                        {t('common.delete')}
                       </button>
                     </span>
                   </div>
                   <div className="value">
-                    {row.amount_ml != null ? formatVolume(row.amount_ml, unit) : 'No amount'}
+                    {row.amount_ml != null ? formatVolume(row.amount_ml, unit) : t('milk.noAmount')}
                     {' · '}
-                    {SIDES.find((s) => s.value === row.side)?.label ?? row.side}
+                    {t(`sideButton.${row.side}`)}
                   </div>
                   {row.notes && <div className="meta">{row.notes}</div>}
                 </>

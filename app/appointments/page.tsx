@@ -6,12 +6,15 @@ import { NoBaby } from '@/components/NoBaby'
 import { Banner, Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
 import { SyncStatus } from '@/components/SyncStatus'
 import { addAppointment, listAppointments, setAppointmentCompleted } from '@/lib/db'
-import { APPOINTMENT_TYPE_LABELS } from '@/lib/types'
 import type { AppointmentType, DoctorAppointment } from '@/lib/types'
 import { apptWhen, fromHouseholdInputValue, toHouseholdInputValue } from '@/lib/format'
+import { useT } from '@/lib/i18n/react'
+
+const APPOINTMENT_TYPES: AppointmentType[] = ['checkup', 'vaccine', 'sick_visit', 'other']
 
 export default function AppointmentsPage() {
   const { baby, userId, loading } = useBaby()
+  const { t } = useT()
 
   const [rows, setRows] = useState<DoctorAppointment[]>([])
   const [showForm, setShowForm] = useState(false)
@@ -24,11 +27,14 @@ export default function AppointmentsPage() {
   const [saved, setSaved] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const refresh = useCallback(async (babyId: string) => {
-    const { data, error } = await listAppointments(babyId)
-    if (error) setErr(`Couldn't load appointments — ${error}`)
-    setRows(data)
-  }, [])
+  const refresh = useCallback(
+    async (babyId: string) => {
+      const { data, error } = await listAppointments(babyId)
+      if (error) setErr(t('doctor.couldNotLoad', { error }))
+      setRows(data)
+    },
+    [t],
+  )
 
   useEffect(() => {
     if (baby) refresh(baby.id)
@@ -38,11 +44,11 @@ export default function AppointmentsPage() {
     e.preventDefault()
     if (!baby || busy) return
     if (!title.trim()) {
-      setErr('Give the appointment a title.')
+      setErr(t('doctor.needTitle'))
       return
     }
     if (!when) {
-      setErr('Pick a date and time.')
+      setErr(t('doctor.needWhen'))
       return
     }
 
@@ -59,14 +65,10 @@ export default function AppointmentsPage() {
     setBusy(false)
 
     if (error) {
-      setErr(`Couldn't save — ${error}`)
+      setErr(t('common.couldNotSave', { error }))
       return
     }
-    setSaved(
-      queued
-        ? 'Saved on this device — will sync when you\u2019re back online'
-        : 'Appointment saved',
-    )
+    setSaved(queued ? t('common.queued') : t('doctor.saved'))
     setTitle('')
     setDoctor('')
     setNotes('')
@@ -82,7 +84,7 @@ export default function AppointmentsPage() {
     const { error } = await setAppointmentCompleted(appt.id, !appt.completed)
     setBusy(false)
     if (error) {
-      setErr(`Couldn't update — ${error}`)
+      setErr(t('doctor.couldNotUpdate', { error }))
       return
     }
     refresh(baby.id)
@@ -91,7 +93,7 @@ export default function AppointmentsPage() {
   if (loading)
     return (
       <Page>
-        <p className="empty">Loading…</p>
+        <p className="empty">{t('common.loading')}</p>
       </Page>
     )
   if (!baby)
@@ -110,7 +112,7 @@ export default function AppointmentsPage() {
     <Page>
       <Nav babyId={baby.id} />
       <div className="between page-head">
-        <h1 className="title">Doctor</h1>
+        <h1 className="title">{t('doctor.title')}</h1>
         <button
           className="pill"
           onClick={() => {
@@ -118,7 +120,7 @@ export default function AppointmentsPage() {
             setErr(null)
           }}
         >
-          {showForm ? 'Cancel' : '+ Add'}
+          {showForm ? t('common.cancel') : t('doctor.add')}
         </button>
       </div>
 
@@ -129,24 +131,24 @@ export default function AppointmentsPage() {
       {showForm && (
         <Card>
           <form onSubmit={save}>
-            <Label>New appointment</Label>
+            <Label>{t('doctor.new')}</Label>
             <div className="stack">
               <input
                 className="input"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g. 2-month checkup"
-                aria-label="Title"
+                placeholder={t('doctor.titlePlaceholder')}
+                aria-label={t('doctor.titleLabel')}
               />
               <select
                 className="input"
                 value={type}
-                aria-label="Appointment type"
+                aria-label={t('doctor.type')}
                 onChange={(e) => setType(e.target.value as AppointmentType)}
               >
-                {(Object.keys(APPOINTMENT_TYPE_LABELS) as AppointmentType[]).map((key) => (
+                {APPOINTMENT_TYPES.map((key) => (
                   <option key={key} value={key}>
-                    {APPOINTMENT_TYPE_LABELS[key]}
+                    {t(`apptType.${key}`)}
                   </option>
                 ))}
               </select>
@@ -155,40 +157,38 @@ export default function AppointmentsPage() {
                 type="datetime-local"
                 value={when}
                 onChange={(e) => setWhen(e.target.value)}
-                aria-label="Date and time"
+                aria-label={t('doctor.dateTime')}
               />
               <input
                 className="input"
                 value={doctor}
                 onChange={(e) => setDoctor(e.target.value)}
-                placeholder="Doctor (optional)"
-                aria-label="Doctor"
+                placeholder={t('doctor.doctorOptional')}
+                aria-label={t('doctor.doctor')}
               />
               <input
                 className="input"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Notes (optional)"
-                aria-label="Notes"
+                placeholder={t('common.notesOptional')}
+                aria-label={t('common.notes')}
               />
             </div>
             <div className="row-tight">
               <Btn type="submit" disabled={busy}>
-                {busy ? 'Saving…' : 'Save appointment'}
+                {busy ? t('common.saving') : t('doctor.saveAppointment')}
               </Btn>
             </div>
-            <p className="note">
-              Stored here only. Syncing to the shared calendar is the Hub&rsquo;s job later.
-            </p>
+            <p className="note">{t('doctor.storedHere')}</p>
           </form>
         </Card>
       )}
 
-      <h2 className="label section-label">Upcoming</h2>
+      <h2 className="label section-label">{t('doctor.upcoming')}</h2>
       <Grid>
         {upcoming.length === 0 ? (
           <Card>
-            <div className="empty">Nothing scheduled.</div>
+            <div className="empty">{t('doctor.nothingScheduled')}</div>
           </Card>
         ) : (
           upcoming.map((appt) => (
@@ -199,7 +199,7 @@ export default function AppointmentsPage() {
 
       {past.length > 0 && (
         <>
-          <h2 className="label section-label">Past</h2>
+          <h2 className="label section-label">{t('doctor.past')}</h2>
           <Grid>
             {past.map((appt) => (
               <ApptCard key={appt.id} appt={appt} onToggle={toggleCompleted} busy={busy} past />
@@ -222,14 +222,15 @@ function ApptCard({
   busy: boolean
   past?: boolean
 }) {
+  const { t, lang } = useT()
   return (
     <Card past={past}>
       <div className="spread">
         <div className="grow">
           <div className={appt.completed ? 'value strike' : 'value'}>{appt.title}</div>
           <div className="meta">
-            {apptWhen(appt.scheduled_at)}
-            {appt.appointment_type ? ` · ${APPOINTMENT_TYPE_LABELS[appt.appointment_type]}` : ''}
+            {apptWhen(appt.scheduled_at, lang)}
+            {appt.appointment_type ? ` · ${t(`apptType.${appt.appointment_type}`)}` : ''}
             {appt.doctor_name ? ` · ${appt.doctor_name}` : ''}
           </div>
           {appt.notes && <div className="meta">{appt.notes}</div>}
@@ -238,7 +239,7 @@ function ApptCard({
           className={appt.completed ? 'check is-done' : 'check'}
           onClick={() => onToggle(appt)}
           disabled={busy}
-          aria-label={appt.completed ? 'Mark as not done' : 'Mark as done'}
+          aria-label={appt.completed ? t('doctor.markNotDone') : t('doctor.markDone')}
         >
           ✓
         </button>

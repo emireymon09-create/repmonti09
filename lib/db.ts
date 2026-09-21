@@ -21,6 +21,7 @@
 
 import { createClient } from '@/lib/supabaseClient'
 import { formatVolume } from '@/lib/format'
+import { documentLang, translate, type Lang } from '@/lib/i18n'
 import {
   browserQueueStore,
   flushQueue,
@@ -114,8 +115,13 @@ async function enqueue(label: string, op: PendingOp): Promise<Result<null>> {
     })
     return { data: null, error: null, queued: true }
   } catch (e) {
+    // The underlying reason stays as the browser/queue wrote it; the frame
+    // around it follows the interface language.
     const message = e instanceof Error ? e.message : String(e)
-    return { data: null, error: `Offline, and this device wouldn't store it — ${message}` }
+    return {
+      data: null,
+      error: `${translate(documentLang(), 'common.offlineNotStored')} — ${message}`,
+    }
   }
 }
 
@@ -605,10 +611,13 @@ export function buildActivity(
   sleep: WithPending<SleepSession>[],
   since: number,
   unit: VolumeUnit = 'oz',
+  lang: Lang = 'en',
 ): ActivityEntry[] {
   const out: ActivityEntry[] = []
+  const t = (key: Parameters<typeof translate>[1], vars?: Parameters<typeof translate>[2]) =>
+    translate(lang, key, vars)
   const mark = (row: { pending?: boolean }, text: string) =>
-    row.pending ? `${text} · not synced yet` : text
+    row.pending ? `${text} · ${t('activity.notSynced')}` : text
   // `what` names the kind itself (the Today feed shows it alone); `detail`
   // leaves the kind out, for views that already label it ("Diaper · Wet").
   const entry = (
@@ -618,26 +627,39 @@ export function buildActivity(
     what: string,
     detail: string,
   ) => out.push({ id: row.id, at, kind, what: mark(row, what), detail: mark(row, detail) })
-  const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
   for (const f of feedings) {
     const text =
       f.feeding_type === 'bottle'
-        ? `Bottle${f.amount_ml ? ` · ${formatVolume(f.amount_ml, unit)}` : ''}`
+        ? `${t('activity.bottle')}${f.amount_ml ? ` · ${formatVolume(f.amount_ml, unit)}` : ''}`
         : f.feeding_type === 'solid'
-          ? 'Solids'
-          : 'Nursing (logged as feed)'
+          ? t('activity.solids')
+          : t('activity.nursingFeed')
     entry(f, f.fed_at, 'feeding', text, text)
   }
   for (const n of nursing) {
-    if (n.ended_at) entry(n, n.ended_at, 'nursing', `Nursed · ${n.side}`, `${cap(n.side)} side`)
+    if (n.ended_at) {
+      entry(
+        n,
+        n.ended_at,
+        'nursing',
+        t('activity.nursed', { side: t(`side.${n.side}`) }),
+        t(`activity.sideDetail.${n.side}`),
+      )
+    }
   }
   for (const d of diapers) {
-    entry(d, d.changed_at, 'diaper', `Diaper · ${d.diaper_type}`, cap(d.diaper_type))
+    entry(
+      d,
+      d.changed_at,
+      'diaper',
+      t('activity.diaper', { type: t(`diaper.${d.diaper_type}`) }),
+      t(`activity.diaperDetail.${d.diaper_type}`),
+    )
   }
   for (const s of sleep) {
     if (s.ended_at) {
-      const text = s.source === 'nuc_derived' ? 'Woke (detected)' : 'Woke'
+      const text = s.source === 'nuc_derived' ? t('activity.wokeDetected') : t('activity.woke')
       entry(s, s.ended_at, 'sleep', text, text)
     }
   }

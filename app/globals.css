@@ -154,6 +154,14 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* The server renders English; on a device that resolves to another
+   language, lib/i18n/boot.ts sets this until the app has switched, so the
+   English markup never paints. The boot script lifts it after a short cap
+   even if the JavaScript never arrives. The background still shows. */
+html[data-lang-pending] body {
+  visibility: hidden;
+}
+
 /* Kiosk browser on an always-on display: never rubber-band, never
    select text on a tap, never show a highlight flash. */
 body {
@@ -330,6 +338,11 @@ body {
   font-weight: 600;
   text-transform: capitalize;
   font-size: var(--t-body);
+}
+/* Spanish capitalises only the first word ("Lado derecho"); the strings in
+   lib/i18n/es.ts already come that way. */
+:lang(es) .side {
+  text-transform: none;
 }
 .stopwatch {
   display: flex;

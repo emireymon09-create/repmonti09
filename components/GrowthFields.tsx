@@ -1,6 +1,7 @@
 'use client'
 
 import type { GrowthInput } from '@/lib/format'
+import { useT } from '@/lib/i18n/react'
 
 type Field = 'lb' | 'oz' | 'inches' | 'kg' | 'cm'
 
@@ -15,6 +16,7 @@ export function GrowthFields({
   value: GrowthInput
   onChange: (next: GrowthInput) => void
 }) {
+  const { t } = useT()
   const input = (field: Field, placeholder: string, label: string) => (
     <input
       className="input"
@@ -28,14 +30,14 @@ export function GrowthFields({
 
   return value.imperial ? (
     <div className="row">
-      {input('lb', 'lb', 'Weight, pounds')}
-      {input('oz', 'oz', 'Weight, ounces')}
-      {input('inches', 'in', 'Height, inches')}
+      {input('lb', 'lb', t('growth.weightLb'))}
+      {input('oz', 'oz', t('growth.weightOz'))}
+      {input('inches', 'in', t('growth.heightIn'))}
     </div>
   ) : (
     <div className="row">
-      {input('kg', 'kg', 'Weight, kilograms')}
-      {input('cm', 'cm', 'Height, centimetres')}
+      {input('kg', 'kg', t('growth.weightKg'))}
+      {input('cm', 'cm', t('growth.heightCm'))}
     </div>
   )
 }

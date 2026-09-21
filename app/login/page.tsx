@@ -4,9 +4,11 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabaseClient'
 import { Banner, Btn, Card, Page } from '@/components/ui'
+import { useT } from '@/lib/i18n/react'
 
 export default function LoginPage() {
   const router = useRouter()
+  const { t } = useT()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [mode, setMode] = useState<'signin' | 'signup'>('signin')
@@ -26,7 +28,13 @@ export default function LoginPage() {
 
     setLoading(false)
     if (error) {
-      setError(error.message)
+      // Supabase's own wording; the one everybody hits gets translated, the
+      // rest pass through as sent.
+      setError(
+        error.message === 'Invalid login credentials'
+          ? t('login.invalidCredentials')
+          : error.message,
+      )
       return
     }
     router.push('/dashboard')
@@ -42,7 +50,7 @@ export default function LoginPage() {
             <div className="stack">
               <div>
                 <label className="label" htmlFor="email">
-                  Email
+                  {t('login.email')}
                 </label>
                 <input
                   id="email"
@@ -56,7 +64,7 @@ export default function LoginPage() {
               </div>
               <div>
                 <label className="label" htmlFor="password">
-                  Password
+                  {t('login.password')}
                 </label>
                 <input
                   id="password"
@@ -71,7 +79,11 @@ export default function LoginPage() {
             </div>
             <div className="row-tight">
               <Btn type="submit" disabled={loading}>
-                {loading ? 'Signing in…' : mode === 'signin' ? 'Sign in' : 'Create account'}
+                {loading
+                  ? t('login.signingIn')
+                  : mode === 'signin'
+                    ? t('login.signIn')
+                    : t('login.createAccount')}
               </Btn>
             </div>
           </form>
@@ -80,7 +92,7 @@ export default function LoginPage() {
           className="linkish"
           onClick={() => setMode(mode === 'signin' ? 'signup' : 'signin')}
         >
-          {mode === 'signin' ? 'Need an account? Sign up' : 'Already have an account? Sign in'}
+          {mode === 'signin' ? t('login.toSignUp') : t('login.toSignIn')}
         </button>
       </div>
     </Page>
