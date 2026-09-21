@@ -382,6 +382,24 @@ body {
   flex: none;
   text-align: center;
 }
+/* Date and time fields. iOS Safari draws them as a native button, and
+   whenever their width isn't a fixed length its theme overrides ours:
+   box-sizing becomes content-box, the side padding becomes 0.5em, and
+   min-width becomes the widest date it can print
+   (RenderThemeIOS::adjustInputElementButtonStyle in WebKit). So
+   `width: 100%` turned into 100% + padding + border and ran past the right
+   edge of the card. That override only runs for the native appearance;
+   dropping it keeps the box ours. The calendar button in Chromium stays. */
+.input[type='date'],
+.input[type='datetime-local'] {
+  -webkit-appearance: none;
+  appearance: none;
+  min-width: 0;
+}
+/* iOS centers the value; line it up with every other field. */
+.input::-webkit-date-and-time-value {
+  text-align: start;
+}
 
 .linkish {
   background: none;
