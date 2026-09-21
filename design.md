@@ -213,7 +213,7 @@ Destinados a mudarse a `packages/ui` cuando llegue el monorepo.
 | `Banner` | `.banner` | Tipos `error` / `ok` / `warn`. Lleva `role="status"` |
 | `Nav` | `.nav` | 5 tabs + menú de engranaje. En teléfono (<600px) es una barra inferior fija, ver §4 "Navegación" |
 | `SyncBar` | `.syncbar` | En `components/SyncStatus.tsx`. Estado offline / pendientes. `role="status"`, y `.has-pending` cuando la cola no está vacía |
-| `SyncStatus` | — | En `components/SyncStatus.tsx`. El que cablea `useSync()` con `SyncBar`; es lo que las páginas montan |
+| `SyncStatus` | — | En `components/SyncStatus.tsx`. El que cablea `useSync()` con `SyncBar`; lo montan `/appointments` y `/pumping`. `/dashboard`, `/growth` y `/history` usan `useSync()` + `SyncBar` directo, porque necesitan releer al sincronizar y mostrar el error de sincronización |
 | `NoBaby` | — | En `components/NoBaby.tsx`. Estado vacío cuando no hay perfil de bebé |
 | `ServiceWorker` | — | En `components/ServiceWorker.tsx`. No renderiza nada: registra `/sw.js`, **solo en producción** |
 
@@ -337,6 +337,11 @@ Es el patrón de UX más importante del proyecto.
   Aparece solo cuando hay algo que informar.
 - Estar offline se comunica como **información, no como error**: en una
   habitación de bebé es una condición normal.
+- Offline, una página **no se vacía**: sigue mostrando lo último que devolvió
+  el server, con la cola encima (`/dashboard`, `/history`, `/growth`, desde
+  el 21 sep 2026). Hueco: en una primera carga sin conexión no hay nada que
+  mostrar, y en `/dashboard` las tarjetas de Lactancia y Sueño todavía no
+  llevan `.pending-tag` (ver `CLAUDE.md` §6).
 
 ### 5.5 Errores visibles, nunca silenciosos
 
@@ -405,7 +410,7 @@ Cada patrón de §5 afirma algo sobre el código. Se comprobó uno por uno:
 | 5.1 | `tabular-nums` en dígitos que cuentan | `app/globals.css:246` y `:484` |
 | 5.2 | El cronómetro usa `elapsed()` | `lib/format.ts:107` |
 | 5.3 | Relativo/absoluto con `timeAgo()` | `lib/format.ts:86`; TZ del hogar en `:16`. Cubierto por `tests/unit/format.test.ts` bajo cuatro timezones |
-| 5.4 | "Not synced yet" en todos lados | `.pending-tag` en `app/globals.css:552`, usado en `app/dashboard/page.tsx:447` y `:485`; sufijo `· not synced yet` en `lib/db.ts:587`; `components/SyncStatus.tsx:29` |
+| 5.4 | "Not synced yet" en todos lados | `.pending-tag` en `app/globals.css:864`, usado en `app/dashboard/page.tsx:507` y `:551` (líneas al 21 sep 2026); sufijo `· not synced yet` en `lib/db.ts:649`; `components/SyncStatus.tsx:29` |
 | 5.5 | Todo error se muestra en un `Banner` | `components/ui.tsx:76-84`, con `role="status"` |
 | 5.6 | Confirmación que dice qué se conserva | `components/ui.tsx:121` — textual: *"Zero out the \"in the stash\" total? Past sessions stay in History."* Y `app/history/page.tsx:249`, `app/pumping/page.tsx:143` |
 | 5.7 | Unidad hablada, preferencia por dispositivo | `lib/useVolumeUnit.ts` + `formatVolume()` en `lib/format.ts:182` |

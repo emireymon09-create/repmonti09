@@ -12,6 +12,7 @@ import {
   endSleep,
   logDiaper,
   logFeeding,
+  keepLastGood,
   mergePending,
   nextAppointment,
   pendingWrites,
@@ -40,6 +41,7 @@ import type {
   SleepSession,
   WithPending,
 } from '@/lib/types'
+import type { PendingWrite } from '@/lib/queue'
 import {
   ageFrom,
   apptWhen,
@@ -64,6 +66,16 @@ function sortDesc<T extends Record<string, unknown>>(rows: T[], key: keyof T): T
     .slice()
     .sort((a, b) => new Date(String(b[key])).getTime() - new Date(String(a[key])).getTime())
 }
+
+/** What the server last returned, before the queue is merged in. */
+type ServerRows = {
+  feedings: Feeding[]
+  diapers: DiaperChange[]
+  nursing: NursingSession[]
+  sleep: SleepSession[]
+  appt: DoctorAppointment | null
+}
+const NO_ROWS: ServerRows = { feedings: [], diapers: [], nursing: [], sleep: [], appt: null }
 
 export default function Dashboard() {
   const { baby, userId, loading, refreshBaby } = useBaby()
@@ -116,8 +128,48 @@ export default function Dashboard() {
     flashTimer.current = setTimeout(() => setFlash(null), 2500)
   }
 
+  // What the server last returned. Offline a read fails (after a few
+  // seconds of retries) and comes back empty; painting that would wipe
+  // Today, hide a running timer and offer to start a second session. A
+  // failed read keeps the previous good rows instead, and a slow read
+  // never lands over a newer one.
+  const serverRows = useRef<ServerRows>(NO_ROWS)
+  const latestRead = useRef(0)
+
+  // Anything still queued is folded in and marked, so a tap made with
+  // no signal is visible rather than apparently lost.
+  const show = useCallback(
+    (rows: ServerRows, queued: PendingWrite[]) => {
+      const mFeedings = mergePending(rows.feedings, 'feedings', queued)
+      const mDiapers = mergePending(rows.diapers, 'diaper_changes', queued)
+      const mNursing = mergePending(rows.nursing, 'nursing_sessions', queued)
+      const mSleep = mergePending(rows.sleep, 'sleep_sessions', queued)
+
+      setFeedings(sortDesc(mFeedings, 'fed_at'))
+      setDiapers(sortDesc(mDiapers, 'changed_at'))
+      setNursing(sortDesc(mNursing, 'started_at'))
+      setSleep(sortDesc(mSleep, 'started_at'))
+      setAppt(rows.appt)
+      setToday(
+        buildActivity(mFeedings, mNursing, mDiapers, mSleep, startOfHouseholdDay(), unit, lang),
+      )
+    },
+    [unit, lang],
+  )
+
   const refresh = useCallback(
     async (babyId: string) => {
+      const read = ++latestRead.current
+
+      // The queue is local and answers at once: a session just started
+      // offline shows as running (Stop, not Left/Right) right away, not
+      // after the server read gives up. Only when something is queued: right
+      // after a flush the queue is empty but the last server rows predate
+      // it, so repainting them would briefly drop what was just sent.
+      const queuedNow = await pendingWrites()
+      if (read !== latestRead.current) return
+      if (queuedNow.length > 0) show(serverRows.current, queuedNow)
+
       const [f, d, n, s, a, queued] = await Promise.all([
         recentFeedings(babyId),
         recentDiapers(babyId),
@@ -126,29 +178,24 @@ export default function Dashboard() {
         nextAppointment(babyId),
         pendingWrites(),
       ])
+      if (read !== latestRead.current) return
+
+      const { rows, error } = keepLastGood(serverRows.current, {
+        feedings: f,
+        diapers: d,
+        nursing: n,
+        sleep: s,
+        appt: a,
+      })
+      serverRows.current = rows
 
       // Offline reads fail; that is expected and the sync bar already
       // says so, so don't also shout an error over the top of it.
-      const firstError = [f, d, n, s, a].find((r) => r.error)?.error
-      if (firstError && navigator.onLine) setErr(t('dash.couldNotLoad', { error: firstError }))
+      if (error && navigator.onLine) setErr(t('dash.couldNotLoad', { error }))
 
-      // Anything still queued is folded in and marked, so a tap made with
-      // no signal is visible rather than apparently lost.
-      const mFeedings = mergePending(f.data, 'feedings', queued)
-      const mDiapers = mergePending(d.data, 'diaper_changes', queued)
-      const mNursing = mergePending(n.data, 'nursing_sessions', queued)
-      const mSleep = mergePending(s.data, 'sleep_sessions', queued)
-
-      setFeedings(sortDesc(mFeedings, 'fed_at'))
-      setDiapers(sortDesc(mDiapers, 'changed_at'))
-      setNursing(sortDesc(mNursing, 'started_at'))
-      setSleep(sortDesc(mSleep, 'started_at'))
-      setAppt(a.data)
-      setToday(
-        buildActivity(mFeedings, mNursing, mDiapers, mSleep, startOfHouseholdDay(), unit, lang),
-      )
+      show(rows, queued)
     },
-    [unit, lang, t],
+    [show, t],
   )
 
   const { online, pending, syncing, syncError, reloadPending } = useSync(() => {
@@ -171,9 +218,17 @@ export default function Dashboard() {
     } else {
       const when = logAt ? t('dash.forTime', { time: clockTime(logAt, lang) }) : ''
       confirm(t(queued ? 'dash.queuedLabel' : 'dash.loggedLabel', { label, when }))
-      await refresh(baby.id)
-      await reloadPending()
+      // The time override was used by this save; clear it now so it can't
+      // backdate the next one.
       setLogAt(null)
+      // A queued write is already on screen after refresh's quick repaint
+      // from the queue, so the buttons needn't wait for the slow (offline)
+      // server read. A write that reached the server only shows once that
+      // read lands: until then the page would still offer Left/Right, and
+      // a second tap would open a second session. Keep busy until it does.
+      if (queued) refresh(baby.id)
+      else await refresh(baby.id)
+      await reloadPending()
     }
     setBusy(false)
   }

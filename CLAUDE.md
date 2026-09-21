@@ -203,8 +203,8 @@ pnpm start
 
 # Tests
 pnpm test                   # unit (lib/format.ts, lib/queue.ts, lib/deviceTokens.ts,
-                             # lib/changelog.ts, lib/i18n, buildActivity de lib/db.ts).
-                             # Sin Docker
+                             # lib/changelog.ts, lib/i18n, buildActivity,
+                             # keepLastGood y mergePending de lib/db.ts). Sin Docker
 pnpm test:tz                # los mismos, bajo UTC / LA / Tokio / Kiritimati
 pnpm test:integration       # RLS + endpoints. NECESITA el stack local
 pnpm test:all               # test:tz + test:integration
@@ -419,6 +419,7 @@ inglés — 21 sep 2026, `lib/i18n/`), y **una suite de tests**.
 | `lib/deviceTokens.ts` — formato del token, hash, scopes | `tests/unit/deviceTokens.test.ts` |
 | `lib/changelog.ts` — parseo del CHANGELOG y que su primera entrada coincida con `version` de `package.json` | `tests/unit/changelog.test.ts` |
 | `buildActivity` de `lib/db.ts` — texto del feed de Today y de History (sin repetir el tipo) | `tests/unit/activity.test.ts` |
+| `keepLastGood` y `mergePending` de `lib/db.ts` — qué se ve offline: últimas filas buenas por lectura, cola encima, un alta encolada que el server ya devolvió no se duplica | `tests/unit/pending.test.ts` |
 | `lib/i18n` — `es` con exactamente las claves de `en`, sin vacías ni sin traducir y con las mismas variables; `translate` (interpolación, variable faltante visible, plurales); detección de idioma y elección guardada; que el script de `lib/i18n/boot.ts` decida igual que `resolveLang()`; `lib/format.ts` y `buildActivity` en español | `tests/unit/i18n.test.ts` |
 | Aislamiento entre familias por RLS, por el camino real (PostgREST + JWT) | `tests/integration/rls.test.ts` |
 | Corregir y retractar `growth_measurements` sin cruzar de familia | `tests/integration/rls.test.ts` |
@@ -446,12 +447,47 @@ y la base.
   fila sobre la que aplicar la edición; y esa lectura lenta, al resolver
   tarde, pisaba a una más nueva. `/growth` conserva las últimas filas del
   servidor y descarta lecturas viejas.)*
-- **Mismo bug en `/history`, sin arreglar:** tras una edición encolada sin
-  conexión, la lista queda vacía (verificado con Playwright el 21 sep 2026: 0
-  de 7 entradas). `app/history/page.tsx` pasa `f.data` (= `[]` en error) a
-  `mergePending`. El arreglo es el de `app/growth/page.tsx` (últimas filas
-  buenas + descartar lecturas viejas). `/dashboard` arma sus listas igual y
-  probablemente tenga el mismo problema — **no lo verifiqué**.
+- *(Cerrado el 21 sep 2026: el mismo bug en `/history` y en `/dashboard`.
+  Offline, `/history` quedaba con 0 de 7 entradas. `/dashboard` tenía el mismo
+  problema, peor (verificado con Playwright): Today pasaba de 6 a 1, el
+  cronómetro de lactancia en curso desaparecía y volvía a ofrecer Left/Right
+  (riesgo de abrir una segunda sesión), el último pañal quedaba en "—", sueño
+  decía "No sleep logged yet" y el próximo turno "Nothing scheduled". Las dos
+  páginas usan ahora el patrón de `/growth` —últimas filas buenas por tabla
+  (`keepLastGood` en `lib/db.ts`, turno incluido; `/growth` pasó a usar el
+  mismo helper) + descartar lecturas viejas
+  + `mergePending`— y el banner de error de lectura sale solo con conexión.
+  `/dashboard` además repinta al toque desde la cola cuando no está vacía (una
+  sesión iniciada offline muestra Stop en ~66 ms) y solo espera la relectura
+  cuando la escritura llegó al server. `/history` decía "Saved"/"Deleted"
+  aunque la escritura solo quedara en cola (violaba §5.5): ahora dice que
+  quedó en este dispositivo, y usa `useSync` + `SyncBar` con banner si falla
+  la sincronización. `mergePending` ya no duplica un alta encolada que el
+  server ya devolvió. Verificado: offline, Today 9 = 6 + 3 en cola, no
+  desaparece nada del server, sin duplicados tras sincronizar, la base
+  coincide; `/history` 7/7 offline y correcta tras sincronizar. Decisión: una
+  fila borrada offline sigue en la lista con "not synced yet" hasta que se
+  sincroniza, igual que en `/growth`.)*
+- **Replay de la cola sin protección contra mandar dos veces la misma alta.**
+  Con dos pestañas abiertas, las dos vacían la cola al volver `online` y una
+  recibe `duplicate key value violates unique constraint
+  "diaper_changes_pkey"` (los datos quedan bien; visto con Playwright el 21
+  sep 2026). Leyendo el código, **no reproducido**: si un insert llega al
+  server pero se pierde la respuesta, queda encolado, cada replay choca con la
+  PK y `flushQueue` (`lib/queue.ts`) se detiene en el primer error → la cola
+  queda trabada. Pariente de la falta de idempotencia. Arreglos posibles:
+  tratar PK duplicada de un insert encolado como éxito, upsert con
+  `ignoreDuplicates`, o un lock entre pestañas (`navigator.locks`).
+- **`/dashboard`: las tarjetas de Lactancia y Sueño no muestran "Not synced
+  yet"** — solo Today y las del último biberón/pañal. Contradice §5.5 ("en
+  todos los lugares donde aparece").
+- **Un sueño en curso no aparece en Today** (`buildActivity` solo agrega los
+  sueños con `ended_at`).
+- **`/history` no repinta al toque desde la cola:** tras una edición offline,
+  la marca "not synced yet" aparece recién cuando la lectura del server se
+  rinde (~7 s). El aviso ya dice que quedó guardado en este dispositivo.
+- **Primera carga sin conexión = lista vacía**, en `/growth`, `/history` y
+  `/dashboard`: las últimas filas buenas viven en memoria y arrancan vacías.
 - *(Cerrado el 21 sep 2026: `select.input` de Doctor. En iOS no desbordaba,
   pero su tema le bajaba el alto a ~29px; ahora lleva `appearance: none`,
   detalle en `design.md` §4.)*

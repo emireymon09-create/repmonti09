@@ -4,9 +4,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useBaby } from '@/lib/useBaby'
 import { NoBaby } from '@/components/NoBaby'
 import { Banner, Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
-import { SyncStatus } from '@/components/SyncStatus'
+import { SyncBar } from '@/components/SyncStatus'
 import {
   buildActivity,
+  keepLastGood,
   mergePending,
   pendingWrites,
   recentDiapers,
@@ -22,6 +23,7 @@ import {
   voidNursing,
   voidSleep,
 } from '@/lib/db'
+import { useSync } from '@/lib/useSync'
 import { useVolumeUnit } from '@/lib/useVolumeUnit'
 import { useT } from '@/lib/i18n/react'
 import { useReturnFocus } from '@/lib/useReturnFocus'
@@ -48,6 +50,15 @@ import {
 } from '@/lib/format'
 
 const HISTORY_LIMIT = 200
+
+/** What the server last returned for each table, before the queue is merged in. */
+type ServerRows = {
+  feedings: Feeding[]
+  diapers: DiaperChange[]
+  nursing: NursingSession[]
+  sleep: SleepSession[]
+}
+const NO_ROWS: ServerRows = { feedings: [], diapers: [], nursing: [], sleep: [] }
 
 /** One calendar day's worth of entries, household timezone. */
 type Day = { key: string; label: string; entries: ActivityEntry[] }
@@ -128,23 +139,38 @@ export default function HistoryPage() {
     flashTimer.current = setTimeout(() => setFlash(null), 2500)
   }
 
+  // Queued writes are folded in, so an entry added, corrected or deleted
+  // offline shows as "not synced yet" instead of looking stale. Offline the
+  // reads fail after a few seconds of retries: the last rows the server
+  // gave stay up, with the queue on top of them, rather than an empty list.
+  // And that slow read must not land over a newer one.
+  const serverRows = useRef<ServerRows>(NO_ROWS)
+  const latestRead = useRef(0)
   const refresh = useCallback(
     async (babyId: string) => {
-      const [f, d, n, s, queued] = await Promise.all([
+      const read = ++latestRead.current
+      const [feedingsRead, diapersRead, nursingRead, sleepRead, queued] = await Promise.all([
         recentFeedings(babyId, HISTORY_LIMIT),
         recentDiapers(babyId, HISTORY_LIMIT),
         recentNursing(babyId, HISTORY_LIMIT),
         recentSleep(babyId, HISTORY_LIMIT),
         pendingWrites(),
       ])
+      if (read !== latestRead.current) return
 
-      const firstError = [f, d, n, s].find((r) => r.error)?.error
-      if (firstError && navigator.onLine) setErr(t('history.couldNotLoad', { error: firstError }))
+      const { rows, error } = keepLastGood(serverRows.current, {
+        feedings: feedingsRead,
+        diapers: diapersRead,
+        nursing: nursingRead,
+        sleep: sleepRead,
+      })
+      serverRows.current = rows
+      if (error && navigator.onLine) setErr(t('history.couldNotLoad', { error }))
 
-      const mFeedings = mergePending(f.data, 'feedings', queued)
-      const mDiapers = mergePending(d.data, 'diaper_changes', queued)
-      const mNursing = mergePending(n.data, 'nursing_sessions', queued)
-      const mSleep = mergePending(s.data, 'sleep_sessions', queued)
+      const mFeedings = mergePending(rows.feedings, 'feedings', queued)
+      const mDiapers = mergePending(rows.diapers, 'diaper_changes', queued)
+      const mNursing = mergePending(rows.nursing, 'nursing_sessions', queued)
+      const mSleep = mergePending(rows.sleep, 'sleep_sessions', queued)
 
       setFeedings(mFeedings)
       setDiapers(mDiapers)
@@ -152,12 +178,18 @@ export default function HistoryPage() {
       setSleep(mSleep)
 
       // 0 = the start of time, i.e. no "since today" cutoff — the same
-      // merge dashboard uses for Today, just unfiltered.
+      // merge dashboard uses for Today, just unfiltered. buildActivity
+      // sorts newest first, queued entries included; the per-kind lists
+      // above are only looked up by id, so their order doesn't matter.
       const entries = buildActivity(mFeedings, mNursing, mDiapers, mSleep, 0, unit, lang)
       setDays(groupByHouseholdDay(entries, lang))
     },
     [unit, lang, t],
   )
+
+  const { online, pending, syncing, syncError, reloadPending } = useSync(() => {
+    if (baby) refresh(baby.id)
+  })
 
   useEffect(() => {
     if (baby) refresh(baby.id)
@@ -199,7 +231,7 @@ export default function HistoryPage() {
     setBusy(true)
     setErr(null)
 
-    let result: { error: string | null }
+    let result: { error: string | null; queued?: boolean }
 
     if (editing.kind === 'feeding') {
       const amount = fAmount.trim() === '' ? null : Number(fAmount)
@@ -235,8 +267,9 @@ export default function HistoryPage() {
       setErr(t('common.couldNotSave', { error: result.error }))
     } else {
       setEditing(null)
-      confirm(t('common.saved'))
-      await refresh(baby.id)
+      confirm(result.queued ? t('common.queued') : t('common.saved'))
+      refresh(baby.id)
+      reloadPending()
     }
     setBusy(false)
   }
@@ -262,8 +295,9 @@ export default function HistoryPage() {
       setErr(t('common.couldNotDelete', { error: result.error }))
     } else {
       if (editing?.id === id) setEditing(null)
-      confirm(t('common.deleted'))
-      await refresh(baby.id)
+      confirm(result.queued ? t('common.queued') : t('common.deleted'))
+      refresh(baby.id)
+      reloadPending()
     }
     setBusy(false)
   }
@@ -286,7 +320,8 @@ export default function HistoryPage() {
     <Page>
       <Nav babyId={baby.id} />
       <h1 className="title">{t('history.title')}</h1>
-      <SyncStatus />
+      <SyncBar online={online} pending={pending} syncing={syncing} />
+      {syncError && <Banner kind="error">{t('common.couldNotSync', { error: syncError })}</Banner>}
       {err && <Banner kind="error">{err}</Banner>}
       {flash && !err && <Banner kind="ok">{flash}</Banner>}
 

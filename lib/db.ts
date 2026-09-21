@@ -139,6 +139,11 @@ export function flushPending(): Promise<FlushResult> {
  * `pending`; updates are applied to whatever row they target, queued or
  * not — which is how a session started and ended offline shows up as
  * one finished session.
+ *
+ * An insert whose row the server already returned is not added a second
+ * time: reads and queue are fetched together, and the flush can finish
+ * after the queue was read but before the server read. It stays marked
+ * `pending` until the queue no longer holds it.
  */
 export function mergePending<T extends { id: string }>(
   rows: T[],
@@ -149,7 +154,10 @@ export function mergePending<T extends { id: string }>(
 
   for (const write of pending) {
     if (write.op.kind !== 'insert' || write.op.table !== table) continue
-    merged.push({ ...(write.op.row as unknown as T), pending: true })
+    const row = write.op.row as unknown as T
+    const already = merged.find((r) => r.id === row.id)
+    if (already) already.pending = true
+    else merged.push({ ...row, pending: true })
   }
   for (const write of pending) {
     if (write.op.kind !== 'update' || write.op.table !== table) continue
@@ -157,6 +165,27 @@ export function mergePending<T extends { id: string }>(
     if (target) Object.assign(target, write.op.patch, { pending: true })
   }
   return merged
+}
+
+/**
+ * Last rows each read returned without an error. Offline, a read fails
+ * (after a few seconds of retries) and hands back an empty list; showing
+ * that would wipe the page. Instead, each failed read keeps what the
+ * previous good one returned, and the queue is merged on top of that.
+ * `error` is the first read error, for the caller to show when online.
+ */
+export function keepLastGood<T extends Record<string, unknown>>(
+  last: T,
+  reads: { [K in keyof T]: Result<T[K]> },
+): { rows: T; error: string | null } {
+  const rows = { ...last }
+  let error: string | null = null
+  for (const key of Object.keys(reads) as (keyof T)[]) {
+    const read = reads[key]
+    if (read.error) error ??= read.error
+    else rows[key] = read.data
+  }
+  return { rows, error }
 }
 
 // --------------------------------------------------------------- babies

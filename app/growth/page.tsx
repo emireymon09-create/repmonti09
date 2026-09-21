@@ -8,6 +8,7 @@ import { SyncBar } from '@/components/SyncStatus'
 import { GrowthFields, UnitToggle } from '@/components/GrowthFields'
 import {
   addGrowth,
+  keepLastGood,
   listGrowth,
   mergePending,
   pendingWrites,
@@ -59,16 +60,17 @@ export default function GrowthPage() {
   // Offline the read fails (after a few seconds of retries): the last rows
   // the server gave stay up, with the queue on top of them, rather than an
   // empty list. And that slow read must not land over a newer one.
-  const serverRows = useRef<GrowthMeasurement[]>([])
+  const serverRows = useRef<{ growth: GrowthMeasurement[] }>({ growth: [] })
   const latestRead = useRef(0)
   const refresh = useCallback(
     async (babyId: string) => {
       const read = ++latestRead.current
-      const [{ data, error }, queued] = await Promise.all([listGrowth(babyId), pendingWrites()])
+      const [growthRead, queued] = await Promise.all([listGrowth(babyId), pendingWrites()])
       if (read !== latestRead.current) return
-      if (!error) serverRows.current = data
-      else if (navigator.onLine) setErr(t('growth.couldNotLoad', { error }))
-      const merged = mergePending(serverRows.current, 'growth_measurements', queued)
+      const { rows, error } = keepLastGood(serverRows.current, { growth: growthRead })
+      serverRows.current = rows
+      if (error && navigator.onLine) setErr(t('growth.couldNotLoad', { error }))
+      const merged = mergePending(rows.growth, 'growth_measurements', queued)
       // A queued entry lands at the end and a queued edit can move its date:
       // back to newest first, which is what "since last visit" relies on.
       merged.sort((a, b) => b.measured_at.localeCompare(a.measured_at))

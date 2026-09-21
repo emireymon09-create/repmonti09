@@ -4,6 +4,25 @@ Every version of Amelia, newest first. The current version is the `version`
 field in `package.json`; this file is the history. A test fails if the two
 disagree. Shown in the app under the settings gear → Version history.
 
+## [0.4.3] - 2026-09-21
+
+History and Today stay put when the connection drops.
+
+- On History and on Today, the list no longer goes blank while you're offline:
+  what was last loaded stays on screen, and anything added, corrected or
+  deleted without a connection shows "Not synced yet" until it reaches the
+  server.
+- Today no longer loses the running nursing timer, the last diaper, the last
+  sleep or the next appointment while you're offline, so it never offers to
+  start a second session while one is still running.
+- A nursing or sleep session started without a connection shows as running on
+  Today right away, and the buttons are ready for the next tap without waiting.
+- History now shows the sync bar, says so if something couldn't sync, and after
+  an edit or delete without a connection says it was saved on this device
+  instead of just "Saved".
+- An entry that finishes syncing while a page is loading is no longer shown
+  twice.
+
 ## [0.4.2] - 2026-09-21
 
 Easier to read in the dark theme, and Growth is honest about what hasn't synced.
