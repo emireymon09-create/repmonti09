@@ -134,6 +134,18 @@ lib/supabaseClient.ts   anon key — browser. Protegido por RLS.
 lib/supabaseAdmin.ts    service_role — SOLO server. Salta RLS.
 app/globals.css    TODO el CSS del proyecto.
 components/ui.tsx  Page, Grid, Card, Label, Btn, Banner, Nav.
+components/VersionHistory.tsx   Pantalla de /version ('use client'). La página
+                   (server) lee CHANGELOG.md en el build y le pasa las versiones.
+lib/i18n/en.ts     Diccionario inglés: la FUENTE de claves (`MessageKey`).
+lib/i18n/es.ts     Diccionario español rioplatense (voseo), tipado contra en.ts:
+                   una clave que falte o sobre es error de tipos.
+lib/i18n/index.ts  translate(), detección de idioma, locale de Intl. Sin React:
+                   lo usan lib/format.ts y lib/db.ts.
+lib/i18n/react.tsx I18nProvider (montado en app/layout.tsx), useT(),
+                   useLanguageChoice().
+lib/i18n/boot.ts   Script inline del <head>: fija <html lang> y `data-lang-pending`
+                   antes del primer pintado. Tiene que decidir igual que
+                   resolveLang() — el test lo verifica.
 lib/deviceAuth.ts  Auth de los endpoints de dispositivo: token por hash + scope,
                    resolución del bebé dentro de la familia del token, techo de
                    intentos, validación de payload.
@@ -179,7 +191,8 @@ pnpm start
 
 # Tests
 pnpm test                   # unit (lib/format.ts, lib/queue.ts, lib/deviceTokens.ts,
-                             # lib/changelog.ts, buildActivity de lib/db.ts). Sin Docker
+                             # lib/changelog.ts, lib/i18n, buildActivity de lib/db.ts).
+                             # Sin Docker
 pnpm test:tz                # los mismos, bajo UTC / LA / Tokio / Kiritimati
 pnpm test:integration       # RLS + endpoints. NECESITA el stack local
 pnpm test:all               # test:tz + test:integration
@@ -195,6 +208,14 @@ pnpm exec tsc --noEmit
 
 `pnpm build` también corre el type-check de Next, pero `pnpm exec tsc
 --noEmit` es más rápido cuando es lo único que querés saber.
+
+**`pnpm lint` falla dentro de un git worktree bajo `.claude/worktrees/`**
+(visto por dos agentes el 21 sep 2026 y reproducido): `.eslintrc.json` no
+tiene `"root": true`, así que ESLint 8 sigue subiendo directorios, encuentra
+también el `.eslintrc.json` del checkout principal y carga `@next/next` dos
+veces, desde dos `node_modules` distintos → *"ESLint couldn't determine the
+plugin "@next/next" uniquely"*. No es un error del código. Corré el lint en el
+checkout principal, o agregar `"root": true` lo arreglaría (no hecho).
 
 ---
 
@@ -332,6 +353,33 @@ Según `PROJECT.md`, y salvo que Emilio lo pida explícitamente:
   crea el agente del Hub (ADR 0001).
 - **No construir calendario, comidas, tareas ni riego.** Eso es del Hub.
 
+### 5.7 Textos de la UI — siempre por los diccionarios
+
+Desde el 21 sep 2026 la app está en inglés y en español (`lib/i18n/`).
+
+- **Todo texto visible pasa por `lib/i18n/en.ts` y `lib/i18n/es.ts`** — labels,
+  botones, banners, `aria-label`, `window.confirm`/`alert`, estados vacíos. Un
+  string literal en un componente es un bug. Se agrega la clave en `en.ts` (la
+  fuente) y después en `es.ts`, que está tipado contra `en.ts`: si falta, no
+  compila. En componentes, `const { t, lang } = useT()`; fuera de React,
+  `translate(lang, key, vars)`.
+- Variables con `{nombre}`; plurales con `{ one, other }` y `count`.
+  `tests/unit/i18n.test.ts` exige las mismas variables en los dos idiomas y
+  que ninguna clave quede sin traducir.
+- El español es **rioplatense con voseo**, con el vocabulario del proyecto
+  (toma, biberón, lactancia, pañal, sueño, extracción, crecimiento, turno).
+- Las funciones de `lib/format.ts` que producen palabras, y `buildActivity` de
+  `lib/db.ts`, toman `lang` como **último** parámetro, con default `'en'`.
+  Inglés usa el locale `en-US` fijo; español, `es` (reloj de 24 h).
+- **El server siempre renderiza inglés** (páginas estáticas cacheadas por el
+  service worker); el idioma se resuelve en el cliente. **No se usa
+  `Accept-Language`, a propósito.**
+- **Quedan en inglés por diseño:** las notas del CHANGELOG en `/version`
+  (marcadas `lang="en"`, con un aviso en español), el detalle crudo de un error
+  de Supabase/Postgres dentro de un banner (el marco sí se traduce), y el
+  manifest/metadata. El selector nativo de fecha sigue el idioma del
+  navegador, no el de la app.
+
 ---
 
 ## 6. Estado real — qué está y qué no
@@ -347,8 +395,11 @@ opcionalmente a un bebé; reemplazó a los secretos compartidos
 `NUC_DEVICE_SECRET`/`QUICK_TOGGLE_SECRET`), **middleware de auth
 server-side**, **lockfile de pnpm**, **lint y format**, **historial de
 versiones en `/version`** (engranaje → Version history), **tema claro pastel
-seleccionable** (engranaje → Theme: Light / Dark / System, por dispositivo), y **una suite de
-tests**.
+seleccionable** (engranaje → Theme: Light / Dark / System, por dispositivo),
+**idioma español / inglés** (engranaje → Language: System / English / Español,
+por dispositivo en `localStorage` `amelia:lang`; "System" sigue a
+`navigator.languages` — gana el primer idioma soportado, si no hay ninguno,
+inglés — 21 sep 2026, `lib/i18n/`), y **una suite de tests**.
 
 **Alcance exacto de los tests** (que no es "hay tests" a secas):
 
@@ -359,6 +410,7 @@ tests**.
 | `lib/deviceTokens.ts` — formato del token, hash, scopes | `tests/unit/deviceTokens.test.ts` |
 | `lib/changelog.ts` — parseo del CHANGELOG y que su primera entrada coincida con `version` de `package.json` | `tests/unit/changelog.test.ts` |
 | `buildActivity` de `lib/db.ts` — texto del feed de Today y de History (sin repetir el tipo) | `tests/unit/activity.test.ts` |
+| `lib/i18n` — `es` con exactamente las claves de `en`, sin vacías ni sin traducir y con las mismas variables; `translate` (interpolación, variable faltante visible, plurales); detección de idioma y elección guardada; que el script de `lib/i18n/boot.ts` decida igual que `resolveLang()`; `lib/format.ts` y `buildActivity` en español | `tests/unit/i18n.test.ts` |
 | Aislamiento entre familias por RLS, por el camino real (PostgREST + JWT) | `tests/integration/rls.test.ts` |
 | Corregir y retractar `growth_measurements` sin cruzar de familia | `tests/integration/rls.test.ts` |
 | Los dos endpoints de dispositivo: auth, validación, rate limit, scoping | `tests/integration/{ingest,quick-nurse}.test.ts` |
@@ -383,6 +435,17 @@ y la base.
   porque `app/growth/page.tsx` no usa `mergePending` (a diferencia de
   `app/history/page.tsx` y `app/dashboard/page.tsx`, que sí lo usan). Fuera de
   alcance de este batch.
+- **Verificación en un iPhone real del arreglo de los campos de fecha**
+  (`8c7e320`, 21 sep 2026). Ningún motor disponible acá reprodujo el bug
+  (Chromium headless, también con UA de iPhone/Android, daba 0 px de
+  desborde antes del arreglo; WebKit no se pudo instalar). La causa —
+  `RenderThemeIOS::adjustInputElementButtonStyle` pasa a `content-box`,
+  `padding: 0.5em` y un `min-width` cuando el ancho no es fijo y la apariencia
+  es nativa — sale de **leer el código de WebKit** y de simular ese override en
+  Chromium (60/70 inputs desbordaban antes, 0/70 después). No verificado en
+  iPhone. `select.input` (tipo de turno en Doctor) podría tener el mismo
+  override y **no se tocó**. Si el reporte vino de Chrome en Android, esta
+  causa no lo explica. Detalle en `design.md` §4.
 
 ---
 
@@ -436,6 +499,7 @@ y la base.
 - [ ] Lo probaste contra el Supabase local, no solo lo leíste
 - [ ] Ningún hex ni px nuevo fuera de `app/globals.css` (ver `design.md`)
 - [ ] Ninguna query nueva fuera de `lib/db.ts`
+- [ ] Ningún texto visible nuevo fuera de `lib/i18n/en.ts` + `es.ts` (§5.7)
 - [ ] `lib/supabaseAdmin.ts` no entró a ningún `'use client'`
 - [ ] Si tocaste el schema: migración **nueva**, con RLS y GRANTs
 - [ ] Si algo quedó sin verificar, lo dijiste explícitamente

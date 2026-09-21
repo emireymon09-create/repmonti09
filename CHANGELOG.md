@@ -4,6 +4,24 @@ Every version of Amelia, newest first. The current version is the `version`
 field in `package.json`; this file is the history. A test fails if the two
 disagree. Shown in the app under the settings gear → Version history.
 
+## [0.4.0] - 2026-09-21
+
+Amelia speaks Spanish, and date fields should stay inside their card on an
+iPhone.
+
+- The whole app is available in Spanish: sign-in, Today, Milk, Growth, Doctor,
+  History, the menus and the sync messages. By default it follows the
+  device's language; pick System, English or Español under the settings gear
+  to choose for this device.
+- Dates and times read the Spanish way in Spanish, on a 24-hour clock. In
+  English they stay as before, with small fixes: "1 month old" instead of "1
+  months old", and proper apostrophes.
+- These release notes stay in English, and so do the technical details some
+  error messages carry. The calendar that pops up from a date field follows
+  the phone's own language.
+- Date and time fields on an iPhone should no longer run past the right
+  edge of their card.
+
 ## [0.3.1] - 2026-09-21
 
 Easier to get around on a phone.

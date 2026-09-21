@@ -6,7 +6,11 @@ Todo lo que sigue está **extraído del código real** (`app/globals.css`,
 código no define algo, dice **"por definir"**.
 
 **Auditado línea por línea contra el código el 20 de septiembre de 2026.**
-Lo que se corrigió en esa pasada está anotado donde corresponde.
+Lo que se corrigió en esa pasada está anotado donde corresponde. Los
+agregados del 21 sep 2026 (idioma, campos de fecha) se verificaron contra
+`8d82cd6` y `8c7e320`. La tabla de verificación de §5 conserva los números de
+línea del 20 sep: el i18n movió el código y **no se re-verificaron línea por
+línea**; los textos citados ahora viven en `lib/i18n/en.ts`.
 
 > **Antes de proponer cualquier decisión de diseño nueva** — un color, un
 > componente, un patrón de interacción, una tipografía, una animación —
@@ -179,10 +183,32 @@ otros cuatro viven en archivos propios.
 `.check` (con `.is-done`), `.tab`, `.gear`, `.nav-menu`,
 `.nav-menu-item` (con `.is-danger`).
 
+**Campos de fecha y hora** (`.input[type='date']`,
+`.input[type='datetime-local']`, 21 sep 2026): llevan `appearance: none` y
+`min-width: 0`, y el valor se alinea al inicio
+(`.input::-webkit-date-and-time-value { text-align: start }`). Por qué: Safari
+de iOS los dibuja como botón nativo y, cuando el ancho no es una longitud fija
+y la apariencia es nativa, su tema pisa el nuestro
+(`RenderThemeIOS::adjustInputElementButtonStyle`): `box-sizing: content-box`,
+padding lateral `0.5em` y un `min-width` del ancho de la fecha más larga. Así
+`width: 100%` se volvía 100% + padding + borde y el campo se salía por la
+derecha de la tarjeta (+18px con fuente de 16px). Sin apariencia nativa ese
+override no corre. **Honestidad:** ningún motor disponible acá reprodujo el bug
+(Chromium headless, también con UA de iPhone/Android, 0 px de desborde antes
+del arreglo; WebKit no se pudo instalar). La causa sale de leer el código de
+WebKit y de simular el override en Chromium: 60/70 inputs desbordaban antes,
+0/70 después, medido a 390/320/600/1440px en los dos temas (Milk, Growth,
+edición de Growth, Doctor, hora pasada del dashboard, edición de History); el
+ícono del calendario de Chromium quedó dentro de la caja en todos los casos.
+**No verificado en un iPhone real.** `select.input` (tipo de turno en Doctor)
+podría recibir el mismo override y no se tocó. Si el reporte vino de Chrome en
+Android, esta causa no lo explica.
+
 **Feed / historial:** `.feed` `.feed-item` `.feed-time` `.feed-what`
 `.feed-actions` `.edit-panel`.
 
-**Navegación (5 tabs fijos):** Today · Milk · Growth · Doctor · History.
+**Navegación (5 tabs fijos):** Today · Milk · Growth · Doctor · History
+(en español: Hoy · Leche · **Medidas** · Médico · Historial — ver §5.9).
 **En teléfono (`max-width: 599px`) la barra baja al borde inferior** (21 sep
 2026): fija, con ícono + label siempre visible por destino y el engranaje como
 sexto ítem ("Settings"), cuyo menú abre hacia arriba. Por qué: los 5 tabs +
@@ -198,8 +224,13 @@ inferior para que la barra no tape el final de la página, y la barra respeta
 `env(safe-area-inset-bottom)`.
 El tab activo se marca con `aria-current="page"` y se pinta con
 `--c-accent` sobre `--c-bg` (`--c-on-accent`). El menú de engranaje es la
-"Configuración" y contiene: Theme (Light / Dark / System), cambiar oz↔ml,
-"Reset milk total", Version history, cerrar sesión. Se cierra con Escape
+"Configuración" y contiene: Theme (Light / Dark / System), **Language
+(System / English / Español)** justo debajo y con la misma forma de segmento
+(21 sep 2026), cambiar oz↔ml, "Reset milk total", Version history, cerrar
+sesión. En el selector de idioma "System" va primero porque es lo que tiene un
+dispositivo hasta que alguien elige; cada idioma se nombra en sí mismo
+("Español") y el botón lleva `lang` para que un lector de pantalla lo lea con
+las reglas de ese idioma. Se cierra con Escape
 (el foco vuelve al engranaje) y con cualquier toque afuera — `onBlur` solo no
 alcanza porque Safari de iOS no enfoca un botón tocado.
 
@@ -269,6 +300,40 @@ un dato de la familia.
 
 Todas las acciones aceptan una hora anterior a la actual — casi nunca se
 registra en el momento exacto en que pasó.
+
+### 5.9 Idioma de la interfaz (21 sep 2026)
+
+Inglés y español rioplatense (voseo), `lib/i18n/`. Preferencia **por
+dispositivo** en `localStorage` (`amelia:lang`: `en` / `es` / `system`), como
+el tema y oz↔ml; sin elección, o con "System", sigue a `navigator.languages`
+(gana el primer idioma soportado; si ninguno, inglés).
+
+- **Sin parpadeo inglés → español.** El server siempre renderiza inglés
+  (páginas estáticas, cacheadas por el service worker; no se lee
+  `Accept-Language`, a propósito). Un script inline en `<head>`
+  (`lib/i18n/boot.ts`) fija `<html lang>` antes del primer pintado y, si el
+  idioma no es inglés, pone `data-lang-pending`:
+  `html[data-lang-pending] body { visibility: hidden }` — el fondo se ve, el
+  texto no. `I18nProvider` lo saca apenas re-renderiza en el idioma correcto
+  (en un layout effect, antes de pintar). **Tope de 1.5 s**
+  (`LANG_PENDING_MAX_MS`): pasado eso la página se muestra igual, en inglés si
+  el JS no llegó — una pantalla en blanco a las 3 AM es peor que un parpadeo.
+- **`:lang(es) .side { text-transform: none }`.** En inglés `.side` capitaliza
+  cada palabra ("Right Side"); en español solo va mayúscula la primera ("Lado
+  derecho"), y los strings de `es.ts` ya vienen así.
+- **"Medidas" en la barra inferior**, no "Crecimiento": no entra en la barra de
+  teléfono a 320px. El título de la página sí dice "Crecimiento".
+- **Fechas:** inglés fija `en-US` (el hogar está en Los Ángeles: "7:00 PM"
+  aunque el dispositivo esté en otro idioma); español usa `es`, reloj de 24 h.
+  Siempre en `America/Los_Angeles` (§5.3). Los ejemplos de §5.3 y §5.6 son del
+  inglés.
+- **El selector nativo de fecha/hora sigue el idioma del navegador, no el de
+  la app.** No hay forma de forzarlo desde la página.
+- **Queda en inglés por diseño:** las notas del CHANGELOG en `/version`
+  (marcadas `lang="en"`, con un aviso "Las notas de cada versión están en
+  inglés." cuando la app no está en inglés), el detalle crudo de un error de
+  Supabase/Postgres dentro de un banner (el marco se traduce), y el
+  manifest/metadata.
 
 ### Verificación de esta sección (20 sep 2026)
 
