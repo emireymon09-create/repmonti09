@@ -8,6 +8,7 @@ import { SyncStatus } from '@/components/SyncStatus'
 import { logPumping, recentPumping, totalPumped, updatePumping, voidPumping } from '@/lib/db'
 import { useVolumeUnit } from '@/lib/useVolumeUnit'
 import { useT } from '@/lib/i18n/react'
+import { useReturnFocus } from '@/lib/useReturnFocus'
 import type { MessageKey } from '@/lib/i18n'
 import type { PumpingSession, PumpSide } from '@/lib/types'
 import {
@@ -48,6 +49,7 @@ export default function PumpingPage() {
   const [eAmount, setEAmount] = useState('')
   const [eNotes, setENotes] = useState('')
   const [eAt, setEAt] = useState('')
+  useReturnFocus(editingId, !busy)
 
   const refresh = useCallback(
     async (babyId: string) => {
@@ -316,6 +318,7 @@ export default function PumpingPage() {
                       <button
                         type="button"
                         className="linkish"
+                        data-edit-for={row.id}
                         disabled={busy || editingId !== null}
                         onClick={() => startEdit(row)}
                       >

@@ -24,6 +24,7 @@ import {
 } from '@/lib/db'
 import { useVolumeUnit } from '@/lib/useVolumeUnit'
 import { useT } from '@/lib/i18n/react'
+import { useReturnFocus } from '@/lib/useReturnFocus'
 import type { Lang } from '@/lib/i18n'
 import type {
   ActivityEntry,
@@ -99,6 +100,7 @@ export default function HistoryPage() {
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [editing, setEditing] = useState<EditTarget | null>(null)
+  useReturnFocus(editing && `${editing.kind}-${editing.id}`, !busy)
 
   // One small set of form fields, shared across kinds — only the ones
   // relevant to the entry being edited are ever shown or read.
@@ -313,6 +315,7 @@ export default function HistoryPage() {
                             <button
                               type="button"
                               className="linkish"
+                              data-edit-for={`${entry.kind}-${entry.id}`}
                               disabled={busy || editing !== null}
                               onClick={() => startEdit(entry)}
                             >

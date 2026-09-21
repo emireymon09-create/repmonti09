@@ -107,7 +107,8 @@ const LANGUAGES: { value: LangChoice; label: MessageKey }[] = [
 
 // Stroke icons for the phone's bottom bar, drawn on a 24-unit grid in
 // currentColor so they follow the tab's state and the theme. The wall and
-// tablet nav hide them (app/globals.css) — there the labels have room.
+// tablet nav hide them on the tabs (app/globals.css) — there the labels have
+// room — and keep only the gear's, which is an icon everywhere.
 const ICONS = {
   today: ['M3 10.5 12 3l9 7.5', 'M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5'],
   milk: [
@@ -244,9 +245,6 @@ export function Nav({ babyId }: { babyId?: string }) {
           aria-expanded={menuOpen}
           onClick={() => setMenuOpen((v) => !v)}
         >
-          <span className="gear-glyph" aria-hidden="true">
-            {'\u2699'}
-          </span>
           <NavIcon name="settings" />
           <span className="gear-label" aria-hidden="true">
             {t('nav.settings')}

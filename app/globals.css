@@ -25,14 +25,24 @@
   --c-live: #5c8a6b;
   --c-danger: #c4574a;
   /* Roles the dark palette covers with the colors above, but a light one
-     cannot: text on the accent, "live" as ink rather than as a fill, and
-     the soft banner fills. In dark they resolve to exactly the old values. */
+     cannot: text on the accent and on "live", "live" as ink rather than as
+     a fill, the field fill, and the soft banner fills. */
   --c-on-accent: var(--c-bg);
-  --c-live-ink: var(--c-live);
+  /* Light text on --c-live was 3.19:1. The fill stays (the done check needs
+     it: 3.5:1 against a card); the text on it goes near-black, 4.86:1. */
+  --c-on-live: #100e0d;
+  /* --c-live itself as ink was 3.50:1 on a card; this one is 5.67:1. */
+  --c-live-ink: #84b091;
+  /* Fill of text fields and the settings segments. In dark it is the page
+     color, as it always was; the light theme keeps the blush it had before
+     its page turned white. */
+  --c-field: var(--c-bg);
   --c-danger-soft: rgba(196, 87, 74, 0.18);
   --c-live-soft: rgba(92, 138, 107, 0.18);
   --c-accent-soft: rgba(232, 163, 61, 0.18);
   --shadow-menu: 0 12px 28px -12px rgba(0, 0, 0, 0.6);
+  /* How far a past appointment recedes. At .65 its metadata fell to 4.14:1. */
+  --o-past: 0.8;
 
   /* --- type scale: phone --- */
   --t-label: 11px;
@@ -76,11 +86,15 @@
   --c-live: #a9d4b6;
   --c-danger: #a63a2e;
   --c-on-accent: #fdf5ef;
+  --c-on-live: var(--c-text);
   --c-live-ink: #2f6a45;
+  --c-field: #f7eae3;
   --c-danger-soft: rgba(214, 110, 96, 0.18);
   --c-live-soft: rgba(120, 180, 140, 0.24);
   --c-accent-soft: rgba(232, 163, 61, 0.22);
   --shadow-menu: 0 12px 28px -12px rgba(84, 52, 40, 0.35);
+  /* Faded toward a white page, .65 took past metadata to 2.99:1. */
+  --o-past: 0.88;
 
   color-scheme: light;
 }
@@ -99,11 +113,14 @@
     --c-live: #a9d4b6;
     --c-danger: #a63a2e;
     --c-on-accent: #fdf5ef;
+    --c-on-live: var(--c-text);
     --c-live-ink: #2f6a45;
+    --c-field: #f7eae3;
     --c-danger-soft: rgba(214, 110, 96, 0.18);
     --c-live-soft: rgba(120, 180, 140, 0.24);
     --c-accent-soft: rgba(232, 163, 61, 0.22);
     --shadow-menu: 0 12px 28px -12px rgba(84, 52, 40, 0.35);
+    --o-past: 0.88;
 
     color-scheme: light;
   }
@@ -185,10 +202,16 @@ body {
 
 /* --------------------------------------------------------------- layout */
 
+/* The safe-area insets are 0 everywhere but an iPhone (viewport-fit=cover,
+   app/layout.tsx): under the status bar in the installed app, beside the
+   notch in landscape, above the home indicator. */
 .page {
   max-width: var(--measure);
   margin: 0 auto;
-  padding: var(--s-5) var(--s-5) calc(var(--s-6) * 2);
+  padding: calc(var(--s-5) + env(safe-area-inset-top, 0px))
+    max(var(--s-5), env(safe-area-inset-right, 0px))
+    calc(var(--s-6) * 2 + env(safe-area-inset-bottom, 0px))
+    max(var(--s-5), env(safe-area-inset-left, 0px));
 }
 
 /* The dashboard's card grid. One column on a phone, three on the wall. */
@@ -252,7 +275,7 @@ body {
   border-color: var(--c-live-ink);
 }
 .card.is-past {
-  opacity: 0.65;
+  opacity: var(--o-past);
 }
 
 /* --------------------------------------------------------------- type */
@@ -376,6 +399,7 @@ body {
 }
 .btn.live {
   background: var(--c-live);
+  color: var(--c-on-live);
 }
 
 .input {
@@ -384,11 +408,17 @@ body {
   padding: var(--s-3) var(--s-4);
   border-radius: var(--r-control);
   border: 1px solid var(--c-line);
-  background: var(--c-bg);
+  background: var(--c-field);
   color: var(--c-text);
   font-family: inherit;
   /* 16px floor stops iOS zooming the page on focus. */
   font-size: max(16px, var(--t-body));
+}
+/* The browser's default (#757575) was 3.63:1 on the dark field. Firefox
+   also dims placeholders with opacity; this is the whole color. */
+.input::placeholder {
+  color: var(--c-muted);
+  opacity: 1;
 }
 .input.narrow {
   width: 6.5em;
@@ -408,6 +438,27 @@ body {
   -webkit-appearance: none;
   appearance: none;
   min-width: 0;
+}
+/* The appointment-type picker. iOS's theme doesn't make a <select> overflow
+   (unlike the date fields it leaves box-sizing and min-width alone) but it
+   does replace our min-height with one sized from the font, about 29px at
+   16px, and the side padding with 0.5em (adjustMenuListButtonStyle and
+   adjustSelectListButtonStyle in RenderThemeIOS): under the 44px touch
+   floor. Without the native appearance none of that runs. The arrow it drew
+   is redrawn from two gradients, in --c-muted like the placeholder. */
+select.input {
+  -webkit-appearance: none;
+  appearance: none;
+  min-width: 0;
+  padding-right: 2.5em;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--c-muted) 50%),
+    linear-gradient(135deg, var(--c-muted) 50%, transparent 50%);
+  background-position:
+    right 1.35em center,
+    right 1em center;
+  background-size: 0.35em 0.35em;
+  background-repeat: no-repeat;
 }
 /* iOS centers the value; line it up with every other field. */
 .input::-webkit-date-and-time-value {
@@ -453,6 +504,7 @@ body {
 .check.is-done {
   border-color: var(--c-live);
   background: var(--c-live);
+  color: var(--c-on-live);
 }
 
 /* --------------------------------------------------------------- nav */
@@ -558,7 +610,7 @@ body {
   margin-top: var(--s-2);
   padding: var(--s-1);
   border-radius: var(--r-control);
-  background: var(--c-bg);
+  background: var(--c-field);
   border: 1px solid var(--c-line);
 }
 .seg-btn {
@@ -580,10 +632,20 @@ body {
 }
 
 /* The bottom-bar parts of the nav (below). Off everywhere else, so the
-   tablet and wall nav render exactly as the pills above. */
+   tablet and wall nav render exactly as the pills above — except the gear,
+   which draws the same stroke icon as the phone bar instead of a glyph. */
 .nav-icon,
 .gear-label {
   display: none;
+}
+@media (min-width: 600px) {
+  .gear .nav-icon {
+    display: inline-flex;
+  }
+  .gear .nav-icon svg {
+    width: 1.3em;
+    height: 1.3em;
+  }
 }
 
 /* Phone: five tabs plus the gear stop fitting on one line below ~480px
@@ -605,7 +667,9 @@ body {
     gap: 0;
     flex-wrap: nowrap;
     align-items: stretch;
-    padding: var(--s-1) var(--s-2) max(var(--s-1), env(safe-area-inset-bottom, 0px));
+    padding: var(--s-1) max(var(--s-2), env(safe-area-inset-right, 0px))
+      max(var(--s-1), env(safe-area-inset-bottom, 0px))
+      max(var(--s-2), env(safe-area-inset-left, 0px));
     background: var(--c-surface);
     border-top: 1px solid var(--c-line);
   }
@@ -651,9 +715,6 @@ body {
   }
   .gear-label {
     display: block;
-  }
-  .gear-glyph {
-    display: none;
   }
   .nav-settings {
     display: flex;

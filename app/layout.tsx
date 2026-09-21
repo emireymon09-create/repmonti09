@@ -25,6 +25,10 @@ export const viewport: Viewport = {
   // the zoom-on-focus this would otherwise guard against.
   width: 'device-width',
   initialScale: 1,
+  // Lay out edge to edge, under the notch and the home indicator; the
+  // stylesheet pads back in with env(safe-area-inset-*). Without this the
+  // insets always read 0 and that padding never happens.
+  viewportFit: 'cover',
   themeColor: '#211D1B',
 }
 

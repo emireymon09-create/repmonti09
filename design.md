@@ -74,21 +74,32 @@ Un script inline en `<head>` (`lib/themeBoot.ts`) aplica el tema antes del
 primer pintado, así el claro no parpadea en oscuro.
 
 Roles nuevos, porque un tema claro no puede reusar los colores del oscuro para
-todo. En oscuro valen exactamente lo de antes:
+todo. Desde el 21 sep 2026 (pase de contraste) `--c-live-ink` y `--c-on-live`
+ya **no** valen lo mismo que antes en oscuro — ver la tabla de contraste del
+oscuro más abajo:
 
 | Token | Oscuro | Claro | Para qué |
 |---|---|---|---|
 | `--c-on-accent` | `= --c-bg` | `#FDF5EF` | Texto sobre `--c-accent` (tab activo, segmento elegido) |
-| `--c-live-ink` | `= --c-live` | `#2F6A45` | "En curso" como tinta/borde (`.side`, `.card.is-live`, `gain-up`) |
+| `--c-on-live` | `#100E0D` (casi negro) | `= --c-text` | Texto sobre `--c-live` (`Btn live` "Stop nursing", el ✓ de `.check.is-done`) |
+| `--c-live-ink` | `#84B091` (antes `= --c-live`) | `#2F6A45` | "En curso" como tinta/borde (`.side`, `.card.is-live`, `gain-up`, borde de `Banner ok`, `.dot.syncing`) |
+| `--c-field` | `= --c-bg` (sin cambio visual) | `#F7EAE3` (el blush) | Relleno de `.input` y del segmento `.seg` del menú |
+| `--o-past` | `0.8` (antes `.65`) | `0.88` | Opacidad de `.card.is-past` (turnos pasados) |
 | `--c-danger-soft` / `--c-live-soft` / `--c-accent-soft` | los `rgba(…, .18)` de antes | tintes pastel | Fondos de `Banner` |
 | `--shadow-menu` | la sombra de antes | más suave | Menú del engranaje |
+
+`--c-live` (el relleno) **no cambió** en ningún tema: el `.check.is-done` de
+Doctor depende de él (3.50:1 contra la tarjeta en oscuro, sobre el 3:1 de UI);
+oscurecerlo lo habría bajado a 2.27:1. Por eso "Stop nursing" se arregló con
+texto oscuro encima y no oscureciendo el verde.
 
 Paleta clara: fondo **`#FFFFFF`** (blanco, 21 sep 2026 — antes `#F7EAE3`,
 blush; el resto de la paleta no cambió), tarjeta `#FDF5EF`, elevado `#F3E0D5`,
 texto `#3B2A23`, muted `#6B5147`, acento `#8F4F12`, acción `#F2B5A3` (coral
-pastel, texto oscuro encima), live `#A9D4B6`, danger `#A63A2E`. `--c-bg` no es
-solo el fondo de página: también es el relleno de `.input` y del segmento
-`.seg` del menú (Theme/Language), que en claro ahora son blancos.
+pastel, texto oscuro encima), live `#A9D4B6`, danger `#A63A2E`. Los `.input` y
+el segmento `.seg` del menú (Theme/Language) usan `--c-field`, no `--c-bg`: con
+el fondo blanco habían quedado blancos también; desde el 21 sep 2026 mantienen
+el blush `#F7EAE3`. En oscuro `--c-field = --c-bg`, igual que siempre.
 
 **Contraste del tema claro contra el fondo blanco, recalculado el 21 sep 2026**
 (WCAG 2.x, rgba compuestos sobre el fondo; "Antes" es el valor contra el
@@ -102,12 +113,18 @@ solo el fondo de página: también es el relleno de `.input` y del segmento
 | `--c-accent` como anillo de foco | 6.37:1 | 5.41 | 3 |
 | `--c-danger` | 6.43:1 | 5.46 | 4.5 |
 | `--c-live-ink` | 6.43:1 | 5.46 | 4.5 |
-| placeholder `#757575` (default de Chromium) | **4.61:1 — ahora pasa AA** | 3.91 | 4.5 |
+| placeholder (ahora `--c-muted` sobre `--c-field` `#F7EAE3`, ver abajo) | 6.16:1 | 3.91 (`#757575` sobre el blush) | 4.5 |
 | `--c-line` (borde, compuesto `#E4DFDD`) | 1.32:1 | 1.31 | — (decorativo) |
 | `--c-text` sobre los tres `Banner` (`*-soft`) | ≥11.2:1 | ≥9.7 | 4.5 |
 
 Lo que va dentro de tarjetas no cambió: muted ≥5.7:1 sobre tarjeta y elevado;
 texto sobre acción 7.7:1 y sobre live 8.3:1; live-ink ≥5.5:1; danger ≥5.0:1.
+
+**Campos contra `--c-field` en claro** (medido en el navegador el 21 sep 2026):
+texto 11.57:1, placeholder (`--c-muted`) 6.16:1, segmento inactivo del menú
+6.16:1. **Turnos pasados en claro:** con `.65` contra la página blanca el muted
+caía a **2.99:1** y el título a 4.28:1 (no estaba anotado: la tabla de arriba
+no contemplaba la opacidad); con `--o-past: .88`, 5.01:1 y 8.75:1.
 
 **Tarjeta contra fondo: 1.08:1** (`#FDF5EF` sobre blanco; antes 1.09:1 contra
 el blush). El relleno de la tarjeta casi no se distingue del fondo — nunca se
@@ -121,15 +138,22 @@ el navegador, rgba compuestos sobre su fondo real). Cumplen AA: texto 13.5:1
 sobre fondo, 11.1:1 sobre tarjeta, 9.8:1 sobre elevado; muted 9.2 / 7.6 /
 6.7:1; acento 7.8:1 sobre fondo y 6.4:1 sobre tarjeta; texto sobre acento
 7.8:1; texto sobre acción 6.1:1; texto en los tres `Banner` ≥9.5:1.
-**No cumplen AA** (sin cambios, a propósito — el oscuro no se toca sin una
-decisión explícita):
+
+**Los cuatro pares que no llegaban a AA, corregidos el mismo 21 sep 2026**
+(con permiso explícito para tocar el oscuro; re-medidos en el navegador sobre
+los elementos reales):
+
+| Par | Antes | Después | Palanca |
+|---|---|---|---|
+| Texto sobre `--c-live` (`Btn live`, "Stop nursing") | 3.19:1 | **4.86:1** | `--c-on-live: #100E0D` (texto casi negro); el relleno `--c-live` no se tocó |
+| `--c-live-ink` sobre `--c-surface` (`.side` "Right Side", `.gain-up`) | 3.50:1 | **5.67:1** | `--c-live-ink: #84B091`, separado de `--c-live` |
+| `--c-muted` en `.card.is-past` | 4.14:1 (opacidad .65) | **5.47:1** (título 7.79:1) | `--o-past: .8` |
+| placeholder de inputs | 3.63:1 (`#757575`, default del navegador) | **9.16:1** | `.input::placeholder { color: var(--c-muted); opacity: 1 }` |
+
+Sigue sin cumplir, sin cambios porque no se usa:
 
 | Par | Ratio | Mínimo | Dónde |
 |---|---|---|---|
-| `--c-text` sobre `--c-live` | 3.19:1 | 4.5 | `Btn live` ("Stop nursing"). En la pared el texto es grande (21px bold) y ahí sí pasa el 3:1 |
-| `--c-live-ink` sobre `--c-surface` | 3.50:1 | 4.5 | `.side` ("Right Side"), `.gain-up` |
-| `--c-muted` en `.card.is-past` (opacidad .65) | 4.14:1 | 4.5 | metadata de turnos pasados |
-| placeholder (`#757575`, default de Chromium, sin estilo propio) | 3.63:1 | 4.5 | todos los inputs. En claro pasa desde el fondo blanco: 4.61:1 |
 | `--c-danger` como texto | 2.78:1 sobre elevado | 4.5 | solo `.nav-menu-item.is-danger`, que hoy no usa ningún componente |
 
 Informativo (1.4.11 no lo exige porque el botón se identifica por su texto):
@@ -183,7 +207,7 @@ Destinados a mudarse a `packages/ui` cuando llegue el monorepo.
 |---|---|---|
 | `Page` | `.page` | Contenedor con `max-width: var(--measure)`, centrado |
 | `Grid` | `.grid` | `repeat(var(--cols), …)` — 1 col en teléfono, 3 en la pared |
-| `Card` | `.card` | Props `live` → borde `--c-live`; `past` → `opacity .65`; `spanAll` → ocupa toda la fila |
+| `Card` | `.card` | Props `live` → borde `--c-live-ink`; `past` → `opacity: var(--o-past)` (.8 oscuro / .88 claro); `spanAll` → ocupa toda la fila |
 | `Label` | `.label` | Mayúsculas, `letter-spacing .09em`, color `--c-muted` |
 | `Btn` | `.btn` | Variantes `action` (default), `quiet`, `live`. `flex: 1`, `min-height: var(--tap)` |
 | `Banner` | `.banner` | Tipos `error` / `ok` / `warn`. Lleva `role="status"` |
@@ -224,8 +248,19 @@ dueño del proyecto el 21 sep 2026, v0.4.0): los campos quedan dentro de la
 tarjeta. Antes de eso ningún motor disponible acá había reproducido el bug; la
 causa salió de leer el código de WebKit y de simular el override en Chromium
 (60/70 inputs desbordaban antes, 0/70 después, a 390/320/600/1440px en los dos
-temas). `select.input` (tipo de turno en Doctor) podría recibir el mismo
-override y no se tocó; no hay reporte de que falle.
+temas).
+
+**`select.input`** (tipo de turno en Doctor, 21 sep 2026): revisado contra el
+código de WebKit (`RenderThemeIOS.mm`, `adjustMenuListButtonStyle` →
+`adjustSelectListButtonStyle`). A un `<select>` iOS **no** le aplica el
+override de los campos de fecha (no toca `box-sizing` ni `min-width`), así que
+no desbordaba. Pero sí le pisa el `min-height` con uno derivado de la fuente
+(20/11 × 16px ≈ 29px, por debajo del piso de 44px) y el padding lateral a
+`0.5em`. Se le aplicó el mismo `appearance: none` + `min-width: 0`: sin
+apariencia nativa ese ajuste no corre. La flecha nativa desaparece con eso; se
+redibuja con dos `linear-gradient` en `--c-muted` (sin hex, sin px). Verificado
+en Chromium a 390/320/600/1440px en los dos temas: 0 de 5 campos se salen de la
+tarjeta, alto 52px (84px en la pared). **No verificado en un iPhone real.**
 
 **Feed / historial:** `.feed` `.feed-item` `.feed-time` `.feed-what`
 `.feed-actions` `.edit-panel`.
@@ -241,7 +276,8 @@ descartó ícono-solo (a las 3 AM un ícono de "Milk" o "History" no se adivina)
 y el scroll horizontal (esconde justo el tab que no entraba). Es el mismo
 markup: los íconos (`NavIcon` en `components/ui.tsx`, SVG de trazo en
 `currentColor`) se ocultan por encima de 599px, donde el nav de pills queda
-exactamente como antes. El destino activo se marca con `--c-accent` y un
+exactamente como antes — salvo el del engranaje, que ahí es el ícono solo
+(reemplazó al glifo `⚙`, 21 sep 2026). El destino activo se marca con `--c-accent` y un
 relleno suave (`--c-accent-soft`) detrás del ícono. `.page` suma padding
 inferior para que la barra no tape el final de la página, y la barra respeta
 `env(safe-area-inset-bottom)`.
@@ -260,7 +296,9 @@ alcanza porque Safari de iOS no enfoca un botón tocado.
 **Un solo panel de edición a la vez** (Growth, History, Milk): mientras una
 entrada se edita, el Editar/Borrar de las demás queda deshabilitado, así
 nunca se abre un segundo formulario ni un `confirm` encima de cambios sin
-guardar. No hay modales con overlay en la app: la edición es inline y la
+guardar. Al cerrar el panel (Cancel o Save) **el foco vuelve al botón Edit de
+esa fila** (`lib/useReturnFocus.ts`, 21 sep 2026; cada Edit lleva
+`data-edit-for`). Antes quedaba en `<body>`. No hay modales con overlay en la app: la edición es inline y la
 confirmación es `window.confirm`.
 
 ---
@@ -391,7 +429,15 @@ Todo esto ya está en `app/globals.css` y `app/layout.tsx`:
 - `role="status"` en `Banner` y en `SyncBar`.
 - `aria-current="page"` en el tab activo; `aria-haspopup` / `aria-expanded`
   en el engranaje; `role="menu"` / `role="menuitem"` en el desplegable.
-- Viewport: `width=device-width, initialScale=1`, `themeColor #211D1B`;
+- Viewport: `width=device-width, initialScale=1, viewport-fit=cover`,
+  `themeColor #211D1B`. `viewport-fit=cover` (21 sep 2026) es lo que hace que
+  `env(safe-area-inset-*)` valga algo en un iPhone: `.page` suma el inset de
+  arriba a su padding superior y usa `max(padding, inset)` a los costados y
+  abajo; la barra inferior del teléfono hace lo mismo a los costados y abajo.
+  Sin safe area (desktop, Chromium) todo vale 0 y los paddings computados son
+  idénticos a antes (verificado a 390/800/1440px). Con insets emulados por CDP
+  (59px arriba, 34px abajo) el contenido baja 59px y la barra suma 34px.
+  **No verificado en un iPhone real.**
   con el tema claro el script de arranque y `lib/theme.ts` lo cambian a
   `lightColor.bg` (`lib/tokens.ts`). El manifest sigue en oscuro.
   **No se bloquea el zoom del usuario.**
@@ -432,12 +478,13 @@ exportados. **Por definir.**
   salvo el guard de `prefers-reduced-motion` — por definir.
 - **Estados de carga:** hoy es texto plano `"Loading…"` con clase
   `.empty`. No hay skeleton ni spinner — por definir.
-- **Contraste:** medido en ambos temas (§2). Quedan pares del oscuro bajo AA
-  (placeholder incluido), sin corregir hasta decidirlo. En claro, con el fondo
-  blanco, el placeholder pasa AA (4.61:1).
-- **Íconos del nav de teléfono:** seis SVG dibujados a mano en
-  `components/ui.tsx`; no son una librería. El engranaje de tablet/pared sigue
-  siendo el glifo `⚙`.
+- **Contraste:** medido en ambos temas (§2). Los cuatro pares del oscuro bajo
+  AA se corrigieron el 21 sep 2026; sólo queda `--c-danger` como texto sobre
+  elevado (2.78:1), en una clase que hoy no usa nada.
+- **Íconos del nav:** seis SVG dibujados a mano en `components/ui.tsx`; no son
+  una librería. Desde el 21 sep 2026 el engranaje de tablet/pared también es el
+  SVG `settings` (el mismo de la barra del teléfono, solo, 1.3em dentro del
+  círculo de 44px), no el glifo `⚙`.
 - **`docs/design/preview.html`** es una preview visual standalone (storage
   temporal del browser, sin backend). **Puede desincronizarse del dashboard
   real** — no lo trates como fuente de verdad de diseño. Vivía en la raíz

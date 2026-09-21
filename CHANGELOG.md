@@ -4,6 +4,28 @@ Every version of Amelia, newest first. The current version is the `version`
 field in `package.json`; this file is the history. A test fails if the two
 disagree. Shown in the app under the settings gear → Version history.
 
+## [0.4.2] - 2026-09-21
+
+Easier to read in the dark theme, and Growth is honest about what hasn't synced.
+
+- In the dark theme, the "Stop nursing" button, the breast side next to the
+  timer, the weight gain on Growth, past appointments on Doctor and the hint
+  text inside fields are easier to read.
+- Past appointments are a little less faded in both themes, so their date and
+  details stay readable.
+- In the light theme, text fields and the Theme and Language switches are back
+  to their soft blush color instead of white.
+- A measurement added, corrected or deleted on Growth without a connection now
+  shows "Not synced yet" until it reaches the server, and the list no longer
+  goes blank while you're offline.
+- After you cancel or save an edit on Growth, Milk or History, the keyboard
+  focus goes back to that entry's Edit button.
+- On a tablet or the wall screen, the settings button uses the same icon as the
+  phone's bottom bar.
+- The appointment type picker on Doctor keeps its full size on an iPhone.
+- On an iPhone, the app now keeps its content clear of the notch, the status bar
+  and the home indicator.
+
 ## [0.4.1] - 2026-09-21
 
 Calmer wording in Spanish and a white background in the light theme.

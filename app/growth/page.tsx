@@ -1,14 +1,23 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useBaby } from '@/lib/useBaby'
 import { NoBaby } from '@/components/NoBaby'
 import { Banner, Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
-import { SyncStatus } from '@/components/SyncStatus'
+import { SyncBar } from '@/components/SyncStatus'
 import { GrowthFields, UnitToggle } from '@/components/GrowthFields'
-import { addGrowth, listGrowth, updateGrowth, voidGrowth } from '@/lib/db'
-import type { GrowthMeasurement } from '@/lib/types'
+import {
+  addGrowth,
+  listGrowth,
+  mergePending,
+  pendingWrites,
+  updateGrowth,
+  voidGrowth,
+} from '@/lib/db'
+import { useSync } from '@/lib/useSync'
+import type { GrowthMeasurement, WithPending } from '@/lib/types'
 import { useT } from '@/lib/i18n/react'
+import { useReturnFocus } from '@/lib/useReturnFocus'
 import {
   cmToIn,
   emptyGrowthInput,
@@ -25,7 +34,7 @@ export default function GrowthPage() {
   const { baby, userId, loading } = useBaby()
   const { t, lang } = useT()
 
-  const [rows, setRows] = useState<GrowthMeasurement[]>([])
+  const [rows, setRows] = useState<WithPending<GrowthMeasurement>[]>([])
   // The pediatrician's office says lb/oz and inches out loud; the
   // database stores metric. Default to what gets spoken.
   const [input, setInput] = useState<GrowthInput>(() => emptyGrowthInput(true))
@@ -43,15 +52,34 @@ export default function GrowthPage() {
   const [err, setErr] = useState<string | null>(null)
   const [saved, setSaved] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  useReturnFocus(editing?.id ?? null, !busy)
 
+  // Queued writes are folded in, so an entry added, corrected or deleted
+  // offline shows as "not synced yet" instead of missing or looking stale.
+  // Offline the read fails (after a few seconds of retries): the last rows
+  // the server gave stay up, with the queue on top of them, rather than an
+  // empty list. And that slow read must not land over a newer one.
+  const serverRows = useRef<GrowthMeasurement[]>([])
+  const latestRead = useRef(0)
   const refresh = useCallback(
     async (babyId: string) => {
-      const { data, error } = await listGrowth(babyId)
-      if (error) setErr(t('growth.couldNotLoad', { error }))
-      setRows(data)
+      const read = ++latestRead.current
+      const [{ data, error }, queued] = await Promise.all([listGrowth(babyId), pendingWrites()])
+      if (read !== latestRead.current) return
+      if (!error) serverRows.current = data
+      else if (navigator.onLine) setErr(t('growth.couldNotLoad', { error }))
+      const merged = mergePending(serverRows.current, 'growth_measurements', queued)
+      // A queued entry lands at the end and a queued edit can move its date:
+      // back to newest first, which is what "since last visit" relies on.
+      merged.sort((a, b) => b.measured_at.localeCompare(a.measured_at))
+      setRows(merged)
     },
     [t],
   )
+
+  const { online, pending, syncing, syncError, reloadPending } = useSync(() => {
+    if (baby) refresh(baby.id)
+  })
 
   useEffect(() => {
     if (baby) refresh(baby.id)
@@ -85,6 +113,7 @@ export default function GrowthPage() {
     setInput(emptyGrowthInput(input.imperial))
     setNotes('')
     refresh(baby.id)
+    reloadPending()
   }
 
   function startEdit(row: GrowthMeasurement) {
@@ -129,6 +158,7 @@ export default function GrowthPage() {
     setSaved(queued ? t('common.queued') : t('growth.updated'))
     setEditing(null)
     refresh(baby.id)
+    reloadPending()
   }
 
   async function remove(row: GrowthMeasurement) {
@@ -147,6 +177,7 @@ export default function GrowthPage() {
     }
     setSaved(queued ? t('common.queued') : t('growth.removed'))
     refresh(baby.id)
+    reloadPending()
   }
 
   if (loading)
@@ -167,7 +198,8 @@ export default function GrowthPage() {
     <Page>
       <Nav babyId={baby.id} />
       <h1 className="title">{t('growth.title')}</h1>
-      <SyncStatus />
+      <SyncBar online={online} pending={pending} syncing={syncing} />
+      {syncError && <Banner kind="error">{t('common.couldNotSync', { error: syncError })}</Banner>}
       {err && <Banner kind="error">{err}</Banner>}
       {saved && !err && <Banner kind="ok">{saved}</Banner>}
 
@@ -265,6 +297,7 @@ export default function GrowthPage() {
                         <button
                           type="button"
                           className="linkish"
+                          data-edit-for={row.id}
                           disabled={busy || editing !== null}
                           onClick={() => startEdit(row)}
                         >
@@ -295,6 +328,7 @@ export default function GrowthPage() {
                       </div>
                     )}
                     {row.notes && <div className="meta">{row.notes}</div>}
+                    {row.pending && <div className="pending-tag">{t('common.notSyncedYet')}</div>}
                   </>
                 )}
               </Card>

@@ -438,15 +438,23 @@ y la base.
   hoy todos los miembros tienen los mismos permisos)
 - Idempotencia en los endpoints de dispositivo ⇒
   `proposals/device-tokens-and-idempotency.md`
-- Honestidad de estado offline en `/growth`: una edición o un borrado
-  encolados sin conexión muestran el banner "Saved on this device", pero la
-  fila se queda con sus valores viejos y sin marca de "not synced yet",
-  porque `app/growth/page.tsx` no usa `mergePending` (a diferencia de
-  `app/history/page.tsx` y `app/dashboard/page.tsx`, que sí lo usan). Fuera de
-  alcance de este batch.
-- `select.input` (tipo de turno en Doctor) podría recibir el mismo override
-  de iOS que tenían los campos de fecha y **no se tocó**; nadie lo reportó
-  como problema. Detalle en `design.md` §4.
+- *(Cerrado el 21 sep 2026: honestidad offline en `/growth`. Ahora usa
+  `mergePending`: una alta, corrección o borrado encolados se ven con "Not
+  synced yet" y desaparece la marca al sincronizar. Al investigarlo salió que
+  el hueco era más grande que lo anotado: offline, la lectura falla tras ~7 s
+  de reintentos y devolvía `[]`, así que la lista **se vaciaba** y no quedaba
+  fila sobre la que aplicar la edición; y esa lectura lenta, al resolver
+  tarde, pisaba a una más nueva. `/growth` conserva las últimas filas del
+  servidor y descarta lecturas viejas.)*
+- **Mismo bug en `/history`, sin arreglar:** tras una edición encolada sin
+  conexión, la lista queda vacía (verificado con Playwright el 21 sep 2026: 0
+  de 7 entradas). `app/history/page.tsx` pasa `f.data` (= `[]` en error) a
+  `mergePending`. El arreglo es el de `app/growth/page.tsx` (últimas filas
+  buenas + descartar lecturas viejas). `/dashboard` arma sus listas igual y
+  probablemente tenga el mismo problema — **no lo verifiqué**.
+- *(Cerrado el 21 sep 2026: `select.input` de Doctor. En iOS no desbordaba,
+  pero su tema le bajaba el alto a ~29px; ahora lleva `appearance: none`,
+  detalle en `design.md` §4.)*
 
 ---
 
