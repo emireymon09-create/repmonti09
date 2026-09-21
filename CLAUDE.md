@@ -102,8 +102,9 @@ lib/supabaseClient.ts   anon key — browser. Protegido por RLS.
 lib/supabaseAdmin.ts    service_role — SOLO server. Salta RLS.
 app/globals.css    TODO el CSS del proyecto.
 components/ui.tsx  Page, Grid, Card, Label, Btn, Banner, Nav.
-lib/deviceAuth.ts  Auth de los endpoints de dispositivo: comparación en tiempo
-                   constante, techo de intentos, validación de payload.
+lib/deviceAuth.ts  Auth de los endpoints de dispositivo: token por hash + scope,
+                   resolución del bebé dentro de la familia del token, techo de
+                   intentos, validación de payload.
 middleware.ts      Guard de auth server-side. NO reemplaza a RLS: evita que una
                    ruta privada se renderice antes de rebotar al login.
 public/sw.js       Service worker: que la app ABRA sin conexión.
@@ -293,7 +294,8 @@ Según `PROJECT.md`, y salvo que Emilio lo pida explícitamente:
 **Construido y funcionando:** auth, dashboard completo (lactancia,
 biberón, sólidos, pañales, sueño, predicciones), Milk (extracción),
 Growth, Doctor, History con editar/borrar, PWA instalable, cola offline,
-RLS en las 11 tablas (y RLS + GRANTs en `device_tokens`, la 12ª), los dos
+RLS en las 11 tablas (y RLS y sin acceso para `anon`/`authenticated` — solo
+`service_role` — en `device_tokens`, la 12ª), los dos
 endpoints de dispositivo, **tokens por dispositivo** (`device_tokens`,
 0007 — cada dispositivo tiene el suyo, revocable, clavado a una familia y
 opcionalmente a un bebé; reemplazó a los secretos compartidos

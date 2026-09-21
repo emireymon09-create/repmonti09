@@ -100,13 +100,22 @@ cameras:
 
 ## 3. Home Assistant → `/api/ingest`
 
-The one door the house uses to reach the app. Device secret, not a login.
+The one door the house uses to reach the app. Its own per-device token
+(`device_tokens`, `0007`), not a login and not a shared secret. Create one
+with `pnpm device-token create --family <uuid> --label "NUC del cuarto"
+--scope ingest` (add `--baby <uuid>` to pin it to one baby, which also lets
+`amelia_baby_id` below be left out of the payload). The token is shown once,
+at creation — copy it into `secrets.yaml` then.
 
 ```yaml
 # secrets.yaml
 amelia_ingest_url: "https://CHANGE_ME_APP_URL/api/ingest"
-nuc_device_secret: "CHANGE_ME"   # must equal NUC_DEVICE_SECRET in the app's env
-amelia_baby_id: "CHANGE_ME"      # uuid from the babies table
+# The full header value, "Bearer " + the token from
+# `pnpm device-token create ... --scope ingest`.
+amelia_ingest_authorization: "Bearer CHANGE_ME"
+amelia_baby_id: "CHANGE_ME"      # uuid from the babies table — omit from the
+                                  # payload below if the token is pinned to a
+                                  # baby, or the family has only one
 ```
 
 ```yaml
@@ -117,7 +126,7 @@ rest_command:
     method: POST
     content_type: "application/json"
     headers:
-      x-device-secret: !secret nuc_device_secret
+      authorization: !secret amelia_ingest_authorization
     payload: '{{ body }}'
     timeout: 10
 ```
@@ -240,9 +249,9 @@ and a roughly-right automatic log beats an exact one nobody enters.
   fails and that event is gone. HA does not queue natively. The event is
   still in HA's own history, so nothing is lost locally — this is only
   about the cloud copy. `FAMILY_HUB.md` §3 already tracks this.
-- **Still uses the shared `NUC_DEVICE_SECRET`**, not the per-device
-  hashed tokens in ADR 0005. Fine for now; nothing else calls the
-  endpoint.
+- **Uses a per-device hashed token** (`device_tokens`, `0007`, ADR 0005),
+  scoped to `ingest` and to one family. Nothing else calls the endpoint
+  with this token yet.
 - **No video, images or audio leave the house.** Only the derived event
   and its label. `snapshots` are written to the NUC's disk and never
   posted.
