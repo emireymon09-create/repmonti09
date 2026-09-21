@@ -53,8 +53,10 @@ pnpm test:all             # unit × 4 TZ + integración (necesita Docker)
 - [ ] Sin `any` ni `as` nuevos.
 - [ ] Sin secreto hardcodeado. Sin secreto con prefijo `NEXT_PUBLIC_`.
 - [ ] `.env.local.example` actualizado si apareció una variable nueva.
-- [ ] **Ninguna query nueva fuera de `lib/db.ts`** (los route handlers y
-      `lib/deviceAuth.ts`, server-only, son la excepción).
+- [ ] **Ninguna query nueva fuera de `lib/db.ts`** (los route handlers,
+      `lib/deviceAuth.ts` y `scripts/device-token.mts` — un CLI de admin,
+      server-only, que corre con `service_role` para crear/listar/revocar
+      tokens de dispositivo — son la excepción).
 - [ ] **`lib/supabaseAdmin.ts` no entró a ningún archivo `'use client'`.**
 - [ ] Toda lectura nueva de una tabla con `voided_at` filtra con
       `.is('voided_at', null)`.

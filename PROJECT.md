@@ -169,10 +169,12 @@ entries show as "not synced yet" everywhere they appear; nothing is
 ever presented as saved when it isn't.
 
 **`/api/ingest`:** the one endpoint the NUC will call to push sleep
-sessions and monitor events. Authenticates with a shared device
-secret (`NUC_DEVICE_SECRET`), NOT a user login, NOT the Supabase
-service_role key directly. This endpoint is built but nothing on the
-NUC side calls it yet — that HA automation doesn't exist yet.
+sessions and monitor events. Authenticates with its own per-device
+token (`device_tokens`, `0007`, looked up by hash), NOT a user login,
+NOT the Supabase service_role key directly on the device. The baby it
+writes to is resolved from the token — it can never leave that token's
+family. This endpoint is built but nothing on the NUC side calls it
+yet — that HA automation doesn't exist yet.
 
 **`preview.html`:** a standalone, no-setup-needed visual preview of
 the dashboard UI (uses temporary browser storage, not the real
@@ -195,11 +197,10 @@ database) — useful for quickly showing the design, not for real use.
   `0006_edit_and_void.sql` plus `updateFeeding`/`voidFeeding` and their
   siblings in `lib/db.ts`. This section claimed otherwise until
   2026-09-20.)*
-- Per-device tokens and idempotency on the two device endpoints. A single
-  shared secret with `service_role` means whoever holds it can write to
-  any family's `baby_id` — two confirmed CRITICAL findings, open on
-  purpose because they need new tables ⇒
-  `proposals/device-tokens-and-idempotency.md`.
+- Idempotency on the two device endpoints. A retried request (the NUC's
+  HA automation, or a double-tap on the Shortcut) still writes twice —
+  two rows in `monitor_events`, or two open sleep/nursing sessions ⇒
+  `proposals/device-tokens-and-idempotency.md` §4.
 - Automated tests for **components and pages**. What exists covers
   `lib/format.ts`, `lib/queue.ts`, RLS isolation between families, and
   the two device endpoints.
@@ -261,12 +262,14 @@ here gets built in a direction that has to be undone:
   lives on the *Hub server only*, which this app's `/api/ingest`
   currently contradicts. Flagged as an open question — either ingest
   moves to `apps/hub`, or the rule needs a carve-out.
-- Devices authenticate with their own **hashed per-device token** from
-  `core.devices`, with an idempotency key on the event — replacing the
-  single shared `NUC_DEVICE_SECRET` this app uses today (ADR 0005).
-  **Still not implemented.** Written up as
-  `proposals/device-tokens-and-idempotency.md`, with a test that
-  demonstrates today's cross-family write.
+- Devices authenticate with their own **hashed per-device token**
+  (`device_tokens`, ADR 0005). **Implemented in `0007`** (21 sep 2026):
+  each token belongs to one family, is optionally pinned to one baby,
+  and carries scopes (`ingest`, `quick_nurse`). The baby a device writes
+  to is resolved from the token and can never leave its family — closes
+  findings C1 and C2. An idempotency key on the event is still not
+  implemented; written up as
+  `proposals/device-tokens-and-idempotency.md` §4.
 - 2FA on Supabase / Vercel / GitHub accounts, once those exist
 
 ### What changed on 2026-09-20
@@ -292,14 +295,14 @@ over the whole repo. What it closed:
 
 What it left **open**, on purpose:
 
-- **`/api/quick/nurse` cross-family write (CRITICAL).** It ran with
-  `service_role` and picked the oldest `babies` row in the *whole
-  database*. Mitigated, not fixed: `QUICK_TOGGLE_BABY_ID` pins the baby,
-  and with more than one baby and no variable set the endpoint now
-  **fails closed** (409) instead of guessing. The real fix is resolving
-  the baby from a device token.
-- **`/api/ingest` cross-family write (CRITICAL).** Same root cause; same
-  proposal.
+- **Resolved 2026-09-21.** `/api/quick/nurse` and `/api/ingest`
+  cross-family write (CRITICAL, C1 and C2). Both ran with `service_role`
+  and either picked the oldest `babies` row in the whole database or
+  trusted a `baby_id` from the request body — with a secret shared by
+  the whole install, neither one knew *whose* family it was writing to.
+  Fixed by `device_tokens` (`0007`): the baby a device writes to is now
+  resolved from its own token and can never leave that token's family.
+  Demonstrated closed in `tests/integration/{ingest,quick-nurse}.test.ts`.
 - **Resolved 2026-09-21.** The local stack used to bind to `0.0.0.0`
   (the Supabase CLI has no config key for the bind — traced into the
   binary, see `docs/superpowers/plans/2026-09-21-tokens-crecimiento-stack-versiones.md`

@@ -62,19 +62,31 @@ o queda caída.
 
 ---
 
-## 5. Secretos de dispositivo
+## 5. Tokens de dispositivo
 
-`NUC_DEVICE_SECRET` y `QUICK_TOGGLE_SECRET` autentican a los dos endpoints de
-dispositivo. Son **estáticos y compartidos**: identifican "alguien que conoce el
-secreto", no *quién*.
+Los dos endpoints de dispositivo (`/api/ingest`, `/api/quick/nurse`) se
+autentican con un token de la tabla `device_tokens` (migración `0007`), no con
+un secreto único y compartido. Cada token pertenece a **una** familia — y
+opcionalmente está clavado a **un** bebé de esa familia — y trae uno o más
+`scopes` (`ingest`, `quick_nurse`). La base guarda solo el hash sha-256; el
+token en claro se muestra una sola vez, al crearlo.
 
-**Cómo rotarlos:**
+**Crear, listar, revocar** (`scripts/device-token.mts`, corre con
+`service_role` contra el stack de destino):
 
-1. `openssl rand -hex 32`
-2. Actualizar la variable de entorno donde corra la app.
-3. Actualizar el header en la automatización de Home Assistant y en el Shortcut
-   de iOS. Los tres pasos van juntos: no hay período de convivencia hasta que se
-   implemente `proposals/device-tokens-and-idempotency.md`.
+```bash
+pnpm device-token families                                            # ver family_id / baby_id
+pnpm device-token create --family <uuid> [--baby <uuid>] --label <texto> \
+  --scope ingest|quick_nurse [--scope ...]
+pnpm device-token list --family <uuid>
+pnpm device-token revoke --id <uuid>
+```
+
+**Cómo rotar un token:** crear uno nuevo, reconfigurar el dispositivo (la
+automatización de Home Assistant o el Shortcut de iOS) con el token nuevo, y
+recién entonces revocar el viejo con `pnpm device-token revoke`. A diferencia
+del secreto compartido de antes, esto sí admite un período de convivencia: los
+dos tokens son válidos hasta que se revoca el viejo.
 
 **Qué tapa el rate limiting que hay hoy** (`lib/deviceAuth.ts`, 20 intentos por
 minuto y por IP): la fuerza bruta ingenua desde una sola dirección.
@@ -84,10 +96,14 @@ minuto y por IP): la fuerza bruta ingenua desde una sola dirección.
 - El contador vive en la memoria de **ese** proceso. Con varias instancias, cada
   una cuenta por su lado; un arranque en frío lo resetea.
 - No hay idempotencia: el mismo evento mandado dos veces son dos filas.
-- Y lo más importante: **el secreto no dice a qué familia pertenece**. Quien lo
-  tenga escribe sobre cualquier `baby_id` de la base (hallazgos C1 y C2 de
-  `auditorias/2026-09-20-auditoria-inicial.md`). El arreglo de fondo son tokens
-  hasheados por dispositivo, y está propuesto, no implementado.
+
+Lo que esto **sí** cierra (hallazgos C1 y C2 de
+`auditorias/2026-09-20-auditoria-inicial.md`, cerrados el 21 sep 2026): el
+bebé sobre el que un dispositivo escribe sale del token, nunca del body a
+ciegas — no puede salir de la familia del token, y si el token está clavado a
+un bebé, no puede salir de ese bebé. Ver
+`proposals/device-tokens-and-idempotency.md` §4 y §6 para lo que sigue
+propuesto (idempotencia, rate limit distribuido).
 
 ---
 
@@ -186,10 +202,12 @@ Todavía no hay deploy (Vercel está previsto, no hecho). Cuando llegue:
 
 - [ ] Las variables de entorno se cargan en el panel de Vercel, no en un archivo
       del repo.
-- [ ] `SUPABASE_SERVICE_ROLE_KEY`, `NUC_DEVICE_SECRET` y `QUICK_TOGGLE_SECRET`
-      **sin** prefijo `NEXT_PUBLIC_`.
-- [ ] `QUICK_TOGGLE_BABY_ID` seteada si la base tiene más de un bebé (si no, el
-      endpoint falla cerrado a propósito).
+- [ ] `SUPABASE_SERVICE_ROLE_KEY` **sin** prefijo `NEXT_PUBLIC_`.
+- [ ] Crear los tokens de los dispositivos reales con `pnpm device-token`
+      contra la base de producción (`pnpm device-token create --family <uuid>
+      [--baby <uuid>] --label <texto> --scope ingest|quick_nurse`) y
+      reconfigurar la automatización de Home Assistant y el Shortcut de iOS
+      con esos tokens.
 - [ ] `pnpm audit` limpio.
 - [ ] `pnpm test:all` en verde contra un stack local antes de subir.
 - [ ] Una corrida de `prompt-auditoria-codigo.md`.

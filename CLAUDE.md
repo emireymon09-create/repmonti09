@@ -293,9 +293,13 @@ Según `PROJECT.md`, y salvo que Emilio lo pida explícitamente:
 **Construido y funcionando:** auth, dashboard completo (lactancia,
 biberón, sólidos, pañales, sueño, predicciones), Milk (extracción),
 Growth, Doctor, History con editar/borrar, PWA instalable, cola offline,
-RLS en las 11 tablas, los dos endpoints de dispositivo, **middleware de
-auth server-side**, **lockfile de pnpm**, **lint y format**, y **una
-suite de tests**.
+RLS en las 11 tablas (y RLS + GRANTs en `device_tokens`, la 12ª), los dos
+endpoints de dispositivo, **tokens por dispositivo** (`device_tokens`,
+0007 — cada dispositivo tiene el suyo, revocable, clavado a una familia y
+opcionalmente a un bebé; reemplazó a los secretos compartidos
+`NUC_DEVICE_SECRET`/`QUICK_TOGGLE_SECRET`), **middleware de auth
+server-side**, **lockfile de pnpm**, **lint y format**, y **una suite de
+tests**.
 
 **Alcance exacto de los tests** (que no es "hay tests" a secas):
 
@@ -320,7 +324,7 @@ y la base.
   hoy todos los miembros tienen los mismos permisos)
 - Corregir o retractar una medición de `growth_measurements` — necesita
   schema ⇒ `proposals/growth-edit-and-void.md`
-- Tokens por dispositivo e idempotencia ⇒
+- Idempotencia en los endpoints de dispositivo ⇒
   `proposals/device-tokens-and-idempotency.md`
 
 ---
@@ -332,19 +336,20 @@ y la base.
    ingest se muda a `apps/hub`, o la regla necesita una excepción.
 2. Cuál de las dos cajas (NUC o HA Green) deriva los eventos de sueño y
    llama a `/api/ingest` — **no está decidido**.
-3. `/api/quick/nurse` corre con `service_role`, o sea que salta RLS, y el
-   secreto que lo autentica no dice a qué familia pertenece. **Parcheado,
-   no resuelto** (20 sep 2026): `QUICK_TOGGLE_BABY_ID` fija el bebé, y sin
-   esa variable y con más de un bebé en la base el endpoint **falla
-   cerrado** (409) en vez de adivinar. El arreglo de fondo —resolver el
-   bebé desde un token por dispositivo— sigue abierto ⇒
-   `proposals/device-tokens-and-idempotency.md`.
-4. Los secretos de dispositivo siguen siendo **estáticos y compartidos**.
-   Desde el 20 sep 2026 hay comparación en tiempo constante y un techo de
-   20 intentos por minuto y por IP (`lib/deviceAuth.ts`), pero el contador
-   vive en la memoria de un proceso: con varias instancias no sirve. Y
-   sigue sin haber idempotencia. ADR 0005 pide tokens hasheados por
-   dispositivo; propuesto, no implementado.
+3. **Cerrada el 21 sep 2026.** `/api/quick/nurse` y `/api/ingest` corren con
+   `service_role`, que salta RLS, pero ya no se autentican con un secreto
+   compartido: cada dispositivo tiene su propio token (`device_tokens`,
+   0007), clavado a una familia y opcionalmente a un bebé. El bebé sobre
+   el que se escribe sale del token, nunca puede salir de su familia, y si
+   no alcanza la información para decidir (token de familia con más de un
+   bebé y sin `baby_id`), el endpoint **falla cerrado** (409) en vez de
+   adivinar. Demostrado en `tests/integration/{ingest,quick-nurse}.test.ts`.
+4. Los tokens de dispositivo siguen siendo estáticos (no rotan solos) y el
+   techo de intentos (`lib/deviceAuth.ts`, 20 por minuto y por IP) vive en
+   la memoria de un proceso: con varias instancias no sirve, y un arranque
+   en frío lo resetea. Y sigue sin haber idempotencia: el mismo evento
+   mandado dos veces son dos filas. Ambos, propuestos y no implementados
+   ⇒ `proposals/device-tokens-and-idempotency.md` §4 y §6.
 5. **Cerrada el 21 sep 2026.** El CLI de Supabase no tiene forma de fijar el
    bind (E-3: el binario arma `-p puerto:puerto`, sin IP, y no hay clave de
    config que lo cambie). Se reemplazó por un `docker-compose.yml` propio en
