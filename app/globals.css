@@ -548,6 +548,96 @@ body {
   color: var(--c-on-accent);
 }
 
+/* The bottom-bar parts of the nav (below). Off everywhere else, so the
+   tablet and wall nav render exactly as the pills above. */
+.nav-icon,
+.gear-label {
+  display: none;
+}
+
+/* Phone: five tabs plus the gear stop fitting on one line below ~480px
+   and "History" dropped to a row of its own. Here the nav becomes a bar
+   fixed to the bottom — in thumb reach, one-handed — with an icon and an
+   always-visible label per destination, so nothing depends on guessing
+   what an icon means at 3am. Same markup, same order, same menu. */
+@media (max-width: 599px) {
+  .page {
+    padding-bottom: calc(var(--tap) + var(--s-6) * 2 + env(safe-area-inset-bottom, 0px));
+  }
+  .nav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    margin: 0;
+    gap: 0;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    padding: var(--s-1) var(--s-2) max(var(--s-1), env(safe-area-inset-bottom, 0px));
+    background: var(--c-surface);
+    border-top: 1px solid var(--c-line);
+  }
+  .tab,
+  .gear {
+    flex: 1 1 0;
+    min-width: 0;
+    width: auto;
+    height: auto;
+    min-height: var(--tap);
+    flex-direction: column;
+    justify-content: center;
+    gap: var(--s-1);
+    padding: var(--s-2) 0;
+    border: none;
+    border-radius: var(--r-control);
+    background: none;
+    color: var(--c-muted);
+    font-size: var(--t-label);
+    font-weight: 600;
+  }
+  .tab[aria-current='page'],
+  .gear[aria-expanded='true'] {
+    background: none;
+    color: var(--c-accent);
+  }
+  .nav-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 4.4em;
+    height: 2.7em;
+    border-radius: 999px;
+  }
+  .nav-icon svg {
+    width: 2.1em;
+    height: 2.1em;
+  }
+  /* The active destination gets the one soft fill in the bar. */
+  .tab[aria-current='page'] .nav-icon,
+  .gear[aria-expanded='true'] .nav-icon {
+    background: var(--c-accent-soft);
+  }
+  .gear-label {
+    display: block;
+  }
+  .gear-glyph {
+    display: none;
+  }
+  .nav-settings {
+    display: flex;
+    flex: 1 1 0;
+    min-width: 0;
+    margin-left: 0;
+  }
+  /* The menu opens upward from the bar instead of down from the header. */
+  .nav-menu {
+    top: auto;
+    bottom: calc(100% + var(--s-3));
+    right: 0;
+  }
+}
+
 /* --------------------------------------------------------------- feedback */
 
 .banner {

@@ -95,13 +95,54 @@ const THEMES: { value: Theme; label: string }[] = [
   { value: 'system', label: 'System' },
 ]
 
+// Stroke icons for the phone's bottom bar, drawn on a 24-unit grid in
+// currentColor so they follow the tab's state and the theme. The wall and
+// tablet nav hide them (app/globals.css) — there the labels have room.
+const ICONS = {
+  today: ['M3 10.5 12 3l9 7.5', 'M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5'],
+  milk: [
+    'M10.5 5.5c0-1.6.6-3 1.5-3s1.5 1.4 1.5 3',
+    'M8.5 5.5h7V8h-7z',
+    'M9 8l-.5 2v10a1.5 1.5 0 0 0 1.5 1.5h4a1.5 1.5 0 0 0 1.5-1.5V10L15 8',
+    'M8.5 13.5h3M8.5 17h3',
+  ],
+  growth: ['M3 20.5h18', 'M4 16l5-5 4 3 7-7', 'M15 7h5v5'],
+  doctor: ['M9.5 3.5h5v6h6v5h-6v6h-5v-6h-6v-5h6z'],
+  history: ['M3.5 12a8.5 8.5 0 1 0 2.5-6', 'M3.5 3.5V8H8', 'M12 7.5V12l3 2'],
+  settings: [
+    'M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1',
+    'M15 6m-2 0a2 2 0 1 0 4 0a2 2 0 1 0-4 0',
+    'M9 12m-2 0a2 2 0 1 0 4 0a2 2 0 1 0-4 0',
+    'M17 18m-2 0a2 2 0 1 0 4 0a2 2 0 1 0-4 0',
+  ],
+} as const
+
+function NavIcon({ name }: { name: keyof typeof ICONS }) {
+  return (
+    <span className="nav-icon" aria-hidden="true">
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        {ICONS[name].map((d) => (
+          <path key={d} d={d} />
+        ))}
+      </svg>
+    </span>
+  )
+}
+
 const TABS = [
-  { href: '/dashboard', label: 'Today' },
-  { href: '/pumping', label: 'Milk' },
-  { href: '/growth', label: 'Growth' },
-  { href: '/appointments', label: 'Doctor' },
-  { href: '/history', label: 'History' },
-]
+  { href: '/dashboard', label: 'Today', icon: 'today' },
+  { href: '/pumping', label: 'Milk', icon: 'milk' },
+  { href: '/growth', label: 'Growth', icon: 'growth' },
+  { href: '/appointments', label: 'Doctor', icon: 'doctor' },
+  { href: '/history', label: 'History', icon: 'history' },
+] as const
 
 export function Nav({ babyId }: { babyId?: string }) {
   const pathname = usePathname()
@@ -172,6 +213,7 @@ export function Nav({ babyId }: { babyId?: string }) {
           className="tab"
           aria-current={pathname === tab.href ? 'page' : undefined}
         >
+          <NavIcon name={tab.icon} />
           {tab.label}
         </Link>
       ))}
@@ -190,7 +232,13 @@ export function Nav({ babyId }: { babyId?: string }) {
           aria-expanded={menuOpen}
           onClick={() => setMenuOpen((v) => !v)}
         >
-          {'\u2699'}
+          <span className="gear-glyph" aria-hidden="true">
+            {'\u2699'}
+          </span>
+          <NavIcon name="settings" />
+          <span className="gear-label" aria-hidden="true">
+            Settings
+          </span>
         </button>
         {menuOpen && (
           <div className="nav-menu" role="menu" aria-label="Settings">
