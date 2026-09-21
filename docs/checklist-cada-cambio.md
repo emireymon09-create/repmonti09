@@ -15,8 +15,9 @@ todo si parece de una línea.
       resolución en dos pasos del DST, el matcher del middleware).
 - [ ] **¿El cambio toca datos de una familia?** Entonces tiene que haber un test
       de aislamiento que lo cubra (`tests/integration/rls.test.ts`).
-- [ ] **¿El cambio toca el schema?** Entonces **no** es una migración acá: es
-      un archivo en `proposals/`, sin numerar (CLAUDE.md §5.2, ADR 0003).
+- [ ] **¿El cambio toca el schema?** Si Emilio pidió implementarlo acá,
+      migración nueva numerada; si no, propuesta en `proposals/` (CLAUDE.md
+      §5.2).
 - [ ] **¿El cambio toca algo visual?** El valor sale de un token de
       `app/globals.css`. Si el token no existe, se crea ahí y se espeja en
       `lib/tokens.ts`.
@@ -52,14 +53,14 @@ pnpm test:all             # unit × 4 TZ + integración (necesita Docker)
 - [ ] Sin `any` ni `as` nuevos.
 - [ ] Sin secreto hardcodeado. Sin secreto con prefijo `NEXT_PUBLIC_`.
 - [ ] `.env.local.example` actualizado si apareció una variable nueva.
-- [ ] **Ninguna query nueva fuera de `lib/db.ts`** (los route handlers son la
-      excepción que ya existe y no se amplía).
+- [ ] **Ninguna query nueva fuera de `lib/db.ts`** (los route handlers y
+      `lib/deviceAuth.ts`, server-only, son la excepción).
 - [ ] **`lib/supabaseAdmin.ts` no entró a ningún archivo `'use client'`.**
 - [ ] Toda lectura nueva de una tabla con `voided_at` filtra con
       `.is('voided_at', null)`.
 - [ ] Ningún hex ni px nuevo fuera de `app/globals.css`.
-- [ ] Si tocaste el schema: migración **nueva** en `proposals/`, con RLS **y**
-      GRANT (el bug de `0005`).
+- [ ] Si tocaste el schema: migración nueva (o propuesta), con RLS **y**
+      GRANT/REVOKE explícitos, y un test de integración.
 - [ ] Nada se presenta como guardado si no lo está.
 - [ ] Nada que el servidor haya **rechazado** se encola.
 

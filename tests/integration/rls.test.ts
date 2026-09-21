@@ -1,5 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { adminClient, anonClient, seedTwoFamilies, type SeededFamily } from '../helpers/supabase'
+import {
+  adminClient,
+  anonClient,
+  seedDeviceToken,
+  seedTwoFamilies,
+  type SeededFamily,
+} from '../helpers/supabase'
 
 let a: SeededFamily
 let b: SeededFamily
@@ -146,5 +152,72 @@ describe('huecos conocidos de las policies, documentados', () => {
     const { error } = await a.client.from('families').insert({ name: 'familia nueva' })
     expect(error).not.toBeNull()
     expect(error!.message.toLowerCase()).toContain('row-level security')
+  })
+})
+
+/**
+ * 0007: los tokens de dispositivo son solo del servidor. Ni un padre logueado
+ * ni un anónimo los leen o los crean — ni siquiera los de su propia familia.
+ * Se administran con `pnpm device-token`, que usa service_role.
+ */
+describe('device_tokens', () => {
+  it('un padre no puede leer tokens, ni los de su propia familia', async () => {
+    await seedDeviceToken({ familyId: a.familyId, scopes: ['ingest'] })
+    const { data, error } = await a.client.from('device_tokens').select('id, token_hash')
+    expect(error).not.toBeNull()
+    expect(data).toBeNull()
+  })
+
+  it('un padre no puede crear un token', async () => {
+    const { error } = await a.client.from('device_tokens').insert({
+      family_id: a.familyId,
+      label: 'colado',
+      token_hash: 'f'.repeat(64),
+      scopes: ['ingest'],
+    })
+    expect(error).not.toBeNull()
+  })
+
+  it('un anónimo tampoco lee', async () => {
+    const { data, error } = await anonClient().from('device_tokens').select('id')
+    expect(error).not.toBeNull()
+    expect(data).toBeNull()
+  })
+
+  it('un token no se puede clavar a un bebé de otra familia (FK compuesta)', async () => {
+    const { error } = await adminClient()
+      .from('device_tokens')
+      .insert({
+        family_id: a.familyId,
+        baby_id: b.babyId,
+        label: 'cruzado',
+        token_hash: 'e'.repeat(64),
+        scopes: ['quick_nurse'],
+      })
+    expect(error?.code).toBe('23503')
+  })
+
+  it('un scope que no existe se rechaza', async () => {
+    const { error } = await adminClient()
+      .from('device_tokens')
+      .insert({
+        family_id: a.familyId,
+        label: 'poderoso',
+        token_hash: 'd'.repeat(64),
+        scopes: ['admin'],
+      })
+    expect(error?.code).toBe('23514')
+  })
+
+  it('un token sin scopes se rechaza', async () => {
+    const { error } = await adminClient()
+      .from('device_tokens')
+      .insert({
+        family_id: a.familyId,
+        label: 'vacío',
+        token_hash: 'c'.repeat(64),
+        scopes: [],
+      })
+    expect(error?.code).toBe('23514')
   })
 })

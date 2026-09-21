@@ -219,18 +219,23 @@ builds no reproducibles se cerró el 20 sep 2026.
 
 ### 5.2 Migraciones
 
-- **Nunca edites una migración ya aplicada.** Los archivos
-  `supabase/migrations/0001` … `0006` son historia. Un cambio se hace
-  con un archivo nuevo.
-- **Este repo dejó de numerar sus propias migraciones.** Por ADR 0003 la
-  numeración pasa al agente del Hub. Lo que corresponde acá es
-  **proponer** una migración (en `proposals/`), no numerarla.
+- **Nunca edites una migración ya aplicada.** `0001` … `0008` son historia.
+  Un cambio se hace con un archivo nuevo.
+- **Quién numera.** Por defecto, un cambio de schema se **propone** en
+  `proposals/` para el agente del Hub (ADR 0003). **Excepción:** cuando Emilio
+  pide explícitamente implementarlo en este repo, se numera acá con el
+  siguiente número libre (así nacieron `0007` y `0008`, 21 sep 2026). Cuando
+  llegue el monorepo, estas migraciones entran como historia y la numeración
+  pasa al Hub.
 - `supabase/schema.sql` es una vista **consolidada de referencia**, no la
   fuente de verdad. La fuente son los archivos de `migrations/`.
 - Toda tabla nueva nace con **RLS habilitada en la misma migración** que
   la crea. Sin excepciones.
 - Recordá el bug de `0005`: RLS correcta no alcanza si falta el `GRANT`
   al rol `authenticated`. Postgres bloquea antes de evaluar la policy.
+- Toda tabla nueva nace con grants por defecto a `authenticated` (lo dejó
+  `0005`). Si una tabla es solo del servidor, `revoke all ... from anon,
+  authenticated` en la misma migración — ver `0007`.
 
 ### 5.3 Acceso a datos
 

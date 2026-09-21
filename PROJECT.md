@@ -239,7 +239,8 @@ here gets built in a direction that has to be undone:
   `viewer`).
 - Migrations move to `packages/db/migrations`, numbered by the Hub
   agent. This app stops owning SQL. Propose a migration, don't number
-  one.
+  one. `0007` and `0008` were numbered in this repo by explicit
+  request; they enter the Hub as history.
 - Row types come from generated `packages/db/types`, replacing the
   hand-written types in the page components.
 - Design tokens move to `packages/ui` — a file move, since

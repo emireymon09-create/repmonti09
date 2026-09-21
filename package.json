@@ -21,7 +21,8 @@
     "db:reset": "bash scripts/local-stack.sh reset",
     "db:env": "bash scripts/local-stack.sh env",
     "db:psql": "bash scripts/local-stack.sh psql",
-    "db:status": "bash scripts/local-stack.sh status"
+    "db:status": "bash scripts/local-stack.sh status",
+    "device-token": "node --env-file=.env.local scripts/device-token.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.1",
