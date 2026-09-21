@@ -4,6 +4,19 @@ Every version of Amelia, newest first. The current version is the `version`
 field in `package.json`; this file is the history. A test fails if the two
 disagree. Shown in the app under the settings gear → Version history.
 
+## [0.3.0] - 2026-09-21
+
+A light, pastel theme, and a tidier app on both the phone and the wall screen.
+
+- A light theme in soft pastels, alongside the dark one. Pick Light, Dark or
+  System under the settings gear; each device remembers its own choice.
+- Only one entry can be edited at a time, so a second form or a delete
+  confirmation never opens on top of unsaved changes.
+- The settings menu closes when you tap anywhere else or press Escape.
+- Even spacing across screens: the Doctor headings, the "Log a missed
+  session" button and the History times no longer crowd what is next to them.
+- Edit and Delete are easier to hit with a thumb.
+
 ## [0.2.0] - 2026-09-21
 
 Devices get their own keys, growth entries can be fixed, and the development

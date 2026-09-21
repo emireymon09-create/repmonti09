@@ -59,8 +59,32 @@ no-CSS: manifest, theme-color) y como custom properties en
 | `--c-live` | `color.live` | `#5C8A6B` | **Semántico:** algo está en curso / hecho. Deliberadamente separado del acento. |
 | `--c-danger` | `color.danger` | `#C4574A` | Error, acción destructiva |
 
-**Esquema oscuro únicamente.** `color-scheme: dark` está fijo en `:root`.
-No hay modo claro y no hay media query de `prefers-color-scheme`.
+**Dos temas: oscuro (default) y claro pastel** (21 sep 2026). El oscuro de
+arriba es el default y **no cambió**: sin atributo `data-theme`, o con
+`data-theme="dark"`, se renderiza exactamente como antes. El claro vive en
+`:root[data-theme='light']` (y se repite bajo
+`@media (prefers-color-scheme: light)` para `data-theme="system"`). Se elige
+en el engranaje → Theme (Light / Dark / System); es preferencia **por
+dispositivo** en `localStorage` (`amelia:theme`, `lib/theme.ts`), como oz↔ml.
+Un script inline en `<head>` (`lib/themeBoot.ts`) aplica el tema antes del
+primer pintado, así el claro no parpadea en oscuro.
+
+Roles nuevos, porque un tema claro no puede reusar los colores del oscuro para
+todo. En oscuro valen exactamente lo de antes:
+
+| Token | Oscuro | Claro | Para qué |
+|---|---|---|---|
+| `--c-on-accent` | `= --c-bg` | `#FDF5EF` | Texto sobre `--c-accent` (tab activo, segmento elegido) |
+| `--c-live-ink` | `= --c-live` | `#2F6A45` | "En curso" como tinta/borde (`.side`, `.card.is-live`, `gain-up`) |
+| `--c-danger-soft` / `--c-live-soft` / `--c-accent-soft` | los `rgba(…, .18)` de antes | tintes pastel | Fondos de `Banner` |
+| `--shadow-menu` | la sombra de antes | más suave | Menú del engranaje |
+
+Paleta clara: fondo `#F7EAE3`, tarjeta `#FDF5EF`, elevado `#F3E0D5`, texto
+`#3B2A23`, muted `#6B5147`, acento `#8F4F12`, acción `#F2B5A3` (coral pastel,
+texto oscuro encima), live `#A9D4B6`, danger `#A63A2E`. **Contraste medido**
+(WCAG): texto 11.6:1 sobre fondo; muted ≥5.7:1 sobre fondo, tarjeta y
+elevado; acento ≥5.4:1; texto sobre acción 7.7:1 y sobre live 8.3:1;
+live-ink ≥5.5:1; danger ≥5.0:1. El tema oscuro sigue sin medir.
 
 **Regla de economía del color:** el borde de color se gasta en **un solo
 lugar** — la tarjeta de una sesión en curso (`.card.is-live`, borde
@@ -139,8 +163,17 @@ otros cuatro viven en archivos propios.
 
 **Navegación (5 tabs fijos):** Today · Milk · Growth · Doctor · History.
 El tab activo se marca con `aria-current="page"` y se pinta con
-`--c-accent` sobre `--c-bg`. El menú de engranaje contiene: cambiar
-oz↔ml, "Reset milk total", cerrar sesión.
+`--c-accent` sobre `--c-bg` (`--c-on-accent`). El menú de engranaje es la
+"Configuración" y contiene: Theme (Light / Dark / System), cambiar oz↔ml,
+"Reset milk total", Version history, cerrar sesión. Se cierra con Escape
+(el foco vuelve al engranaje) y con cualquier toque afuera — `onBlur` solo no
+alcanza porque Safari de iOS no enfoca un botón tocado.
+
+**Un solo panel de edición a la vez** (Growth, History, Milk): mientras una
+entrada se edita, el Editar/Borrar de las demás queda deshabilitado, así
+nunca se abre un segundo formulario ni un `confirm` encima de cambios sin
+guardar. No hay modales con overlay en la app: la edición es inline y la
+confirmación es `window.confirm`.
 
 ---
 
@@ -236,7 +269,9 @@ Todo esto ya está en `app/globals.css` y `app/layout.tsx`:
 - `role="status"` en `Banner` y en `SyncBar`.
 - `aria-current="page"` en el tab activo; `aria-haspopup` / `aria-expanded`
   en el engranaje; `role="menu"` / `role="menuitem"` en el desplegable.
-- Viewport: `width=device-width, initialScale=1`, `themeColor #211D1B`.
+- Viewport: `width=device-width, initialScale=1`, `themeColor #211D1B`;
+  con el tema claro el script de arranque y `lib/theme.ts` lo cambian a
+  `lightColor.bg` (`lib/tokens.ts`). El manifest sigue en oscuro.
   **No se bloquea el zoom del usuario.**
 
 **Contraste:** no hay ratios de contraste medidos ni documentados en el
@@ -276,8 +311,7 @@ exportados. **Por definir.**
   salvo el guard de `prefers-reduced-motion` — por definir.
 - **Estados de carga:** hoy es texto plano `"Loading…"` con clase
   `.empty`. No hay skeleton ni spinner — por definir.
-- **Sin modo claro.** Si alguna vez se necesita, es un cambio de
-  arquitectura de tokens, no un parche.
+- **Contraste del tema oscuro** sin medir (el claro sí, ver §2).
 - **`docs/design/preview.html`** es una preview visual standalone (storage
   temporal del browser, sin backend). **Puede desincronizarse del dashboard
   real** — no lo trates como fuente de verdad de diseño. Vivía en la raíz

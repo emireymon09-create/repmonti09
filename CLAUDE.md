@@ -313,7 +313,8 @@ endpoints de dispositivo, **tokens por dispositivo** (`device_tokens`,
 opcionalmente a un bebé; reemplazó a los secretos compartidos
 `NUC_DEVICE_SECRET`/`QUICK_TOGGLE_SECRET`), **middleware de auth
 server-side**, **lockfile de pnpm**, **lint y format**, **historial de
-versiones en `/version`** (engranaje → Version history), y **una suite de
+versiones en `/version`** (engranaje → Version history), **tema claro pastel
+seleccionable** (engranaje → Theme: Light / Dark / System, por dispositivo), y **una suite de
 tests**.
 
 **Alcance exacto de los tests** (que no es "hay tests" a secas):
