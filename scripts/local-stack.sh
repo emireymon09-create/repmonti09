@@ -18,8 +18,9 @@ psql_db() { dc exec -T db psql -v ON_ERROR_STOP=1 -q -U postgres -d postgres "$@
 
 ensure_keys() {
   if [ ! -f "$ENVF" ]; then
-    node scripts/local-stack-keys.mjs > "$ENVF"
-    chmod 600 "$ENVF"
+    node scripts/local-stack-keys.mjs > "$ENVF.tmp"
+    chmod 600 "$ENVF.tmp"
+    mv "$ENVF.tmp" "$ENVF"
     echo "Claves nuevas en $ENVF (gitignored)."
   fi
 }

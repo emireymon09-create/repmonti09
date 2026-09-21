@@ -106,6 +106,13 @@ describe('/api/ingest — a qué bebé le escribe', () => {
     expect(await eventsOf(b.babyId)).toEqual([])
   })
 
+  it('un token clavado acepta el baby_id propio en mayúsculas', async () => {
+    const before = (await eventsOf(a.babyId)).length
+    const res = await post({ baby_id: a.babyId.toUpperCase(), event_type: 'sound_alert' }, pinnedA)
+    expect(res.status).toBe(200)
+    expect(await eventsOf(a.babyId)).toHaveLength(before + 1)
+  })
+
   it('un token de familia escribe sobre un bebé de su familia', async () => {
     const before = (await eventsOf(a.babyId)).length
     expect((await post({ baby_id: a.babyId, event_type: 'motion_start' }, familyA)).status).toBe(

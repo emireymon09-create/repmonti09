@@ -106,20 +106,21 @@ export async function resolveBabyForDevice(
 ): Promise<{ babyId: string } | DeviceFailure> {
   if (requested !== undefined) {
     if (!isUuid(requested)) return { status: 400, error: 'baby_id must be a uuid' }
+    const normalized = requested.toLowerCase()
     if (identity.babyId !== null) {
-      return requested === identity.babyId
-        ? { babyId: requested }
+      return normalized === identity.babyId
+        ? { babyId: normalized }
         : { status: 403, error: 'this token is pinned to another baby' }
     }
     const { data, error } = await supabase
       .from('babies')
       .select('id')
-      .eq('id', requested)
+      .eq('id', normalized)
       .eq('family_id', identity.familyId)
       .maybeSingle()
     if (error) return { status: 500, error: error.message }
     return data
-      ? { babyId: requested }
+      ? { babyId: normalized }
       : { status: 403, error: "baby_id is not in this token's family" }
   }
 
