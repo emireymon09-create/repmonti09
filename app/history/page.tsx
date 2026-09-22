@@ -346,6 +346,13 @@ export default function HistoryPage() {
   if (loading)
     return (
       <Page>
+        {/* El nav va también mientras carga. Sin él, cada navegación entre
+            pantallas dejaba la ventana ENTERA vacía —barra de abajo
+            incluida— hasta que useBaby() resolvía: eso era el "pantallazo"
+            entre pantallas. Medido con CDP: existía una ventana sin nav y
+            sin contenido, de 34 ms en este servidor y tanto más cuanto peor
+            esté la conexión. */}
+        <Nav />
         <p className="empty">{t('common.loading')}</p>
       </Page>
     )

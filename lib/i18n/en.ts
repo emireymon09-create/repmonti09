@@ -104,6 +104,14 @@ export const en = {
   'nav.doctor': 'Doctor',
   'nav.history': 'History',
   'nav.settings': 'Settings',
+  // The phone's bottom bar is two items: Today, and this. It holds every other
+  // destination plus the settings, so it is a menu, not a gear.
+  'nav.menu': 'Menu',
+  'nav.feeding': 'Feeding',
+  'nav.diapers': 'Diapers',
+  'nav.sleep': 'Sleep',
+  'nav.version': 'Version history',
+  'menu.goTo': 'Go to',
   'menu.theme': 'Theme',
   'theme.light': 'Light',
   'theme.dark': 'Dark',
@@ -118,7 +126,6 @@ export const en = {
   'menu.resetting': 'Resetting…',
   'menu.resetConfirm': 'Zero out the "in the stash" total? Past sessions stay in History.',
   'menu.resetFailed': 'Couldn’t reset — {error}',
-  'menu.versionHistory': 'Version history · v{version}',
   'menu.signOut': 'Sign out',
   // Nursing alerts (push). Per device, like the theme — but it also lives on
   // the server, which is what sends the notification.

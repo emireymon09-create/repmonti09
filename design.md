@@ -519,6 +519,80 @@ quien manda la notificación.
   suscripción); iniciar sesión suelta la suscripción que hubiera quedado, para
   que el menú no arranque en "On" con la cuenta anterior.
 
+### 5.11 La barra de abajo son dos ítems (22 sep 2026)
+
+En el teléfono, la barra fija de abajo tiene **exactamente dos**: **Today** y
+**Menu**. Nada más.
+
+Hasta acá eran seis (cinco pestañas + el engranaje). A 390px eso deja ~65px por
+ítem: las etiquetas largas se cortaban —"Historial", "Crecimiento", que ya
+había tenido que abreviarse a "Medidas" para entrar— y el ícono quedaba
+apretado contra el borde de su área táctil. El caso de uso de esta app es una
+mano, de noche, con el otro brazo ocupado. Dos ítems le dan a cada uno medio
+ancho de pantalla.
+
+Las **ocho** pantallas restantes —Feeding, Diapers, Sleep, Milk, Growth,
+Doctor, History y Version history— están en el grupo **"Go to"**, arriba de
+todo en el menú, en dos columnas, cada una con su ícono. Abajo siguen el tema,
+el idioma, los avisos de lactancia, la unidad, el reset de leche y cerrar
+sesión.
+
+Tres cosas deliberadas:
+
+- **El menú reusa el patrón de §5 tal cual**: `aria-haspopup="menu"` y
+  `aria-expanded` en el botón, `role="menu"` con `aria-label` en el panel,
+  `role="menuitem"` en cada link, Escape cierra y devuelve el foco al botón,
+  y un `pointerdown` afuera cierra (no `onBlur`: en iOS un `<button>` tocado
+  nunca recibe foco). No se inventó nada nuevo.
+- **El menú puede scrollear** (`max-height` con `100dvh` + `overflow-y: auto`).
+  Con ocho destinos más los ajustes, en un teléfono apaisado no entraba.
+- **En tablet y en la pantalla de pared no cambia nada.** Los cinco `.tab`
+  siguen en el HTML y solo se apagan con `display: none` abajo de 600px —
+  lo que además los saca del árbol de accesibilidad, así que un lector de
+  pantalla en el teléfono anuncia dos ítems, no seis.
+
+Verificado con CDP (390px y 1440px, tema claro y oscuro, inglés y español):
+2 ítems visibles en teléfono, 6 en la pared, `aria-expanded` va
+false→true→false, los 8 links con `role="menuitem"`, Escape cierra y el foco
+vuelve al botón, el toque afuera cierra, y el menú mide 716px en una ventana
+de 844.
+
+### 5.12 La cabecera y las tarjetas de Today (22 sep 2026)
+
+**Nombre y edad en la misma línea, fecha arriba a la derecha.** Antes iban en
+tres renglones apilados y el primero era la fecha. En una pantalla de pared lo
+primero que se lee tiene que ser de quién es la pantalla, no qué día es. La
+edad se apoya en la misma línea de base que el nombre (`align-items: baseline`
+— alinear por caja las dejaba flotando) y pierde el peso del título: es un
+dato, no un encabezado. La fecha usa `longDate()`, el mismo formato por idioma
+que ya usaba. En un teléfono angosto la fecha baja sola, por `flex-wrap`.
+
+**Las tres tarjetas miden lo mismo, y cada una tiene su atajo.** El ícono de la
+esquina abre esa sección; va en gris y solo se acentúa al tocarlo o enfocarlo,
+porque el camino principal sigue siendo el pie que lo dice con palabras
+("Totals and log →"). Lleva `aria-label` porque no tiene texto.
+
+Lo de "medir lo mismo" no es un alto fijo elegido a ojo: el grid las iguala con
+`align-items: stretch` y el pie se apoya abajo con `margin-top: auto`. Las tres
+comparten el padding de `.card` y la misma escala tipográfica, así que la
+proporción interna también coincide. Medido en la pared: 455 / 455 / 455 px.
+**En el teléfono no se igualan**, a propósito: apiladas de a una, forzar el
+alto sería agregar 90px de aire a dos tarjetas para que empaten con la que
+tiene el cronómetro abierto.
+
+### 5.13 La app nunca se queda sin marco (22 sep 2026)
+
+Había un "pantallazo" al cambiar de pantalla. La causa medida —cuadro por
+cuadro con CDP, no supuesta— **no era el fondo**: el tema nunca se pierde
+(0 cuadros con fondo claro o sin `data-theme`, en las dos direcciones). Era
+que el `if (loading)` de las seis páginas devolvía `<Page>` con un
+"Loading…" y **sin `<Nav>`**: durante esa ventana la pantalla quedaba entera
+vacía, la barra de abajo incluida, y eso es lo que se ve como un parpadeo.
+
+Regla nueva: **el estado de carga de una página también lleva el nav.** La
+ventana sin contenido sigue existiendo (33 ms en este servidor, tanto más
+cuanto peor esté la conexión) pero el marco no se mueve.
+
 ### Verificación de esta sección (20 sep 2026)
 
 Cada patrón de §5 afirma algo sobre el código. Se comprobó uno por uno:

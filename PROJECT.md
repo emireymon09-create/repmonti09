@@ -73,15 +73,42 @@ whenever that sync gets built.
 - **Do not create a second GitHub repo for this directory.** The one that
   exists is the one to use; the monorepo of ADR 0003 is the Hub agent's
   phase 0, and this directory becomes `apps/amelia` inside it.
-- **No cloud Supabase project — and this app must not create one.**
-  Per ADR 0001 the cloud database is shared and the Hub agent creates
-  it. Local development runs against a self-owned `docker-compose.yml`
-  in `supabase/docker/` (Docker), operated with `pnpm db:up` /
-  `db:env` / `db:reset` / `db:down` — not the Supabase CLI, which
-  could not be made to bind to anything but `0.0.0.0`.
-- **No Vercel deployment yet.**
-- The app runs and is testable on Emilio's machine right now via the
-  local Supabase stack.
+- **Deployed on Vercel (Hobby plan), with auto-deploy on every push to
+  `main`.** *(Corrected 2026-09-22. This section said "No Vercel
+  deployment yet" — false.)* There is no manual deploy step: pushing to
+  `main` publishes. That is why the version bump + CHANGELOG entry of
+  `CLAUDE.md` §0.1 is mandatory on every push — it is the only record of
+  what went out.
+- **A cloud Supabase project exists and is what production uses.**
+  *(Corrected 2026-09-22. This section said "No cloud Supabase project —
+  and this app must not create one" — false.)* What is still true: **do
+  not create a second one.** ADR 0001's shared household database is a
+  phase-2 question, not a reason to pretend this one does not exist.
+- **This VPS and its Docker stack are development and testing only** —
+  they never were and never will be production infrastructure. Local
+  development runs against a self-owned `docker-compose.yml` in
+  `supabase/docker/`, operated with `pnpm db:up` / `db:env` /
+  `db:reset` / `db:down` — not the Supabase CLI, which could not be made
+  to bind to anything but `0.0.0.0`.
+- **A migration applied locally is NOT applied in production.** The two
+  databases are separate. Applying a migration to the cloud project is a
+  deliberate, separate step.
+- **Verified on 2026-09-22**, with the `gh` CLI (authenticated on this
+  VPS) and public requests — not on anyone's word: the Vercel project is
+  `emireymon09-create/amelia-app`; every push to `main` produces a
+  `Production` deployment (12 of them, the last one 56 seconds after
+  commit `95a86cd`); the stable production URL is
+  `https://amelia-app.vercel.app`; and the cloud Supabase project is
+  `https://ituurekoybqjqpuycweh.supabase.co` (that value ships in the
+  public client bundle — `NEXT_PUBLIC_SUPABASE_URL` is inlined at build
+  time). See `CLAUDE.md` §2.1 for the table.
+- **Still not verified — ask Luis:** the Vercel plan tier, the Supabase
+  plan and region, whether the three VAPID variables are set in Vercel,
+  whether 2FA is on, and **whether migrations 0009/0010/0011 are applied
+  in the cloud**. That last one needs SQL access to the cloud project,
+  and this machine has none (no `.vercel/`, no Supabase CLI, no
+  `~/.supabase/access-token`, and `.env.local` points at `127.0.0.1`).
+  Do not invent them.
 - **pnpm is the only package manager**, with `pnpm-lock.yaml` committed
   (since 2026-09-20). `npm` and `yarn` abort at `preinstall`.
 - **There is a test suite** (Vitest): unit tests run under four system
@@ -256,16 +283,15 @@ database) — useful for quickly showing the design, not for real use.
   *(Editing and retracting logged entries — feedings, diapers, nursing,
   sleep, pumping, and now growth measurements (`0008`) — IS built.
   `lib/db.ts` has `update*`/`void*` for all of them.)*
-- **Whatever calls `/api/push/nursing-check` every minute.** The endpoint
-  is built and tested, but nothing calls it, so **the nursing alert does
-  not arrive on its own**. Nothing on this server can be reused for it:
-  the app doesn't run here at all (no `next`, no pm2, no systemd, no
-  container — only the local Supabase stack). The options, none picked:
-  the house box (NUC or HA Green) with a one-line `curl` per minute;
-  Vercel Cron (Hobby runs once a day, which is useless — Pro runs per
-  minute, which is why the endpoint also answers `GET`); or
-  `pg_cron` + `pg_net` in the Hub's Supabase. Open question,
-  `CLAUDE.md` §7.6.
+- **The minute-by-minute trigger for `/api/push/nursing-check`, *applied
+  in the cloud*.** The caller was decided on 2026-09-22 — `pg_cron` +
+  `pg_net` inside the cloud Supabase project — and the migration is
+  written (`supabase/migrations/0011_push_cron.sql`). The VPS was ruled
+  out (not production) and so was Vercel Cron (Hobby runs once a day,
+  with up to ~59 minutes of drift — useless for a 30-minute threshold).
+  **But it has not been applied to the cloud project, because this VPS
+  has no credentials for it**, so the nursing alert still does not
+  arrive on its own. What is missing is listed in `CLAUDE.md` §7.6.
 - What this server **cannot** test about push, and therefore is not
   claimed to work: Chrome stable and Android, APNs/iOS (including the
   "add to Home Screen" flow), Firefox, a locked phone or a closed app,
@@ -278,6 +304,18 @@ database) — useful for quickly showing the design, not for real use.
   HA automation, or a double-tap on the Shortcut) still writes twice —
   two rows in `monitor_events`, or two open sleep/nursing sessions ⇒
   `proposals/device-tokens-and-idempotency.md` §4.
+- **The phone's bottom bar is two items** since 2026-09-22 — Today and Menu —
+  with the other eight screens inside the menu's "Go to" group. Feeding,
+  Diapers and Sleep had no navigation entry at all before that. The tablet and
+  wall nav is unchanged. Details and the measurements in `design.md` §5.11.
+- **A page's loading state renders the nav too** since 2026-09-22. It used to
+  return a bare page, so every navigation emptied the whole window, bottom bar
+  included — that was the "flash" between screens (`design.md` §5.13).
+- **The 403 retry policy for push** (`0010` + `lib/push/retry.ts`): a
+  subscription the push service rejects three checks in a row is deleted, but
+  only while other subscriptions in the same batch are being delivered. If all
+  of them fail at once, nothing is deleted and it is logged as a probable
+  server-side VAPID misconfiguration.
 - Automated tests for **components and pages**. What exists covers
   `lib/format.ts`, `lib/queue.ts`, RLS isolation between families, and
   the two device endpoints.
@@ -298,8 +336,10 @@ database) — useful for quickly showing the design, not for real use.
    already exists (`emireymon09-create/repmonti09`). The monorepo
    (ADR 0003) is the Hub agent's phase 0; this directory becomes
    `apps/amelia` inside it.
-4. **Do not create a cloud Supabase project.** ADR 0001. The shared one
-   is the Hub's to create.
+4. **Do not create a *second* cloud Supabase project.** One already
+   exists and production uses it (corrected 2026-09-22 — this line used
+   to say there was none). ADR 0001's shared household database is still
+   the Hub's to create, in phase 2.
 
 ### What changes when the shared backend lands (phase 2)
 
@@ -366,7 +406,10 @@ here gets built in a direction that has to be undone:
   both when it is stored and before anything is sent to it, because the
   server makes a POST to that URL (anti-SSRF), and a row written
   straight through PostgREST never passes through the app's route.
-- 2FA on Supabase / Vercel / GitHub accounts, once those exist
+- 2FA on the Supabase, Vercel and GitHub accounts. All three exist now
+  (corrected 2026-09-22 — this line said "once those exist"), so this is
+  an open action item, not a future one. **Not verified from this VPS**
+  whether 2FA is on — ask Luis.
 
 ### What changed on 2026-09-20
 

@@ -101,6 +101,14 @@ export const es: Dictionary = {
   'nav.doctor': 'Médico',
   'nav.history': 'Historial',
   'nav.settings': 'Ajustes',
+  // La barra inferior del teléfono son dos ítems: Hoy y este. Adentro están
+  // todas las demás pantallas y los ajustes: es un menú, no un engranaje.
+  'nav.menu': 'Menú',
+  'nav.feeding': 'Comida',
+  'nav.diapers': 'Pañales',
+  'nav.sleep': 'Sueño',
+  'nav.version': 'Historial de versiones',
+  'menu.goTo': 'Ir a',
   'menu.theme': 'Tema',
   'theme.light': 'Claro',
   'theme.dark': 'Oscuro',
@@ -115,7 +123,6 @@ export const es: Dictionary = {
   'menu.resetConfirm':
     '¿Poner en cero el total "en reserva"? Las sesiones anteriores quedan en el Historial.',
   'menu.resetFailed': 'No se pudo poner en cero — {error}',
-  'menu.versionHistory': 'Historial de versiones · v{version}',
   'menu.signOut': 'Cerrar sesión',
   'menu.nursingAlerts': 'Avisos de lactancia',
   'alerts.off': 'Apagados',

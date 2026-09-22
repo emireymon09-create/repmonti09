@@ -42,6 +42,7 @@ hueco con una suposición presentada como hecho.
 | [`checklist-cada-cambio.md`](checklist-cada-cambio.md) | La lista que se recorre **en cada cambio**, antes y después de escribir. |
 | [`prompt-auditoria-codigo.md`](prompt-auditoria-codigo.md) | El prompt pegable para auditar el repo entero. Reporta, no corrige. |
 | [`seguridad-operacional.md`](seguridad-operacional.md) | Reglas del servidor, los secretos y las llaves. |
+| [`aplicar-en-la-nube.md`](aplicar-en-la-nube.md) | **Para Luis, a mano, una sola vez.** Aplicar 0009/0010/0011 en el proyecto Supabase de la nube y prender el cron del aviso de toma larga. El agente no puede: este VPS no tiene credenciales de producción. |
 
 ## Y además
 

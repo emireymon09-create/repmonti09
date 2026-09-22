@@ -4,6 +4,31 @@ Every version of Amelia, newest first. The current version is the `version`
 field in `package.json`; this file is the history. A test fails if the two
 disagree. Shown in the app under the settings gear → Version history.
 
+## [0.7.0] - 2026-09-22
+
+The bottom bar on a phone is down to two buttons, Today and Menu, and the
+long-nursing alert now has something that actually sets it off.
+
+- The phone's bottom bar has two buttons instead of six: Today, and Menu.
+  Menu holds every other screen — Feeding, Diapers, Sleep, Milk, Growth,
+  Doctor, History and Version history — plus the theme, the language, the
+  nursing alerts and the rest of the settings. Each button is now half the
+  width of the screen, so it is hard to miss one-handed in the dark.
+  Feeding, Diapers and Sleep had no menu entry at all until now.
+- On a tablet or the wall screen the top row of tabs is unchanged.
+- Today's three cards line up: each one has a small corner button that opens
+  its page, and side by side on the wall they are all the same height.
+- Today's heading puts the name and the age on one line, with today's date
+  on the right instead of above everything.
+- Moving between screens no longer empties the window. The bottom bar used
+  to disappear along with the content while the next screen loaded; it now
+  stays put.
+- Nursing alerts: a subscription the push service keeps turning away is
+  dropped after three checks in a row, but only while other devices are
+  still getting the notification — if every device is turned away at once,
+  nothing is deleted, because that is a server misconfiguration and not a
+  dead phone.
+
 ## [0.6.0] - 2026-09-22
 
 Today is down to three cards, each with its own page of totals, and this

@@ -227,6 +227,66 @@ body {
   grid-column: 1 / -1;
 }
 
+/* Today: las tres tarjetas, del mismo alto y con el pie a la misma altura.
+
+   Antes cada una medía lo que medía su contenido —la de lactancia con el
+   cronómetro abierto sacaba una cabeza a las otras dos— y en la pared las
+   tres filas de "Totals and log →" quedaban escalonadas. No se arregla con
+   un alto fijo elegido a ojo: `align-items: stretch` deja que el grid las
+   iguale a la más alta, y `margin-top: auto` en el pie lo empuja abajo. Los
+   mismos tokens de padding (--s-4/--s-5 de .card) en las tres, así que la
+   proporción interna también coincide. */
+.grid.even {
+  align-items: stretch;
+}
+.card.is-even {
+  display: flex;
+  flex-direction: column;
+}
+.card.is-even > .row-tight:last-child {
+  margin-top: auto;
+  padding-top: var(--s-3);
+}
+
+/* El ícono de acceso rápido, arriba a la derecha de la tarjeta. Es un atajo,
+   no el camino principal: el pie ("Totals and log →") sigue diciendo con
+   palabras a dónde va. Por eso el ícono va en gris y solo se acentúa al
+   tocarlo o enfocarlo — y por eso lleva aria-label, porque no tiene texto. */
+.card.has-quick {
+  position: relative;
+}
+.card-quick {
+  position: absolute;
+  top: var(--s-2);
+  right: var(--s-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  height: var(--tap);
+  border-radius: var(--r-control);
+  color: var(--c-muted);
+  text-decoration: none;
+}
+.card-quick:hover,
+.card-quick:focus-visible {
+  color: var(--c-accent);
+  background: var(--c-accent-soft);
+}
+.card-quick .nav-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.card-quick .nav-icon svg {
+  width: 1.4em;
+  height: 1.4em;
+}
+/* El título de la tarjeta no se mete debajo del ícono. */
+.card.has-quick > .label {
+  padding-right: var(--tap);
+}
+
 .stack {
   display: flex;
   flex-direction: column;
@@ -339,6 +399,39 @@ body {
   color: var(--c-muted);
   font-size: var(--t-body);
   margin: 0 0 var(--s-5);
+}
+
+/* La cabecera de Today: nombre + edad de un lado, fecha del otro.
+
+   `align-items: baseline` es lo que hace que "Amelia" y "3 semanas" se
+   apoyen en la misma línea de base aunque tengan tamaños muy distintos —
+   alinearlas por caja las dejaba flotando. Con flex-wrap, en un teléfono
+   angosto la fecha baja sola en vez de empujar el nombre. */
+.page-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--s-2) var(--s-4);
+  margin-bottom: var(--s-5);
+}
+.page-head .name {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--s-1) var(--s-3);
+  margin: 0;
+  min-width: 0;
+}
+/* Dentro del h1 la edad es un dato, no un título: pierde el peso y el tamaño
+   del nombre y queda en el gris de los metadatos. */
+.page-head .age {
+  margin: 0;
+  font-weight: 400;
+}
+.page-head .eyebrow {
+  margin-left: auto;
+  text-align: right;
 }
 .strike {
   text-decoration: line-through;
@@ -573,6 +666,13 @@ select.input {
   flex-direction: column;
   gap: var(--s-1);
   box-shadow: var(--shadow-menu);
+  /* El menú pasó a tener las 8 pantallas además de los ajustes. En un teléfono
+     apaisado, o con el texto del sistema agrandado, eso no entra: que
+     scrollee el menú antes que desbordar la ventana. */
+  max-height: calc(100vh - var(--tap) * 2 - var(--s-6));
+  max-height: calc(100dvh - var(--tap) * 2 - var(--s-6));
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .nav-menu-item {
   text-align: left;
@@ -596,6 +696,71 @@ select.input {
 .nav-menu-item:disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+/* "Go to": las 8 pantallas que no son Today, arriba de todo en el menú.
+
+   En el teléfono la barra de abajo tiene DOS ítems (Today y Menu), así que
+   esta lista es la única forma de llegar al resto. Dos columnas: ocho filas
+   apiladas no entraban sobre el teclado ni en una pantalla de 667px de alto.
+   El menú entero puede scrollear (.nav-menu, más abajo) para que agregar una
+   sección más nunca desborde la ventana. */
+.nav-menu-links {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-1);
+  margin-top: var(--s-2);
+}
+.nav-menu-link {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: var(--tap);
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-control);
+  color: var(--c-text);
+  text-decoration: none;
+  font-size: var(--t-meta);
+  font-weight: 600;
+  min-width: 0;
+}
+.nav-menu-link:hover,
+.nav-menu-link:focus-visible {
+  background: var(--c-surface);
+}
+/* La pantalla en la que ya estás, marcada igual que la pestaña activa. */
+.nav-menu-link[aria-current='page'] {
+  background: var(--c-accent-soft);
+  color: var(--c-accent);
+}
+/* El ícono acá se dibuja siempre — en la barra ancha los .nav-icon están
+   apagados, pero adentro del menú son lo que hace la lista escaneable. */
+.nav-menu-link .nav-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.5em;
+  height: 1.5em;
+}
+.nav-menu-link .nav-icon svg {
+  width: 1.4em;
+  height: 1.4em;
+}
+/* El nombre se corta con puntos suspensivos antes que estirar el menú:
+   "Historial de versiones" en español es el más largo de los ocho. */
+.nav-menu-link-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nav-menu-link-meta {
+  margin-left: auto;
+  flex: none;
+  font-weight: 400;
+  color: var(--c-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Theme picker inside the settings menu: three segments, one chosen. */
@@ -671,12 +836,22 @@ select.input {
   }
 }
 
-/* Phone: five tabs plus the gear stop fitting on one line below ~480px
-   and "History" dropped to a row of its own. Here the nav becomes a bar
-   fixed to the bottom — in thumb reach, one-handed — with an icon and an
-   always-visible label per destination, so nothing depends on guessing
-   what an icon means at 3am. Same markup, same order, same menu. */
+/* Teléfono: la barra de abajo son DOS ítems, Today y Menu.
+ *
+ * Hasta el 22 sep 2026 eran seis (cinco pestañas + el engranaje). A 390px cada
+ * uno se quedaba con ~65px, las etiquetas largas se cortaban ("Historial",
+ * "Crecimiento") y el ícono y el texto se apretaban contra el borde del área
+ * táctil. Con dos, cada ítem tiene la mitad del ancho de la pantalla: imposible
+ * errarle con el pulgar a las 3 de la mañana, que es el caso de uso entero.
+ *
+ * Los otros cuatro .tab siguen en el HTML —la barra ancha y la pantalla de
+ * pared los usan tal cual— y acá se apagan con display:none, que también los
+ * saca del árbol de accesibilidad: un lector de pantalla en el teléfono
+ * anuncia dos ítems, no seis. Los ocho destinos están en el menú ("Go to"). */
 @media (max-width: 599px) {
+  .nav .tab:not(.tab-home) {
+    display: none;
+  }
   .page {
     padding-bottom: calc(var(--tap) + var(--s-6) * 2 + env(safe-area-inset-bottom, 0px));
   }

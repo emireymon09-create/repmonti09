@@ -13,6 +13,7 @@ import {
   type PushPayload,
   type StoredSubscription,
 } from '@/lib/push/nursing'
+import { decideForbidden, type SendOutcome, type SubscriptionAttempt } from '@/lib/push/retry'
 import type { Side } from '@/lib/types'
 
 /**
@@ -77,8 +78,6 @@ export function vapidFromEnv(): Vapid | null {
 
 const SEND_TIMEOUT_MS = 10_000
 
-type SendOutcome = 'ok' | 'gone' | 'failed'
-
 async function sendOne(
   sub: StoredSubscription,
   payload: PushPayload,
@@ -101,10 +100,15 @@ async function sendOne(
     return 'ok'
   } catch (e) {
     // 404/410: el servicio dice que esa suscripción ya no existe (la app se
-    // desinstaló, se revocó el permiso). Cualquier otra cosa es 'failed'; si a
-    // la sesión no le llegó a nadie, runNursingCheck le saca la marca y el
-    // próximo check reintenta.
+    // desinstaló, se revocó el permiso). Se borra en el acto.
+    // 403: "no acepto esta firma VAPID" — ambiguo, y NO se borra acá. Puede ser
+    // esta fila (vieja, de otro par de claves) o la VAPID del servidor mal
+    // puesta, en cuyo caso van a fallar todas. Lo decide lib/push/retry.ts con
+    // el contraste del lote; acá solo se reporta el 403 como tal.
+    // Cualquier otra cosa es 'failed'; si a la sesión no le llegó a nadie,
+    // runNursingCheck le saca la marca y el próximo check reintenta.
     if (e instanceof WebPushError && (e.statusCode === 404 || e.statusCode === 410)) return 'gone'
+    if (e instanceof WebPushError && e.statusCode === 403) return 'forbidden'
     return 'failed'
   }
 }
@@ -134,6 +138,9 @@ export async function saveSubscription(
       auth: input.auth,
       lang: input.lang,
       updated_at: new Date().toISOString(),
+      // Suscribirse de nuevo son claves nuevas: la racha de 403 que traía esta
+      // fila (0010) no dice nada de ellas y empieza de cero.
+      consecutive_403: 0,
     },
     { onConflict: 'user_id,endpoint' },
   )
@@ -203,8 +210,19 @@ export type NursingCheckResult = {
   marked: number
   sent: number
   failed: number
-  /** Suscripciones borradas porque el servicio de push las dio por muertas (404/410). */
+  /**
+   * Suscripciones borradas: las que el servicio dio por muertas (404/410) y las
+   * que agotaron su racha de 403 con otras del lote recibiendo bien (0010).
+   */
   removed: number
+  /** Suscripciones que dieron 403 en este chequeo. */
+  forbidden: number
+  /**
+   * TODAS las suscripciones a las que se intentó dieron 403. No se borró
+   * ninguna: casi seguro es la VAPID del servidor, no las suscripciones.
+   * Queda en el log y en la respuesta para que lo mire una persona.
+   */
+  vapidSuspect: boolean
   /** Filas que no se usaron: de alguien que ya no es de la familia, o con un endpoint no permitido. */
   skipped: number
   /**
@@ -232,6 +250,8 @@ export async function runNursingCheck(
     sent: 0,
     failed: 0,
     removed: 0,
+    forbidden: 0,
+    vapidSuspect: false,
     skipped: 0,
     released: 0,
   }
@@ -239,7 +259,7 @@ export async function runNursingCheck(
   const [subsRes, membersRes] = await Promise.all([
     db
       .from('push_subscriptions')
-      .select('id, user_id, endpoint, p256dh, auth, lang, updated_at')
+      .select('id, user_id, endpoint, p256dh, auth, lang, updated_at, consecutive_403')
       .eq('family_id', identity.familyId),
     db.from('family_members').select('user_id').eq('family_id', identity.familyId),
   ])
@@ -307,6 +327,29 @@ export async function runNursingCheck(
   result.sent = outcomes.filter((o) => o === 'ok').length
   result.failed = outcomes.filter((o) => o !== 'ok').length
 
+  // Qué hacer con los 403. `perSession` es sesiones × destinatarios; acá se da
+  // vuelta a destinatarios × sesiones, que es la unidad que importa: la racha
+  // se cuenta POR SUSCRIPCIÓN, no por envío. La regla y el porqué, en
+  // lib/push/retry.ts.
+  const attempts: SubscriptionAttempt[] = recipients.map((sub, j) => ({
+    id: sub.id,
+    consecutive403: Number((sub as { consecutive_403?: number }).consecutive_403 ?? 0),
+    outcomes: perSession.map((row) => row[j]),
+  }))
+  const forbidden = decideForbidden(attempts)
+  result.forbidden = forbidden.forbidden
+  result.vapidSuspect = forbidden.vapidSuspect
+  if (forbidden.vapidSuspect) {
+    // No es un error de esta corrida: es una configuración que hay que mirar a
+    // mano. Se avisa fuerte y NO se borra nada.
+    console.warn(
+      `[push] every subscription of family ${identity.familyId} was rejected with 403 ` +
+        `(${result.forbidden} of ${recipients.length}). Nothing deleted — this looks like a ` +
+        `server-side VAPID misconfiguration, not dead subscriptions. Check VAPID_PRIVATE_KEY / ` +
+        `NEXT_PUBLIC_VAPID_PUBLIC_KEY / VAPID_SUBJECT.`,
+    )
+  }
+
   // La marca se puso ANTES de mandar (es lo que evita el doble aviso). Si a
   // una sesión no le llegó a nadie, se la saca: con un 5xx, un timeout o sin
   // red, el próximo check reintenta; y si todas dieron 404/410, esas
@@ -330,15 +373,36 @@ export async function runNursingCheck(
     result.released = released.error ? 0 : (released.data?.length ?? 0)
   }
 
-  if (gone.size > 0) {
+  // Un solo borrado para los dos motivos: el servicio las dio por muertas
+  // (404/410) o agotaron su racha de 403 mientras otras del lote sí recibían.
+  const doomed = new Set([...gone, ...forbidden.drop])
+  if (doomed.size > 0) {
     const del = await db
       .from('push_subscriptions')
       .delete()
-      .in('id', [...gone])
+      .in('id', [...doomed])
       .eq('family_id', identity.familyId)
       .select('id')
-    // Si el borrado falla, la próxima vez vuelve a dar 410 y se reintenta.
+    // Si el borrado falla, la próxima vez vuelve a dar 410/403 y se reintenta.
     result.removed = del.error ? 0 : (del.data?.length ?? 0)
+  }
+
+  // Las rachas que siguen vivas. Una fila borrada arriba ya no está, así que
+  // estos updates no la tocan. Si alguno falla, la racha queda como estaba: se
+  // pierde un paso de la cuenta, nunca se borra de más.
+  for (const s of forbidden.strike) {
+    await db
+      .from('push_subscriptions')
+      .update({ consecutive_403: s.consecutive403 })
+      .eq('id', s.id)
+      .eq('family_id', identity.familyId)
+  }
+  if (forbidden.reset.length > 0) {
+    await db
+      .from('push_subscriptions')
+      .update({ consecutive_403: 0 })
+      .in('id', forbidden.reset)
+      .eq('family_id', identity.familyId)
   }
   return result
 }

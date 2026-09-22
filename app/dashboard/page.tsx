@@ -323,6 +323,13 @@ export default function Dashboard() {
   if (loading)
     return (
       <Page>
+        {/* El nav va también mientras carga. Sin él, cada navegación entre
+            pantallas dejaba la ventana ENTERA vacía —barra de abajo
+            incluida— hasta que useBaby() resolvía: eso era el "pantallazo"
+            entre pantallas. Medido con CDP: existía una ventana sin nav y
+            sin contenido, de 34 ms en este servidor y tanto más cuanto peor
+            esté la conexión. */}
+        <Nav />
         <p className="empty">{t('common.loading')}</p>
       </Page>
     )
@@ -409,9 +416,18 @@ export default function Dashboard() {
     <Page>
       <Nav babyId={baby.id} />
 
-      <p className="eyebrow">{longDate(now, lang)}</p>
-      <h1 className="name">{baby.name}</h1>
-      <p className="age">{age ?? ' '}</p>
+      {/* Nombre y edad en la misma línea, y la fecha de hoy arriba a la
+          derecha. Antes iban apilados en tres renglones y la fecha arrancaba
+          la pantalla: en la pared, lo primero que se lee tiene que ser de
+          quién es la pantalla, no qué día es. En el teléfono la fecha baja
+          sola debajo del nombre (flex-wrap), sin romper nada. */}
+      <header className="page-head">
+        <h1 className="name">
+          {baby.name}
+          {age && <span className="age">{age}</span>}
+        </h1>
+        <p className="eyebrow">{longDate(now, lang)}</p>
+      </header>
 
       <SyncBar online={online} pending={pending} syncing={syncing} />
       <SeenNote state={seen} />
@@ -420,9 +436,19 @@ export default function Dashboard() {
       {err && <Banner kind="error">{err}</Banner>}
       {flash && !err && <Banner kind="ok">{flash}</Banner>}
 
-      <Grid>
+      {/* `even`: las tres tarjetas miden lo mismo aunque una tenga cronómetro
+          y otra una sola línea. No es un alto fijo a ojo — es el grid el que
+          las estira a la más alta, con los mismos tokens de padding. */}
+      <Grid even>
         {/* ---------------- Feeding: nursing, bottle, solids ---------------- */}
-        <Card live={!!activeNursing}>
+        <Card
+          live={!!activeNursing}
+          even
+          quickLink={{
+            href: '/feeding',
+            label: t('dash.detailsFor', { section: t('section.feeding') }),
+          }}
+        >
           <Label>{t('section.feeding')}</Label>
           {activeNursing && (
             <>
@@ -516,7 +542,13 @@ export default function Dashboard() {
         </Card>
 
         {/* ---------------- Diaper ---------------- */}
-        <Card>
+        <Card
+          even
+          quickLink={{
+            href: '/diapers',
+            label: t('dash.detailsFor', { section: t('section.diaper') }),
+          }}
+        >
           <Label>{t('section.diaper')}</Label>
           <div className="value">
             {lastDiaper
@@ -546,7 +578,14 @@ export default function Dashboard() {
         </Card>
 
         {/* ---------------- Sleep ---------------- */}
-        <Card live={!!activeSleep}>
+        <Card
+          live={!!activeSleep}
+          even
+          quickLink={{
+            href: '/sleep',
+            label: t('dash.detailsFor', { section: t('section.sleep') }),
+          }}
+        >
           <Label>{t('section.sleep')}</Label>
           {activeSleep ? (
             <>

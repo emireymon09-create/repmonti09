@@ -29,8 +29,10 @@ export function Page({ children }: { children: React.ReactNode }) {
   return <div className="page">{children}</div>
 }
 
-export function Grid({ children }: { children: React.ReactNode }) {
-  return <div className="grid">{children}</div>
+export function Grid({ children, even }: { children: React.ReactNode; even?: boolean }) {
+  // `even`: las tarjetas de la fila miden todas lo mismo. Lo usa Today con sus
+  // tres tarjetas — ver .grid.even y .card.is-even en app/globals.css.
+  return <div className={even ? 'grid even' : 'grid'}>{children}</div>
 }
 
 export function Card({
@@ -38,17 +40,34 @@ export function Card({
   live,
   past,
   spanAll,
+  even,
+  quickLink,
 }: {
   children: React.ReactNode
   live?: boolean
   past?: boolean
   spanAll?: boolean
+  /** Dentro de un <Grid even>: estira la tarjeta al alto de la más alta. */
+  even?: boolean
+  /** Ícono de acceso rápido en la esquina, a la sección de esta tarjeta. */
+  quickLink?: { href: string; label: string }
 }) {
   const cls = ['card']
   if (live) cls.push('is-live')
   if (past) cls.push('is-past')
   if (spanAll) cls.push('span-all')
-  return <div className={cls.join(' ')}>{children}</div>
+  if (even) cls.push('is-even')
+  if (quickLink) cls.push('has-quick')
+  return (
+    <div className={cls.join(' ')}>
+      {quickLink && (
+        <Link href={quickLink.href} className="card-quick" aria-label={quickLink.label}>
+          <NavIcon name="open" />
+        </Link>
+      )}
+      {children}
+    </div>
+  )
 }
 
 export function Label({ children }: { children: React.ReactNode }) {
@@ -109,6 +128,12 @@ const ICONS = {
     'M8.5 13.5h3M8.5 17h3',
   ],
   growth: ['M3 20.5h18', 'M4 16l5-5 4 3 7-7', 'M15 7h5v5'],
+  feeding: ['M7 3v7a3 3 0 0 0 6 0V3', 'M10 13v8', 'M18 3c-1.5 1.5-2 3.5-2 6v4h2'],
+  diapers: ['M4 5h16v5a9 9 0 0 1-8 9 9 9 0 0 1-8-9z', 'M9 19.5c1-2 5-2 6 0'],
+  sleep: ['M20 14.5A8 8 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z', 'M15 4.5h4l-4 4h4'],
+  version: ['M12 3.5 20 8v8l-8 4.5L4 16V8z', 'M12 12v8.5', 'M4 8l8 4 8-4'],
+  /** Esquina de una tarjeta de Today: "abrir esta sección". */
+  open: ['M8 16 16 8', 'M10 8h6v6'],
   doctor: ['M9.5 3.5h5v6h6v5h-6v6h-5v-6h-6v-5h6z'],
   history: ['M3.5 12a8.5 8.5 0 1 0 2.5-6', 'M3.5 3.5V8H8', 'M12 7.5V12l3 2'],
   settings: [
@@ -138,12 +163,40 @@ function NavIcon({ name }: { name: keyof typeof ICONS }) {
   )
 }
 
+/**
+ * La barra ancha (tablet y pantalla de pared): los destinos que entran en una
+ * línea. En el teléfono, app/globals.css deja visible SOLO el primero — ver
+ * SECTIONS.
+ */
 const TABS = [
   { href: '/dashboard', label: 'nav.today', icon: 'today' },
   { href: '/pumping', label: 'nav.milk', icon: 'milk' },
   { href: '/growth', label: 'nav.growth', icon: 'growth' },
   { href: '/appointments', label: 'nav.doctor', icon: 'doctor' },
   { href: '/history', label: 'nav.history', icon: 'history' },
+] as const
+
+/**
+ * Las 8 pantallas que NO son Today, adentro del menú.
+ *
+ * En el teléfono la barra inferior es de dos ítems —Today y Menu— porque con
+ * seis no entraba: a 320px las etiquetas se cortaban y el área táctil de cada
+ * una quedaba por debajo de lo que se puede acertar con el pulgar a las 3 de
+ * la mañana. Todo lo demás vive acá.
+ *
+ * Y de paso cierra un hueco viejo: /feeding, /diapers y /sleep existen desde
+ * el 22 sep 2026 y no tenían ninguna entrada de navegación — solo se llegaba
+ * desde el pie de su tarjeta en Today.
+ */
+const SECTIONS = [
+  { href: '/feeding', label: 'nav.feeding', icon: 'feeding' },
+  { href: '/diapers', label: 'nav.diapers', icon: 'diapers' },
+  { href: '/sleep', label: 'nav.sleep', icon: 'sleep' },
+  { href: '/pumping', label: 'nav.milk', icon: 'milk' },
+  { href: '/growth', label: 'nav.growth', icon: 'growth' },
+  { href: '/appointments', label: 'nav.doctor', icon: 'doctor' },
+  { href: '/history', label: 'nav.history', icon: 'history' },
+  { href: '/version', label: 'nav.version', icon: 'version' },
 ] as const
 
 export function Nav({ babyId }: { babyId?: string }) {
@@ -217,11 +270,13 @@ export function Nav({ babyId }: { babyId?: string }) {
 
   return (
     <nav className="nav">
-      {TABS.map((tab) => (
+      {TABS.map((tab, i) => (
         <Link
           key={tab.href}
           href={tab.href}
-          className="tab"
+          // `tab-home` es el único que sobrevive en el teléfono: la barra de
+          // abajo son dos ítems, Today y Menu (app/globals.css, @max-599px).
+          className={i === 0 ? 'tab tab-home' : 'tab'}
           aria-current={pathname === tab.href ? 'page' : undefined}
         >
           <NavIcon name={tab.icon} />
@@ -238,18 +293,45 @@ export function Nav({ babyId }: { babyId?: string }) {
         <button
           ref={gearRef}
           className="gear"
-          aria-label={t('nav.settings')}
+          aria-label={t('nav.menu')}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           onClick={() => setMenuOpen((v) => !v)}
         >
           <NavIcon name="settings" />
           <span className="gear-label" aria-hidden="true">
-            {t('nav.settings')}
+            {t('nav.menu')}
           </span>
         </button>
         {menuOpen && (
-          <div className="nav-menu" role="menu" aria-label={t('nav.settings')}>
+          <div className="nav-menu" role="menu" aria-label={t('nav.menu')}>
+            {/* Las 8 pantallas que no son Today. En el teléfono es la ÚNICA
+                forma de llegar a ellas; en la pared duplica la barra de
+                arriba, y aun así suma: /feeding, /diapers y /sleep no estaban
+                en ninguna barra. */}
+            <div className="nav-menu-group" role="group" aria-labelledby="goto-label">
+              <div className="label" id="goto-label">
+                {t('menu.goTo')}
+              </div>
+              <div className="nav-menu-links">
+                {SECTIONS.map((s) => (
+                  <Link
+                    key={s.href}
+                    href={s.href}
+                    role="menuitem"
+                    className="nav-menu-link"
+                    aria-current={pathname === s.href ? 'page' : undefined}
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    <NavIcon name={s.icon} />
+                    <span className="nav-menu-link-text">{t(s.label)}</span>
+                    {s.href === '/version' && (
+                      <span className="nav-menu-link-meta">v{APP_VERSION}</span>
+                    )}
+                  </Link>
+                ))}
+              </div>
+            </div>
             <div className="nav-menu-group" role="group" aria-labelledby="theme-label">
               <div className="label" id="theme-label">
                 {t('menu.theme')}
@@ -305,16 +387,9 @@ export function Nav({ babyId }: { babyId?: string }) {
                 {resetting ? t('menu.resetting') : t('menu.resetMilk')}
               </button>
             )}
-            <button
-              role="menuitem"
-              className="nav-menu-item"
-              onClick={() => {
-                setMenuOpen(false)
-                router.push('/version')
-              }}
-            >
-              {t('menu.versionHistory', { version: APP_VERSION })}
-            </button>
+            {/* "Version history" ya no está acá abajo: es una de las 8 de
+                "Go to", con su número de versión al costado. Una sola puerta
+                a la misma pantalla. */}
             <button role="menuitem" className="nav-menu-item" onClick={signOut}>
               {t('menu.signOut')}
             </button>

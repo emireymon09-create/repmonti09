@@ -130,9 +130,53 @@ viole esto se rechaza sin discusión.
 | Gestor de paquetes | **pnpm** (lockfile commiteado) |
 | Tests | **Vitest** — unit bajo 4 TZ + integración contra el Supabase local |
 | Lint / format | **ESLint** (`next/core-web-vitals` + `prettier`) y **Prettier** |
-| Deploy | Vercel previsto — todavía no desplegado |
+| Deploy | **Vercel, plan Hobby, ya desplegado** — auto-deploy en cada push a `main` |
 
 No es un monorepo. Hay un solo `package.json`, en la raíz.
+
+### 2.1 Dónde vive esta app de verdad (corregido el 22 sep 2026)
+
+Hasta el 22 sep 2026 este archivo decía "Vercel previsto — todavía no
+desplegado" y `PROJECT.md` decía "No cloud Supabase project". **Las dos cosas
+eran falsas.** El estado real, confirmado por Luis:
+
+| Entorno | Qué es | Base de datos |
+|---|---|---|
+| **Producción** | Deploy en **Vercel, plan Hobby**, con auto-deploy en cada push a `main` | **Proyecto Supabase en la nube, ya existente y en uso** |
+| **Este VPS** | **Solo desarrollo y pruebas.** Nunca fue ni va a ser producción | El stack Docker de `supabase/docker/`, en 127.0.0.1 |
+
+Consecuencias que sí o sí hay que tener presentes:
+
+- **Un push a `main` sale a producción solo.** No hay paso manual de deploy.
+  Por eso §0.1 (versión + CHANGELOG en todo push) no es burocracia: es la
+  única marca de qué se publicó.
+- **El Docker local no es "la base".** Una migración aplicada acá **no** está
+  aplicada en producción. Aplicarla en la nube es un paso aparte y explícito.
+- **`.env.local` de este VPS apunta a 127.0.0.1** (verificado el 22 sep 2026).
+  Las variables de producción viven en el panel de Vercel, no en este repo.
+
+**Verificado por el agente el 22 sep 2026** (no por lo que dijo nadie — con
+`gh`, que está autenticado en este VPS, y con peticiones públicas):
+
+| Dato | Valor | Cómo se verificó |
+|---|---|---|
+| Proyecto en Vercel | `emireymon09-create/amelia-app` | `target_url` del status "Vercel" en `main` |
+| Auto-deploy en push a `main` | **Sí** | 12 deployments de environment `Production` en la API de GitHub; el último, 22 sep 18:32:29Z, arranca 56 s después del commit `95a86cd` (18:31:33Z) |
+| URL pública de producción | `https://amelia-app.vercel.app` | 200 en `/login`, `<title>Amelia</title>` |
+| Proyecto Supabase en la nube | `https://ituurekoybqjqpuycweh.supabase.co` | está en el bundle público del cliente (`NEXT_PUBLIC_SUPABASE_URL` se compila adentro) |
+
+Esa URL de Vercel es la **estable**, no la de un deployment. La de cada
+deployment (`amelia-<hash>-emireymon09-create.vercel.app`) cambia en cada push
+y **no sirve** para el cron de §7.6.
+
+**Sigue sin verificar — preguntarle a Luis:** el plan de Vercel (Hobby lo dijo
+Luis; no lo pude confirmar), el plan y la región del proyecto Supabase, si las
+tres variables VAPID están cargadas en Vercel, si el 2FA está puesto, y **si
+las migraciones 0009/0010/0011 están aplicadas en la nube**. Para eso último
+hace falta correr SQL allá, y desde este VPS no hay con qué: no hay `.vercel/`,
+no hay CLI de Supabase, no hay `~/.supabase/access-token`, y en todo el home la
+única mención a un `*.supabase.co` es el placeholder de `.env.local.example`.
+**No lo inventes.**
 
 ### Mapa de archivos que importan
 
@@ -170,6 +214,10 @@ lib/push/endpoint.ts  Validación del endpoint de push (allowlist de hosts, solo
                    https — anti-SSRF) y del body de suscripción.
 lib/push/server.ts   SOLO server: las queries del push (suscripciones, marca
                    atómica de la sesión) y los envíos con web-push. Ver §5.3.
+lib/push/retry.ts    PURO: qué hacer con un 403 del servicio de push. La racha
+                   se cuenta POR SUSCRIPCIÓN y solo se borra si OTRAS del mismo
+                   lote sí recibieron; si fallan todas, no se borra nada y se
+                   loguea como VAPID mal puesta. Columna: 0010.
 lib/push/client.ts   Estado del control "Nursing alerts" en este navegador
                    (off/on/unknown/unsupported/install/unavailable/denied),
                    suscribir/desuscribir, idioma, y soltar la suscripción local
@@ -211,6 +259,11 @@ public/sw.js       Service worker: que la app ABRA sin conexión. Nunca cachea
                    datos de Supabase ni una respuesta redirigida.
 tests/             Vitest. unit/ no necesita nada; integration/ necesita el
                    stack local levantado.
+supabase/migrations/0010_push_forbidden_streak.sql  La columna consecutive_403.
+supabase/migrations/0011_push_cron.sql  pg_cron + pg_net: el job que llama a
+                   /api/push/nursing-check cada minuto DESDE la base de la nube.
+                   El token y la URL van por Vault, por nombre. Defensiva: en el
+                   stack local, si faltan las extensiones, no agenda nada.
 supabase/docker/   Stack local de Supabase sin el CLI (docker-compose.yml,
                    kong.yml, roles.sql). Escucha solo en 127.0.0.1.
 scripts/local-stack.sh   Opera el stack (pnpm db:up / db:down / db:reset / db:env
@@ -412,8 +465,10 @@ Según `PROJECT.md`, y salvo que Emilio lo pida explícitamente:
   (verificado con `git remote -v` el 20 sep 2026 — `PROJECT.md` decía que
   no había remote, y era falso). A futuro esto va a ser `apps/amelia`
   dentro del monorepo del Hub.
-- **No crear un proyecto Supabase en la nube.** La base compartida la
-  crea el agente del Hub (ADR 0001).
+- **No crear un proyecto Supabase en la nube *nuevo*.** Ojo, esto cambió de
+  sentido el 22 sep 2026: **ya hay uno, y es el que usa producción.** Lo que
+  sigue prohibido es *crear otro*. Trabajá contra el que existe; la base
+  compartida del Hub sigue siendo la del ADR 0001 y se resolverá en fase 2.
 - **No construir calendario, comidas, tareas ni riego.** Eso es del Hub.
 
 ### 5.7 Textos de la UI — siempre por los diccionarios
@@ -487,6 +542,35 @@ inicio de la ventana. Las tres están en `middleware.ts`, en
 `lib/offlinePages.ts` y en el `PRECACHE` de `public/sw.js` (que pasó a
 `amelia-v4`).
 
+**El nav de dos ítems en el teléfono (22 sep 2026).** La barra de abajo pasó de
+seis ítems (cinco pestañas + el engranaje) a **dos: Today y Menu**. Las otras
+ocho pantallas —`/feeding`, `/diapers`, `/sleep`, `/pumping`, `/growth`,
+`/appointments`, `/history` y `/version`— viven en el grupo "Go to" del menú,
+que reusa el patrón de siempre (`aria-haspopup="menu"`, `aria-expanded`,
+Escape con el foco de vuelta al botón, `pointerdown` afuera). Las tres páginas
+de sección no tenían **ninguna** entrada de navegación hasta ahora. En tablet y
+en la pantalla de pared la barra de pestañas queda igual: los `.tab` siguen en
+el HTML y solo se apagan por CSS abajo de 600px. Verificado con CDP: en el
+teléfono se ven exactamente 2 ítems, en la pared 6, y el menú entra en la
+ventana (716px de 844).
+
+**Today, la cabecera y las tarjetas (22 sep 2026).** Nombre y edad en la misma
+línea (`baseline`, la edad en gris y sin el peso del título) y la fecha de hoy
+arriba a la derecha con `longDate()`, el formato por idioma de siempre. Las
+tres tarjetas llevan un botón-ícono en la esquina que abre su sección, y en la
+pared miden **lo mismo** (455/455/455 medidos): lo iguala el grid con
+`align-items: stretch`, no un alto elegido a ojo, y el pie se apoya abajo con
+`margin-top: auto`. En el teléfono, apiladas de a una, conservan su alto
+natural: igualarlas ahí sería agregar aire.
+
+**El "pantallazo" entre pantallas (22 sep 2026).** Causa real, medida con CDP
+cuadro por cuadro: **no era el fondo** —el tema nunca se pierde, 0 cuadros con
+fondo claro o sin `data-theme`— sino que el `if (loading)` de las seis páginas
+devolvía `<Page>` **sin `<Nav>`**. Durante esa ventana la pantalla quedaba
+entera vacía, barra de abajo incluida. Ahora el nav se renderiza también
+mientras carga; la ventana sin contenido sigue existiendo (33 ms en este
+servidor, más con mala conexión) pero la app nunca queda sin marco.
+
 **El aviso push**, en concreto: migración `0009_push.sql` —
 `push_subscriptions` (RLS y GRANTs en la misma migración, scope por
 `family_id` directo), `nursing_sessions.long_alert_sent_at` y el scope
@@ -515,6 +599,8 @@ que el próximo check reintente.
 | `lib/lastSeen.ts` — copia guardada por página y bebé, `forgetSeen`, `seenState`/`lastGood` ("saved" / "nothing"), corte a mitad de sesión con el navegador "online", storage que se niega | `tests/unit/lastSeen.test.ts` |
 | `keepLastGood` y `mergePending` de `lib/db.ts` — qué se ve offline: últimas filas buenas por lectura, cola encima, un alta encolada que el server ya devolvió no se duplica | `tests/unit/pending.test.ts` |
 | `lib/kpis.ts` — ventanas de hoy y de los últimos 7 días (incluidos los dos cambios de horario y que "hace 6 días" son días de calendario, no 6×24 h), solapamiento de una sesión con la ventana; totales de comida, pañal y sueño; una fila en cola cuenta y marca `pending`, un borrado en cola deja de contar y también marca, una fila en cola fuera de la ventana no marca; `lastFeedingEvent` (ignora una sesión en curso); `checkPastRange` (futuro, fin antes del inicio, vacío); `formatDuration` | `tests/unit/kpis.test.ts` |
+| `lib/push/retry.ts` — la política de 403: suma solo si otra del lote recibió, borra al tercero, "todas en 403" no borra nada ni toca contadores (VAPID del servidor), una sola suscripción en 403 nunca se borra sola, un OK reinicia la racha, un 410 no cuenta como 403 | `tests/unit/push.test.ts` |
+| Los dos caminos del 403 por el camino real (base + servicio de push falso): el selectivo (racha 1→2→3 y se borra SOLO la muerta), el OK que reinicia, "todas a la vez" tres veces seguidas sin borrar nada, y volver a suscribirse desde la ruta | `tests/integration/push.test.ts` |
 | `lib/push/{nursing,endpoint,client}.ts` — umbral de 30 min exacto e inclusivo, con offset horario y sin minutos negativos; una sesión terminada, borrada o ya avisada no califica; el payload en los dos idiomas, con tag y Topic por sesión; un `lang` guardado desconocido cae en inglés; a quién se le manda (un envío por endpoint, la fila más reciente, nadie que ya no sea de la familia); la allowlist de endpoints (nada de http, hosts internos, look-alikes, puertos ni credenciales); el body de suscripción campo por campo; y el estado del control cuando la suscripción del navegador es de otro par de claves VAPID o el server no contesta | `tests/unit/push.test.ts` |
 | `lib/i18n` — `es` con exactamente las claves de `en`, sin vacías ni sin traducir y con las mismas variables; `translate` (interpolación, variable faltante visible, plurales); detección de idioma y elección guardada; que el script de `lib/i18n/boot.ts` decida igual que `resolveLang()`; `lib/format.ts` y `buildActivity` en español; `translate` con una clave armada desde datos que no existe; `describeWrite` | `tests/unit/i18n.test.ts` |
 | Aislamiento entre familias por RLS, por el camino real (PostgREST + JWT) | `tests/integration/rls.test.ts` |
@@ -531,7 +617,9 @@ y la base.
 
 - Tests de componentes y de páginas
 - CI
-- Deploy, y proyecto Supabase en la nube (lo crea el agente del Hub)
+  *(Corregido el 22 sep 2026: acá decía "Deploy, y proyecto Supabase en la
+  nube (lo crea el agente del Hub)". Era falso — los dos existen y están en
+  uso. Ver §2.1.)*
 - La automatización de Home Assistant que llamaría a `/api/ingest`
   (el endpoint existe, **nada lo llama**)
 - Uso real de `family_members.role` (la columna existe, nadie la lee →
@@ -539,10 +627,14 @@ y la base.
 - Idempotencia en los endpoints de dispositivo ⇒
   `proposals/device-tokens-and-idempotency.md`
 - **El disparo periódico de `/api/push/nursing-check`.** El endpoint existe y
-  funciona, pero **nada lo llama**: en este VPS no hay ni un proceso de la app
-  ni un scheduler que se pueda reusar (verificado: sin `next`, sin pm2, sin
-  systemd, sin contenedor de la app). Mientras no se decida quién lo llama, el
-  aviso **no llega solo**. Es la pregunta abierta §7.6.
+  funciona. **Decidido el 22 sep 2026** (§7.6): lo llama `pg_cron` + `pg_net`
+  **desde el proyecto Supabase de la nube**, una vez por minuto. Se descartaron
+  el VPS (no es producción) y Vercel Cron (en Hobby corre una vez por día).
+  La migración está escrita — `supabase/migrations/0011_push_cron.sql` — pero
+  **sigue sin llegar el aviso solo hasta que esa migración se aplique en el
+  proyecto de la nube y se cargue el secreto en Vault**, y eso no se pudo hacer
+  desde este VPS: no hay credenciales del proyecto cloud acá. Estado exacto y
+  qué falta: `output.txt` de este pase y §7.6.
 - **El clic en la notificación quedó SIN VERIFICAR** (22 sep 2026). El handler
   `notificationclick` de `public/sw.js` corre y cierra la notificación, pero
   `clients.focus()` / `openWindow()` están prohibidos sin una activación de
@@ -560,12 +652,19 @@ y la base.
   copia guardada, el bloqueo no ve una sesión abierta que exista en el server:
   podrían abrirse dos. Es el mismo guard que `/dashboard` ya tenía antes de
   este pase; no hay constraint en la base.
-- **`sendOne` trata un 403 del servicio de push como `failed`, no como
-  `gone`** (`lib/push/server.ts`): no borra la fila. Consecuencia conocida: si
-  las claves VAPID se rotan, la suscripción vieja de un dispositivo que nunca
-  vuelve a tocar "On" se reintenta en **cada** check. Convertir el 403 en
-  borrado sería peor (una VAPID mal configurada borraría todas las
-  suscripciones de la familia).
+- *(Cerrado el 22 sep 2026: el 403 del servicio de push se reintentaba para
+  siempre. Ahora la racha se cuenta **por suscripción** en
+  `push_subscriptions.consecutive_403` (0010 — en la base, porque en Vercel
+  cada check es un proceso nuevo y un contador en RAM no sobrevive al minuto
+  siguiente). Regla, en `lib/push/retry.ts`: 403 en una mientras **otra del
+  mismo lote sí recibió** suma 1, y a los 3 chequeos seguidos esa fila se
+  borra; un envío OK devuelve la racha a 0; volver a suscribirse desde el
+  navegador también. Y si **todas** las del lote dan 403, no se borra ninguna
+  y no se toca ningún contador: eso no es una suscripción muerta, es casi
+  seguro la VAPID del servidor mal puesta, y sale por `console.warn` con
+  `vapidSuspect: true` en la respuesta. Probado en los dos caminos, unit
+  (`decideForbidden`, 11 casos) e integración contra la base y el servicio de
+  push falso.)*
 - **Una pestaña abandonada sin cerrar sesión deja su fila** en
   `push_subscriptions`. Se limpia al cerrar sesión o cuando el servicio de
   push la da por muerta (404/410).
@@ -740,23 +839,37 @@ y la base.
    §2. `pnpm db:status`
    confirma `127.0.0.1:54321->8000/tcp` y `127.0.0.1:54322->5432/tcp`, sin
    ningún `0.0.0.0`. Ver `docs/seguridad-operacional.md` §6.
-6. **Quién llama a `/api/push/nursing-check` cada minuto — sin decidir**
-   (22 sep 2026). El endpoint está hecho y probado, pero **hoy no lo llama
-   nadie**, así que el aviso de toma larga **no llega solo**. En este VPS no
-   hay nada que reusar: no corre ningún proceso de la app (ni `next`, ni pm2,
-   ni systemd, ni contenedor), solo el stack de Supabase. Las opciones sobre
-   la mesa, ninguna elegida:
-   - **La caja de la casa** (NUC o HA Green) con un `curl` por minuto y un
-     token de scope `push_check`. Es la que menos piezas nuevas agrega, pero
-     empalma con la pregunta 2 (qué caja hace qué) y con el techo de intentos
-     de la 4.
-   - **Vercel Cron.** En el plan Hobby corre **una vez por día**: no sirve.
-     En Pro corre por minuto. Por eso el endpoint también responde a `GET`
-     con `Authorization: Bearer`.
-   - **`pg_cron` + `pg_net`** en el Supabase del Hub, que llamaría al endpoint
-     desde la base. Depende de que exista el proyecto compartido (ADR 0001).
-   La elección no cambia el endpoint; sí cambia dónde vive el token y quién lo
-   rota.
+6. **Quién llama a `/api/push/nursing-check` cada minuto — DECIDIDO el 22 sep
+   2026: `pg_cron` + `pg_net` dentro del proyecto Supabase de la nube.**
+   Descartadas, con motivo:
+   - **El VPS** (systemd, cron de sistema, un proceso de la app): descartado
+     porque **este VPS no es producción** y nunca va a serlo (§2.1). Poner
+     infraestructura de producción acá sería inventar una dependencia que no
+     existe.
+   - **Vercel Cron:** en el plan **Hobby** corre **una vez por día**, y además
+     con hasta ~59 min de imprecisión. Para un umbral de 30 minutos no sirve.
+     (El endpoint igual sigue respondiendo a `GET` con `Authorization: Bearer`,
+     que es lo que haría falta si alguna vez se pasa a Pro.)
+   - **La caja de la casa** (NUC o HA Green): sigue siendo posible, pero agrega
+     una dependencia de que la casa esté encendida y empalma con la pregunta 2
+     y con el techo de intentos de la 4. No se eligió.
+   La implementación vive en `supabase/migrations/0011_push_cron.sql`.
+   **Lo que queda abierto no es la decisión, es la ejecución en la nube:**
+   - El **valor** del token de scope `push_check` nunca va al repo. Vive en
+     **Supabase Vault**, con el nombre `amelia_push_check_token`, y la
+     migración solo lo referencia por nombre. Hay que crearlo a mano, una sola
+     vez, desde el SQL Editor (§7.6.1 del `output.txt` de este pase).
+   - La **URL de producción** también va por Vault
+     (`amelia_push_check_url`) por la misma razón: no está verificada desde
+     acá y no se inventa en un archivo del repo.
+   - **Nada de esto se pudo aplicar ni verificar desde este VPS**: no hay
+     credenciales del proyecto de la nube acá (sin `.vercel/`, sin CLI de
+     Supabase, sin `~/.supabase/access-token`; `.env.local` apunta a
+     127.0.0.1). Mientras no se aplique allá, **el aviso no llega solo.**
+     El paso a paso para hacerlo a mano, con las consultas de verificación
+     ya escritas: **`docs/aplicar-en-la-nube.md`**.
+   - Y ojo: el endpoint resuelve la familia **desde el token**, así que es
+     **un job de `pg_cron` por familia**. Hoy hay una sola.
 
 ---
 
@@ -773,6 +886,8 @@ y la base.
 - [ ] Ningún texto visible nuevo fuera de `lib/i18n/en.ts` + `es.ts` (§5.7)
 - [ ] `lib/supabaseAdmin.ts` no entró a ningún `'use client'`
 - [ ] Si tocaste el schema: migración **nueva**, con RLS y GRANTs
+- [ ] Si tocaste layout: barrido a 390 y 1440 px, en los dos temas y los dos
+      idiomas, con 0 scroll horizontal y 0 desborde nuevo
 - [ ] Si algo quedó sin verificar, lo dijiste explícitamente
 - [ ] Si vas a pushear a `main`: versión subida + entrada en `CHANGELOG.md`
       (§0.1 — sin excepción)

@@ -424,6 +424,8 @@ describe('/api/push/nursing-check — el aviso', () => {
       sent: 2,
       failed: 0,
       removed: 0,
+      forbidden: 0,
+      vapidSuspect: false,
       skipped: 0,
       released: 0,
     })
@@ -631,5 +633,183 @@ describe('/api/push/nursing-check — el aviso', () => {
       process.env.VAPID_PRIVATE_KEY = saved
       await stopAllOpen(a.babyId)
     }
+  })
+})
+
+// ---------------------------------------------------------------- 403
+describe('/api/push/nursing-check — 403 del servicio de push', () => {
+  const tag = 'forbid'
+  let live: Browser // esta sí recibe
+  let dead: Browser // esta responde 403 siempre
+
+  beforeAll(async () => {
+    live = push.browser(`/${tag}/live`)
+    dead = push.browser(`/${tag}/dead`)
+  })
+  afterAll(async () => {
+    push.statusFor.delete(`/${tag}/live`)
+    push.statusFor.delete(`/${tag}/dead`)
+    await admin.from('push_subscriptions').delete().like('endpoint', `${push.origin}/${tag}/%`)
+  })
+
+  beforeEach(async () => {
+    await admin.from('push_subscriptions').delete().eq('family_id', a.familyId)
+    push.statusFor.delete(`/${tag}/live`)
+    push.statusFor.delete(`/${tag}/dead`)
+    await stopAllOpen(a.babyId)
+  })
+
+  async function streakOf(endpoint: string): Promise<number | null> {
+    const { data } = await admin
+      .from('push_subscriptions')
+      .select('consecutive_403')
+      .eq('endpoint', endpoint)
+      .maybeSingle()
+    return data ? (data.consecutive_403 as number) : null
+  }
+
+  it('selectivo: la que da 403 mientras la otra recibe se borra al TERCER chequeo', async () => {
+    await a.client.from('push_subscriptions').insert(row(a.familyId, a.userId, live))
+    await partner.client.from('push_subscriptions').insert(row(a.familyId, partner.userId, dead))
+    push.statusFor.set(`/${tag}/dead`, 403)
+
+    // Chequeo 1 — una sesión larga por chequeo: el aviso sale una vez por sesión.
+    await openNursing(a.babyId, 31)
+    const first = await (await check(checkA)).json()
+    expect(first).toMatchObject({
+      marked: 1,
+      sent: 1,
+      forbidden: 1,
+      vapidSuspect: false,
+      removed: 0,
+    })
+    expect(await streakOf(dead.subscription.endpoint)).toBe(1)
+    expect(await streakOf(live.subscription.endpoint)).toBe(0)
+    await stopAllOpen(a.babyId)
+
+    // Chequeo 2 — sigue viva, con la racha en 2.
+    await openNursing(a.babyId, 31)
+    const second = await (await check(checkA)).json()
+    expect(second).toMatchObject({ sent: 1, forbidden: 1, removed: 0, vapidSuspect: false })
+    expect(await streakOf(dead.subscription.endpoint)).toBe(2)
+    await stopAllOpen(a.babyId)
+
+    // Chequeo 3 — se borra SOLO la muerta.
+    await openNursing(a.babyId, 31)
+    const third = await (await check(checkA)).json()
+    expect(third).toMatchObject({ sent: 1, forbidden: 1, removed: 1, vapidSuspect: false })
+    expect(await streakOf(dead.subscription.endpoint)).toBeNull()
+    expect(await streakOf(live.subscription.endpoint)).toBe(0)
+    await stopAllOpen(a.babyId)
+  })
+
+  it('la racha es de chequeos SEGUIDOS: un envío que sale bien la devuelve a 0', async () => {
+    await a.client.from('push_subscriptions').insert(row(a.familyId, a.userId, live))
+    await partner.client.from('push_subscriptions').insert(row(a.familyId, partner.userId, dead))
+
+    push.statusFor.set(`/${tag}/dead`, 403)
+    await openNursing(a.babyId, 31)
+    await check(checkA)
+    expect(await streakOf(dead.subscription.endpoint)).toBe(1)
+    await stopAllOpen(a.babyId)
+
+    push.statusFor.set(`/${tag}/dead`, 403)
+    await openNursing(a.babyId, 31)
+    await check(checkA)
+    expect(await streakOf(dead.subscription.endpoint)).toBe(2)
+    await stopAllOpen(a.babyId)
+
+    // El servicio la vuelve a aceptar: la cuenta se reinicia y NO se borra.
+    push.statusFor.delete(`/${tag}/dead`)
+    await openNursing(a.babyId, 31)
+    const back = await (await check(checkA)).json()
+    expect(back).toMatchObject({ sent: 2, forbidden: 0, removed: 0 })
+    expect(await streakOf(dead.subscription.endpoint)).toBe(0)
+    await stopAllOpen(a.babyId)
+
+    // Y desde cero: un 403 más no alcanza para borrarla.
+    push.statusFor.set(`/${tag}/dead`, 403)
+    await openNursing(a.babyId, 31)
+    expect(await (await check(checkA)).json()).toMatchObject({ removed: 0, forbidden: 1 })
+    expect(await streakOf(dead.subscription.endpoint)).toBe(1)
+    await stopAllOpen(a.babyId)
+  })
+
+  it('todas a la vez: no borra ninguna, no toca las rachas y lo marca como VAPID', async () => {
+    await a.client.from('push_subscriptions').insert(row(a.familyId, a.userId, live))
+    await partner.client.from('push_subscriptions').insert(row(a.familyId, partner.userId, dead))
+    push.statusFor.set(`/${tag}/live`, 403)
+    push.statusFor.set(`/${tag}/dead`, 403)
+
+    // Tres chequeos seguidos con TODO en 403: si la regla fuera por suscripción
+    // y no por contraste, acá se habrían borrado las dos.
+    for (let i = 0; i < 3; i += 1) {
+      const id = await openNursing(a.babyId, 31)
+      const body = await (await check(checkA)).json()
+      expect(body).toMatchObject({
+        subscriptions: 2,
+        marked: 1,
+        sent: 0,
+        forbidden: 2,
+        vapidSuspect: true,
+        removed: 0,
+        // Nadie recibió: la marca vuelve y el próximo chequeo reintenta.
+        released: 1,
+      })
+      expect(await alertSentAt(id)).toBeNull()
+      expect(await streakOf(live.subscription.endpoint)).toBe(0)
+      expect(await streakOf(dead.subscription.endpoint)).toBe(0)
+      await stopAllOpen(a.babyId)
+    }
+
+    // Se arregla la VAPID del servidor (acá: el servicio vuelve a aceptar) y
+    // las dos siguen ahí para recibir.
+    push.statusFor.delete(`/${tag}/live`)
+    push.statusFor.delete(`/${tag}/dead`)
+    await openNursing(a.babyId, 31)
+    expect(await (await check(checkA)).json()).toMatchObject({
+      subscriptions: 2,
+      sent: 2,
+      forbidden: 0,
+      vapidSuspect: false,
+      removed: 0,
+    })
+    await stopAllOpen(a.babyId)
+  })
+
+  it('una sola suscripción en 403 nunca se borra sola: no hay con qué comparar', async () => {
+    await a.client.from('push_subscriptions').insert(row(a.familyId, a.userId, dead))
+    push.statusFor.set(`/${tag}/dead`, 403)
+    for (let i = 0; i < 4; i += 1) {
+      await openNursing(a.babyId, 31)
+      expect(await (await check(checkA)).json()).toMatchObject({
+        subscriptions: 1,
+        forbidden: 1,
+        vapidSuspect: true,
+        removed: 0,
+      })
+      await stopAllOpen(a.babyId)
+    }
+    expect(await streakOf(dead.subscription.endpoint)).toBe(0)
+  })
+
+  it('volver a suscribirse desde el navegador reinicia la racha', async () => {
+    await a.client.from('push_subscriptions').insert(row(a.familyId, a.userId, live))
+    await partner.client.from('push_subscriptions').insert(row(a.familyId, partner.userId, dead))
+    push.statusFor.set(`/${tag}/dead`, 403)
+    await openNursing(a.babyId, 31)
+    await check(checkA)
+    expect(await streakOf(dead.subscription.endpoint)).toBe(1)
+    await stopAllOpen(a.babyId)
+
+    // El otro padre toca "On" otra vez en ese teléfono: claves nuevas.
+    const cookie = await sessionCookie(partner.email)
+    const res = await subscriptionRoute(
+      'POST',
+      { ...dead.subscription, lang: 'en', baby_id: a.babyId },
+      cookie,
+    )
+    expect(res.status).toBe(200)
+    expect(await streakOf(dead.subscription.endpoint)).toBe(0)
   })
 })

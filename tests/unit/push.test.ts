@@ -18,6 +18,12 @@ import {
   parseSubscriptionBody,
 } from '@/lib/push/endpoint'
 import {
+  FORBIDDEN_STRIKES_BEFORE_DROP,
+  decideForbidden,
+  type SendOutcome,
+  type SubscriptionAttempt,
+} from '@/lib/push/retry'
+import {
   alertsState,
   applicationServerKey,
   sameKey,
@@ -481,5 +487,103 @@ describe('"On" cuando el server no contesta', () => {
     expect(res.state).toBe('off')
     expect(browser.state.subscribeCalls).toBe(1)
     expect((browser.state.sub as FakeSub).unsubscribed).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------- 403
+// La regla entera está en lib/push/retry.ts: un 403 no dice por sí solo si la
+// suscripción está muerta o si la VAPID del servidor está mal. Lo que lo dice
+// es el contraste con el resto del lote.
+
+const attempt = (id: string, outcomes: SendOutcome[], consecutive403 = 0): SubscriptionAttempt => ({
+  id,
+  consecutive403,
+  outcomes,
+})
+
+describe('403 del servicio de push', () => {
+  it('sin ningún intento no decide nada', () => {
+    const d = decideForbidden([attempt('a', []), attempt('b', [])])
+    expect(d).toEqual({ vapidSuspect: false, drop: [], strike: [], reset: [], forbidden: 0 })
+  })
+
+  it('403 en una mientras a otra le llega: suma, no borra', () => {
+    const d = decideForbidden([attempt('muerta', ['forbidden']), attempt('viva', ['ok'])])
+    expect(d.vapidSuspect).toBe(false)
+    expect(d.forbidden).toBe(1)
+    expect(d.strike).toEqual([{ id: 'muerta', consecutive403: 1 }])
+    expect(d.drop).toEqual([])
+  })
+
+  it('al tercer chequeo seguido se borra esa suscripción, y solo esa', () => {
+    const d = decideForbidden([
+      attempt('muerta', ['forbidden'], 2),
+      attempt('viva', ['ok']),
+      attempt('recien', ['forbidden'], 0),
+    ])
+    expect(d.drop).toEqual(['muerta'])
+    expect(d.strike).toEqual([{ id: 'recien', consecutive403: 1 }])
+    expect(d.vapidSuspect).toBe(false)
+  })
+
+  it('el umbral es 3 y no 2: con racha 1 todavía no se borra', () => {
+    const d = decideForbidden([attempt('x', ['forbidden'], 1), attempt('viva', ['ok'])])
+    expect(d.drop).toEqual([])
+    expect(d.strike).toEqual([{ id: 'x', consecutive403: 2 }])
+    expect(FORBIDDEN_STRIKES_BEFORE_DROP).toBe(3)
+  })
+
+  it('TODAS en 403: no borra ninguna ni toca las rachas — es la VAPID', () => {
+    const d = decideForbidden([
+      attempt('a', ['forbidden'], 2),
+      attempt('b', ['forbidden'], 2),
+      attempt('c', ['forbidden'], 2),
+    ])
+    expect(d.vapidSuspect).toBe(true)
+    expect(d.drop).toEqual([])
+    expect(d.strike).toEqual([])
+    expect(d.reset).toEqual([])
+    expect(d.forbidden).toBe(3)
+  })
+
+  it('una sola suscripción en 403 también es "todas": no hay con qué comparar', () => {
+    const d = decideForbidden([attempt('sola', ['forbidden'], 2)])
+    expect(d.vapidSuspect).toBe(true)
+    expect(d.drop).toEqual([])
+  })
+
+  it('un envío OK devuelve la racha a 0 — son chequeos SEGUIDOS', () => {
+    const d = decideForbidden([attempt('vuelve', ['ok'], 2), attempt('otra', ['forbidden'])])
+    expect(d.reset).toEqual(['vuelve'])
+  })
+
+  it('no gasta un update si la racha ya estaba en 0', () => {
+    const d = decideForbidden([attempt('limpia', ['ok'], 0), attempt('otra', ['forbidden'])])
+    expect(d.reset).toEqual([])
+  })
+
+  it('403 mezclado con errores de red y sin ningún OK: no suma ni resetea', () => {
+    const d = decideForbidden([attempt('a', ['forbidden'], 1), attempt('b', ['failed'])])
+    expect(d.vapidSuspect).toBe(false)
+    expect(d.drop).toEqual([])
+    expect(d.strike).toEqual([])
+    expect(d.reset).toEqual([])
+  })
+
+  it('a la que le llegó al menos un aviso de varios está viva', () => {
+    const d = decideForbidden([
+      attempt('mixta', ['forbidden', 'ok'], 2),
+      attempt('mala', ['forbidden', 'forbidden'], 0),
+    ])
+    expect(d.reset).toEqual(['mixta'])
+    expect(d.strike).toEqual([{ id: 'mala', consecutive403: 1 }])
+    expect(d.drop).toEqual([])
+  })
+
+  it('un 410 no cuenta como 403: lo borra el otro camino', () => {
+    const d = decideForbidden([attempt('ida', ['gone'], 2), attempt('viva', ['ok'])])
+    expect(d.forbidden).toBe(0)
+    expect(d.drop).toEqual([])
+    expect(d.strike).toEqual([])
   })
 })
