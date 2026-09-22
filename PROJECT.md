@@ -103,21 +103,76 @@ whenever that sync gets built.
   notes, `caldav_uid` (for future Hub sync)
 - `monitor_events` — sound alerts / motion events pushed from the NUC
   (event metadata only, never media)
-- **Row Level Security enabled on every table** — a user can only
-  see/edit data for babies belonging to a family they're a member of
+- `push_subscriptions` (`0009`) — one row per browser that asked for
+  nursing alerts, scoped by `family_id` directly, visible only to the
+  parent who created it
+- **Row Level Security enabled on every table** — 13 of them as of
+  `0009` — a user can only see/edit data for babies belonging to a
+  family they're a member of
 
 **Auth:** Supabase Auth, email/password, via `/login`
 
-**Dashboard (`/dashboard`)** — the 3am screen. Every control is a
-52px-min touch target, and every write surfaces its error instead of
-failing silently:
-- Breastfeeding: start/stop with a live stopwatch, tracks left/right,
-  and suggests the side that wasn't used last
-- Bottle (with optional ml) and solids
+**Dashboard (`/dashboard`)** — the 3am screen, **three cards since
+2026-09-22**: Feeding, Diaper, Sleep. Every control is a 52px-min touch
+target, and every write surfaces its error instead of failing silently:
+- Feeding: breastfeeding start/stop with a live stopwatch (tracks
+  left/right, suggests the side that wasn't used last), bottle with
+  optional ml, and solids. The card's line is the most recent of the
+  two — a bottle or a finished nursing session
 - Diapers: wet / dirty / both
 - Sleep: start/stop with a live stopwatch; a session the NUC opened via
   `/api/ingest` shows as "detected" and can be closed by hand
-- Next upcoming appointment
+- Each card ends in "Totals and log →", to its section page
+
+What **left** the dashboard on 2026-09-22: the Today timeline (it still
+exists — `buildActivity`, now read by `/history` and by the section
+pages), the next-appointment card (Doctor has it) and "Log a missed
+session" (see the section pages below). "Next feeding" is no longer
+predicted while a nursing session is running.
+
+**`/feeding`, `/diapers`, `/sleep`** (2026-09-22) — one shared screen,
+`components/SectionPage.tsx`, three 7-line pages:
+- Totals for **today** and the **last 7 days** (today plus the 6 days
+  before it, household timezone): feedings by kind, bottle total, time
+  at the breast; diapers by kind; time asleep and naps. The maths is
+  `lib/kpis.ts`, pure functions with no clock and no database, so it is
+  unit-tested under four timezones. A session counts for the part of it
+  that falls inside the window, so last night's sleep gives today its
+  hours after midnight
+- The full log underneath, with per-entry edit and delete (soft-delete
+  via `voided_at`, one panel open at a time, focus returns to Edit)
+- **"Log a past one"**: one entry with the time it really happened, and
+  for sessions a "Finished / Still going" choice — "Still going" opens a
+  session that started a while ago and is blocked if one is already
+  running
+- Reads are `feedingsSince` / `nursingSince` / `diapersSince` /
+  `sleepSince` in `lib/db.ts`, with **no `limit`** (a total cut at the
+  newest N rows would be quietly wrong)
+- All three are in `middleware.ts`, in `lib/offlinePages.ts` and in the
+  service worker's precache (`amelia-v4`), so they open offline like the
+  rest
+
+**Nursing alerts** (2026-09-22) — a web push notification when a nursing
+session has been running for 30 minutes and nobody stopped it:
+- Migration `0009_push.sql`: `push_subscriptions` (RLS and GRANTs in the
+  same migration, scoped by `family_id` directly — the phase-2 shape),
+  `nursing_sessions.long_alert_sent_at`, and a `push_check` scope on
+  `device_tokens`
+- Turned on per device from the settings gear
+  (`components/NursingAlerts.tsx`); it says "On" only once the browser
+  subscription and the server row both exist, and explains itself where
+  it can't be turned on (no push support, iOS before the app is
+  installed, notifications blocked, server without keys)
+- `/api/push/subscription` runs as the signed-in parent (anon key +
+  session cookies, `lib/supabaseRoute.ts`) so everything goes through
+  RLS. `/api/push/nursing-check` runs with `service_role` and
+  authenticates with a per-device token of scope `push_check`
+- Sent **once per session**: an atomic
+  `update … where long_alert_sent_at is null returning` claims it, and
+  if no send succeeded the mark is released so the next check retries
+- The notification is written in the language stored with each
+  subscription, since the app may be closed when it arrives
+- **Nothing calls the check yet** — see "What's NOT built yet"
 
 **`/growth`:** add and list measurements, edit and delete per entry.
 Entry defaults to lb/oz + in (what the pediatrician's office says out
@@ -159,8 +214,10 @@ Hub surface first and a standalone app second:
   2026-09-20:** this repo had zero tests in it while claiming otherwise.
 - `lib/useBaby.ts` — auth guard + current baby; the place the
   caregiver role check lands in phase 2.
-- Dashboard has a **Today** timeline, merged client-side from this
-  app's tables. It is shaped to become one read of `core.activity`.
+- The **activity timeline** is merged client-side from this app's
+  tables (`buildActivity` in `lib/db.ts`) and is shaped to become one
+  read of `core.activity`. It used to be the dashboard's "Today"; since
+  2026-09-22 it is what `/history` and the three section pages render.
 
 **Installable, and it survives bad wifi.** `app/manifest.ts` +
 `public/sw.js` make it an installed app on a phone home screen and a
@@ -199,6 +256,24 @@ database) — useful for quickly showing the design, not for real use.
   *(Editing and retracting logged entries — feedings, diapers, nursing,
   sleep, pumping, and now growth measurements (`0008`) — IS built.
   `lib/db.ts` has `update*`/`void*` for all of them.)*
+- **Whatever calls `/api/push/nursing-check` every minute.** The endpoint
+  is built and tested, but nothing calls it, so **the nursing alert does
+  not arrive on its own**. Nothing on this server can be reused for it:
+  the app doesn't run here at all (no `next`, no pm2, no systemd, no
+  container — only the local Supabase stack). The options, none picked:
+  the house box (NUC or HA Green) with a one-line `curl` per minute;
+  Vercel Cron (Hobby runs once a day, which is useless — Pro runs per
+  minute, which is why the endpoint also answers `GET`); or
+  `pg_cron` + `pg_net` in the Hub's Supabase. Open question,
+  `CLAUDE.md` §7.6.
+- What this server **cannot** test about push, and therefore is not
+  claimed to work: Chrome stable and Android, APNs/iOS (including the
+  "add to Home Screen" flow), Firefox, a locked phone or a closed app,
+  TTL and `Topic` with the device disconnected, deletion on 404/410
+  against a real push service, and the notification **click** itself
+  (`clients.focus()`/`openWindow()` are refused without a real user
+  gesture). What was tested end to end is full Chromium against the real
+  push service.
 - Idempotency on the two device endpoints. A retried request (the NUC's
   HA automation, or a double-tap on the Shortcut) still writes twice —
   two rows in `monitor_events`, or two open sleep/nursing sessions ⇒
@@ -267,11 +342,30 @@ here gets built in a direction that has to be undone:
 - Devices authenticate with their own **hashed per-device token**
   (`device_tokens`, ADR 0005). **Implemented in `0007`** (21 sep 2026):
   each token belongs to one family, is optionally pinned to one baby,
-  and carries scopes (`ingest`, `quick_nurse`). The baby a device writes
+  and carries scopes (`ingest`, `quick_nurse`, and `push_check` since
+  `0009`). The baby a device writes
   to is resolved from the token and can never leave its family — closes
   findings C1 and C2. An idempotency key on the event is still not
   implemented; written up as
   `proposals/device-tokens-and-idempotency.md` §4.
+- **Push keys (2026-09-22).** The VAPID pair is split on purpose:
+  `NEXT_PUBLIC_VAPID_PUBLIC_KEY` is genuinely public (the browser needs
+  it to subscribe), while `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT` are
+  **server-only** and never carry the `NEXT_PUBLIC_` prefix. They are
+  read only from `lib/push/server.ts`, which route handlers import and
+  no `'use client'` file can. Locally `pnpm db:env` generates the pair
+  with `scripts/vapid-keys.mjs` **only if it is missing** — overwriting
+  it would silently kill every subscription made with the old one.
+- **`push_subscriptions` is scoped by `family_id` directly** (not a join
+  through `baby_id` — the phase-2 shape), with RLS in the same migration
+  that creates it: each parent sees, changes and deletes only their own
+  rows, and only within a family they belong to. The other parent in the
+  same family cannot read this phone's endpoint. `anon` is revoked
+  everything; `authenticated` gets exactly select/insert/update/delete.
+  The endpoint URL is validated against an allowlist of push services
+  both when it is stored and before anything is sent to it, because the
+  server makes a POST to that URL (anti-SSRF), and a row written
+  straight through PostgREST never passes through the app's route.
 - 2FA on Supabase / Vercel / GitHub accounts, once those exist
 
 ### What changed on 2026-09-20
@@ -281,7 +375,8 @@ over the whole repo. What it closed:
 
 - **Server-side auth guard.** `middleware.ts` now redirects a signed-out
   visitor away from `/dashboard`, `/pumping`, `/growth`, `/appointments`
-  and `/history` before anything renders. RLS is still what protects the
+  and `/history` — and, since 2026-09-22, `/feeding`, `/diapers` and
+  `/sleep` — before anything renders. RLS is still what protects the
   *data*; this fixes the flash of app shell on a shared wall screen.
 - **Device endpoints hardened.** Constant-time secret comparison, a
   ceiling of 20 attempts per minute per source IP, full payload

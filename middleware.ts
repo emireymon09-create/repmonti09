@@ -10,7 +10,17 @@ import { NextResponse, type NextRequest } from 'next/server'
  * compartida le mostraba el esqueleto de la app a cualquiera que pasara. Y
  * toda ruta nueva que se olvidara del hook nacía desprotegida.
  */
-const PROTECTED = ['/dashboard', '/pumping', '/growth', '/appointments', '/history', '/version']
+const PROTECTED = [
+  '/dashboard',
+  '/feeding',
+  '/diapers',
+  '/sleep',
+  '/pumping',
+  '/growth',
+  '/appointments',
+  '/history',
+  '/version',
+]
 
 export async function middleware(req: NextRequest) {
   const needsAuth = PROTECTED.some((p) => req.nextUrl.pathname.startsWith(p))

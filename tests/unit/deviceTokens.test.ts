@@ -54,9 +54,10 @@ describe('readBearer', () => {
 })
 
 describe('isDeviceScope', () => {
-  it('solo los dos scopes que existen', () => {
+  it('solo los tres scopes que existen', () => {
     expect(isDeviceScope('ingest')).toBe(true)
     expect(isDeviceScope('quick_nurse')).toBe(true)
+    expect(isDeviceScope('push_check')).toBe(true)
     expect(isDeviceScope('admin')).toBe(false)
   })
 })

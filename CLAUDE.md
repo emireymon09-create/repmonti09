@@ -150,12 +150,44 @@ lib/lastSeen.ts    Copia en localStorage (`amelia:seen:*`) de las últimas filas
 lib/offlinePages.ts   Lista de páginas que el service worker precalienta tras
                    iniciar sesión (mensaje 'warm' a public/sw.js).
 lib/format.ts      Fechas/horas en la TZ del hogar + conversión de unidades.
+lib/kpis.ts        Totales de /feeding, /diapers y /sleep: funciones PURAS (sin
+                   reloj ni base). Ventanas "hoy" y "últimos 7 días" en la TZ
+                   del hogar, solapamiento de sesiones, `lastFeedingEvent` (la
+                   leyenda del dashboard) y `checkPastRange` (validación de
+                   "Log a past one"). Una fila en cola cuenta y marca `pending`.
 lib/types.ts       Tipos de fila (stand-in de los types generados de fase 2).
 lib/tokens.ts      Design tokens en TS, espejo de app/globals.css.
 lib/supabaseClient.ts   anon key — browser. Protegido por RLS.
 lib/supabaseAdmin.ts    service_role — SOLO server. Salta RLS.
+lib/supabaseRoute.ts    Cliente de un route handler que actúa COMO EL PADRE que
+                   llama: anon key + la sesión de sus cookies ⇒ todo pasa por
+                   RLS. Lo usa /api/push/subscription. Nunca service_role.
+lib/push/nursing.ts  El aviso de toma larga, en su parte PURA: umbral
+                   (LONG_NURSING_MINUTES = 30), qué sesión califica, a quién se
+                   le manda y qué dice (payload traducido, tag y Topic por
+                   sesión, TTL de 1 h). Sin red ni base.
+lib/push/endpoint.ts  Validación del endpoint de push (allowlist de hosts, solo
+                   https — anti-SSRF) y del body de suscripción.
+lib/push/server.ts   SOLO server: las queries del push (suscripciones, marca
+                   atómica de la sesión) y los envíos con web-push. Ver §5.3.
+lib/push/client.ts   Estado del control "Nursing alerts" en este navegador
+                   (off/on/unknown/unsupported/install/unavailable/denied),
+                   suscribir/desuscribir, idioma, y soltar la suscripción local
+                   al iniciar o cerrar sesión.
+app/api/push/subscription/route.ts   POST/DELETE de la suscripción de ESTE
+                   dispositivo, con la sesión del padre (RLS).
+app/api/push/nursing-check/route.ts  POST/GET, token de dispositivo scope
+                   `push_check`. Quién lo llama cada minuto: §7.
+scripts/vapid-keys.mjs   Genera un par VAPID (P-256, base64url). Lo llama
+                   `pnpm db:env` solo si faltan: nunca pisa una clave existente.
 app/globals.css    TODO el CSS del proyecto.
-components/ui.tsx  Page, Grid, Card, Label, Btn, Banner, Nav.
+components/ui.tsx  Page, Grid, Card, Label, Btn, Nav — y re-exporta Banner.
+components/Banner.tsx   Banner (.banner error/ok/warn). En archivo propio para
+                   que NursingAlerts lo use sin importar ui.tsx de vuelta.
+components/SectionPage.tsx   La pantalla compartida de /feeding, /diapers y
+                   /sleep: KPIs de hoy y de 7 días, log completo con editar y
+                   borrar (un panel a la vez) y "Log a past one".
+components/NursingAlerts.tsx   El control "Nursing alerts" del engranaje.
 components/SyncStatus.tsx   SyncBar, SyncStatus, SeenNote (aviso de copia
                    guardada) y SyncErrorBanner (rechazo, con Descartar).
 components/VersionHistory.tsx   Pantalla de /version ('use client'). La página
@@ -331,6 +363,14 @@ builds no reproducibles se cerró el 20 sep 2026.
 
 - **Las páginas nunca arman una query.** Todo pasa por `lib/db.ts`. Eso
   es lo que hace que la migración de fase 2 sea un solo archivo editado.
+- **Excepción acordada (22 sep 2026): las queries de servidor del push viven
+  en `lib/push/server.ts`.** `lib/db.ts` es `'use client'` (primera línea del
+  archivo): meterle una query que corre en un route handler con
+  `service_role` lo arrastraría al bundle del navegador. Así que el push tiene
+  su propia puerta, `lib/push/server.ts`, que es *solo server*. La regla de
+  fondo no cambia: **las rutas siguen sin armar una query**
+  (`app/api/push/*/route.ts` solo llama a `lib/push/server.ts`), y en fase 2
+  hay dos archivos que editar en vez de uno.
 - **Nunca importes `lib/supabaseAdmin.ts` desde un archivo `'use client'`.**
   Lleva la `service_role` key, que salta RLS por completo. Solo route
   handlers.
@@ -407,11 +447,15 @@ Desde el 21 sep 2026 la app está en inglés y en español (`lib/i18n/`).
 
 ## 6. Estado real — qué está y qué no
 
-**Construido y funcionando:** auth, dashboard completo (lactancia,
-biberón, sólidos, pañales, sueño, predicciones), Milk (extracción),
+**Construido y funcionando:** auth, dashboard **de tres tarjetas** (Comida /
+Pañal / Dormir — 22 sep 2026; ya **no** tiene el feed de Today, la tarjeta de
+próximo turno ni "Log a missed session"), las **tres páginas de sección**
+`/feeding`, `/diapers` y `/sleep`, Milk (extracción),
 Growth con editar/borrar (0008), Doctor, History con editar/borrar, PWA instalable, cola offline,
-RLS en las 11 tablas (y RLS y sin acceso para `anon`/`authenticated` — solo
-`service_role` — en `device_tokens`, la 12ª), los dos
+**RLS en las 13 tablas** (las 11 originales; `device_tokens`, la 12ª, con RLS
+y **sin acceso** para `anon`/`authenticated` — solo `service_role`; y
+`push_subscriptions`, la 13ª desde 0009, con RLS por `family_id` **directo**,
+`revoke all` a `anon` y las cuatro operaciones a `authenticated`), los dos
 endpoints de dispositivo, **tokens por dispositivo** (`device_tokens`,
 0007 — cada dispositivo tiene el suyo, revocable, clavado a una familia y
 opcionalmente a un bebé; reemplazó a los secretos compartidos
@@ -426,7 +470,38 @@ inglés — 21 sep 2026, `lib/i18n/`), **apertura sin conexión** (copia
 guardada por dispositivo con aviso de cuándo es, páginas precalentadas por el
 service worker tras iniciar sesión — 22 sep 2026), **sync robusta** (replay
 idempotente, lock entre pestañas, reintento solo y descarte de un rechazo — 22
-sep 2026), y **una suite de tests**.
+sep 2026), **aviso push de toma de pecho larga** (engranaje → Nursing alerts,
+por dispositivo; 0009 + `lib/push/` + `web-push`/VAPID — 22 sep 2026, **pero
+nadie llama al check todavía**, ver §7), y **una suite de tests**.
+
+**Las tres páginas de sección** (`app/{feeding,diapers,sleep}/page.tsx`, las
+tres montan `components/SectionPage.tsx`): KPIs de **hoy** y de los **últimos
+7 días** (hoy + los 6 anteriores, TZ del hogar; `lib/kpis.ts`, puro), el log
+completo debajo con editar y borrar (soft-delete `voided_at`, un panel a la
+vez, el foco vuelve al Edit) y **"Log a past one"** con "Finished / Still
+going" — una sesión en curso con inicio pasado, bloqueada si ya hay una
+activa. Las lecturas son `feedingsSince` / `nursingSince` / `diapersSince` /
+`sleepSince` en `lib/db.ts`, **sin `limit`** (un total cortado en las N filas
+más nuevas sería silenciosamente falso) y trayendo las sesiones que cruzan el
+inicio de la ventana. Las tres están en `middleware.ts`, en
+`lib/offlinePages.ts` y en el `PRECACHE` de `public/sw.js` (que pasó a
+`amelia-v4`).
+
+**El aviso push**, en concreto: migración `0009_push.sql` —
+`push_subscriptions` (RLS y GRANTs en la misma migración, scope por
+`family_id` directo), `nursing_sessions.long_alert_sent_at` y el scope
+`push_check` en `device_tokens`. Claves VAPID:
+`NEXT_PUBLIC_VAPID_PUBLIC_KEY` es pública a propósito (el navegador la
+necesita para suscribirse); `VAPID_PRIVATE_KEY` y `VAPID_SUBJECT` son **solo
+server**, y `pnpm db:env` las genera con `scripts/vapid-keys.mjs` solo si
+faltan (pisarlas mata todas las suscripciones que ya hay).
+`/api/push/subscription` corre con la **sesión del padre** (anon + cookies,
+`lib/supabaseRoute.ts`) ⇒ todo pasa por RLS; `/api/push/nursing-check` corre
+con `service_role` y se autentica con un token de dispositivo de scope
+`push_check`. El aviso sale **una sola vez por sesión** gracias a un
+`update … where long_alert_sent_at is null returning`, y si ningún envío salió
+bien la marca **se devuelve a null** (campo `released` de la respuesta) para
+que el próximo check reintente.
 
 **Alcance exacto de los tests** (que no es "hay tests" a secas):
 
@@ -439,10 +514,14 @@ sep 2026), y **una suite de tests**.
 | `buildActivity` de `lib/db.ts` — texto del feed de Today y de History (sin repetir el tipo); sesiones de lactancia y sueño en curso (marcadas, primero en Today aunque empezaran antes de medianoche); valores que ningún diccionario conoce | `tests/unit/activity.test.ts` |
 | `lib/lastSeen.ts` — copia guardada por página y bebé, `forgetSeen`, `seenState`/`lastGood` ("saved" / "nothing"), corte a mitad de sesión con el navegador "online", storage que se niega | `tests/unit/lastSeen.test.ts` |
 | `keepLastGood` y `mergePending` de `lib/db.ts` — qué se ve offline: últimas filas buenas por lectura, cola encima, un alta encolada que el server ya devolvió no se duplica | `tests/unit/pending.test.ts` |
+| `lib/kpis.ts` — ventanas de hoy y de los últimos 7 días (incluidos los dos cambios de horario y que "hace 6 días" son días de calendario, no 6×24 h), solapamiento de una sesión con la ventana; totales de comida, pañal y sueño; una fila en cola cuenta y marca `pending`, un borrado en cola deja de contar y también marca, una fila en cola fuera de la ventana no marca; `lastFeedingEvent` (ignora una sesión en curso); `checkPastRange` (futuro, fin antes del inicio, vacío); `formatDuration` | `tests/unit/kpis.test.ts` |
+| `lib/push/{nursing,endpoint,client}.ts` — umbral de 30 min exacto e inclusivo, con offset horario y sin minutos negativos; una sesión terminada, borrada o ya avisada no califica; el payload en los dos idiomas, con tag y Topic por sesión; un `lang` guardado desconocido cae en inglés; a quién se le manda (un envío por endpoint, la fila más reciente, nadie que ya no sea de la familia); la allowlist de endpoints (nada de http, hosts internos, look-alikes, puertos ni credenciales); el body de suscripción campo por campo; y el estado del control cuando la suscripción del navegador es de otro par de claves VAPID o el server no contesta | `tests/unit/push.test.ts` |
 | `lib/i18n` — `es` con exactamente las claves de `en`, sin vacías ni sin traducir y con las mismas variables; `translate` (interpolación, variable faltante visible, plurales); detección de idioma y elección guardada; que el script de `lib/i18n/boot.ts` decida igual que `resolveLang()`; `lib/format.ts` y `buildActivity` en español; `translate` con una clave armada desde datos que no existe; `describeWrite` | `tests/unit/i18n.test.ts` |
 | Aislamiento entre familias por RLS, por el camino real (PostgREST + JWT) | `tests/integration/rls.test.ts` |
 | Corregir y retractar `growth_measurements` sin cruzar de familia | `tests/integration/rls.test.ts` |
 | Los dos endpoints de dispositivo: auth, validación, rate limit, scoping | `tests/integration/{ingest,quick-nurse}.test.ts` |
+| Las lecturas `*Since` de `lib/db.ts` por el camino real: la sesión que cruza el inicio de la ventana y la que sigue en curso vienen, lo viejo y lo borrado no; tomas y pañales desde el inicio inclusive; sin `limit` (más de 20 filas en la ventana vienen todas); con RLS, pedir el bebé de la otra familia no devuelve nada | `tests/integration/since.test.ts` |
+| Push, contra la base y un servicio de push falso local que **descifra** el payload: RLS de `push_subscriptions` (cada padre solo su fila — ni el otro padre de la misma familia la ve; nadie inserta a nombre de otro ni con la familia de otro; `anon` no lee nada; el CHECK de https); `/api/push/subscription` (401 sin sesión, 400 con body inválido, guarda con la familia del padre y actualiza el idioma sin duplicar, 403 con un bebé de otra familia, DELETE); y `/api/push/nursing-check`: quién entra (sin token 401, revocado 401, sin el scope 403), marca **una sola vez** y manda cifrado y firmado en el idioma de cada dispositivo, dos checks en paralelo → una marca y un envío por endpoint, GET igual que POST, el umbral (29 min no, 31 sí), no cruza de familia ni de bebé, un 410 borra la suscripción, un 500 no la borra y **saca la marca** para reintentar, y sin claves VAPID no marca nada (503) | `tests/integration/push.test.ts` |
 | Replay de la cola por el camino real (`sendOpWith` de `lib/db.ts`): alta repetida y dos "pestañas" a la vez → sin error y una fila (`ON CONFLICT (id) DO NOTHING`); el reenvío no pisa una edición; la escritura online sigue siendo insert común (un id repetido es error); señal abortada = offline y no escribe; con RLS real no cruza de familia (alta contra el bebé de otra familia rechazada; reusar el id de una fila ajena no la toca) | `tests/integration/queue-replay.test.ts` |
 
 **NO hay tests de componentes ni de páginas.** Lo que se cubre es `lib/`
@@ -459,6 +538,51 @@ y la base.
   hoy todos los miembros tienen los mismos permisos)
 - Idempotencia en los endpoints de dispositivo ⇒
   `proposals/device-tokens-and-idempotency.md`
+- **El disparo periódico de `/api/push/nursing-check`.** El endpoint existe y
+  funciona, pero **nada lo llama**: en este VPS no hay ni un proceso de la app
+  ni un scheduler que se pueda reusar (verificado: sin `next`, sin pm2, sin
+  systemd, sin contenedor de la app). Mientras no se decida quién lo llama, el
+  aviso **no llega solo**. Es la pregunta abierta §7.6.
+- **El clic en la notificación quedó SIN VERIFICAR** (22 sep 2026). El handler
+  `notificationclick` de `public/sw.js` corre y cierra la notificación, pero
+  `clients.focus()` / `openWindow()` están prohibidos sin una activación de
+  usuario real, y CDP no ofrece un clic de notificación: la navegación a
+  `/dashboard` no se pudo ejecutar acá. Leído, no probado.
+- **Lo que este VPS no puede probar del push** (declarado por el auditor, no
+  es "anda"): Chrome estable y Android, APNs/iOS (incluido el flujo "agregar a
+  la pantalla de inicio"), Firefox, el teléfono bloqueado o con la app
+  cerrada, el TTL y el header `Topic` con el dispositivo desconectado, y el
+  borrado por 404/410 contra el servicio real (FCM acepta y descarta). Lo que
+  sí se probó de punta a punta es Chromium completo contra el servicio de push
+  real (`jmt17.google.com`) en este servidor.
+- **"Una sola sesión abierta" se defiende solo en el cliente**, y solo contra
+  lo que la página tiene cargado (filas del server + cola). Sin conexión y sin
+  copia guardada, el bloqueo no ve una sesión abierta que exista en el server:
+  podrían abrirse dos. Es el mismo guard que `/dashboard` ya tenía antes de
+  este pase; no hay constraint en la base.
+- **`sendOne` trata un 403 del servicio de push como `failed`, no como
+  `gone`** (`lib/push/server.ts`): no borra la fila. Consecuencia conocida: si
+  las claves VAPID se rotan, la suscripción vieja de un dispositivo que nunca
+  vuelve a tocar "On" se reintenta en **cada** check. Convertir el 403 en
+  borrado sería peor (una VAPID mal configurada borraría todas las
+  suscripciones de la familia).
+- **Una pestaña abandonada sin cerrar sesión deja su fila** en
+  `push_subscriptions`. Se limpia al cerrar sesión o cuando el servicio de
+  push la da por muerta (404/410).
+- **El check comparte el techo de intentos de `lib/deviceAuth.ts`** (20 por
+  minuto y por IP) con `/api/ingest` y `/api/quick/nurse`: un consumidor más
+  de un contador que ya tiene los problemas de §7.4.
+- **`/history` acepta guardar un fin anterior al inicio** al editar una
+  sesión. Es previo a este pase (`/history` no cambió de comportamiento acá);
+  las tres páginas nuevas **sí** validan, con `checkPastRange` de
+  `lib/kpis.ts`.
+- **La predicción "Next feeding" ya no se muestra durante una lactancia en
+  curso** (`app/dashboard/page.tsx`: la línea va dentro de `!activeNursing`).
+  Es consecuencia de juntar lactancia y biberón en una sola tarjeta; no fue
+  una decisión explícita.
+- **`components/SectionPage.tsx` quedó en ~1000 líneas** (995 el 22 sep 2026).
+  Seguimiento propuesto: extraer el panel de edición, que hoy está **copiado**
+  entre `SectionPage` y `/history`, no compartido.
 - *(Cerrado el 21 sep 2026: honestidad offline en `/growth`. Ahora usa
   `mergePending`: una alta, corrección o borrado encolados se ven con "Not
   synced yet" y desaparece la marca al sincronizar. Al investigarlo salió que
@@ -602,6 +726,10 @@ y la base.
    entradas vencidas. Y sigue sin haber idempotencia: el mismo evento
    mandado dos veces son dos filas. Ninguno implementado ⇒
    `proposals/device-tokens-and-idempotency.md` §4 y §6.
+   **Desde el 22 sep 2026 hay un consumidor más de ese techo:**
+   `/api/push/nursing-check` pasa por el mismo `authenticateDevice`, y está
+   pensado para llamarse **una vez por minuto**. Si el check y el NUC salen
+   detrás de la misma IP, comparten las 20 por minuto.
 5. **Cerrada el 21 sep 2026.** El CLI de Supabase no tiene forma de fijar el
    bind (evidencia E-3: el binario arma `-p puerto:puerto`, sin IP, y no hay
    clave de config que lo cambie). Se reemplazó por un `docker-compose.yml`
@@ -612,6 +740,23 @@ y la base.
    §2. `pnpm db:status`
    confirma `127.0.0.1:54321->8000/tcp` y `127.0.0.1:54322->5432/tcp`, sin
    ningún `0.0.0.0`. Ver `docs/seguridad-operacional.md` §6.
+6. **Quién llama a `/api/push/nursing-check` cada minuto — sin decidir**
+   (22 sep 2026). El endpoint está hecho y probado, pero **hoy no lo llama
+   nadie**, así que el aviso de toma larga **no llega solo**. En este VPS no
+   hay nada que reusar: no corre ningún proceso de la app (ni `next`, ni pm2,
+   ni systemd, ni contenedor), solo el stack de Supabase. Las opciones sobre
+   la mesa, ninguna elegida:
+   - **La caja de la casa** (NUC o HA Green) con un `curl` por minuto y un
+     token de scope `push_check`. Es la que menos piezas nuevas agrega, pero
+     empalma con la pregunta 2 (qué caja hace qué) y con el techo de intentos
+     de la 4.
+   - **Vercel Cron.** En el plan Hobby corre **una vez por día**: no sirve.
+     En Pro corre por minuto. Por eso el endpoint también responde a `GET`
+     con `Authorization: Bearer`.
+   - **`pg_cron` + `pg_net`** en el Supabase del Hub, que llamaría al endpoint
+     desde la base. Depende de que exista el proyecto compartido (ADR 0001).
+   La elección no cambia el endpoint; sí cambia dónde vive el token y quién lo
+   rota.
 
 ---
 

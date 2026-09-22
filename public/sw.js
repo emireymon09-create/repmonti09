@@ -20,13 +20,16 @@
  *     ways that look like the app is broken rather than offline.
  */
 
-const VERSION = 'amelia-v3'
+const VERSION = 'amelia-v4'
 const SHELL = `${VERSION}-shell`
 const ASSETS = `${VERSION}-assets`
 
 // Enough to boot every screen with no network.
 const PRECACHE = [
   '/dashboard',
+  '/feeding',
+  '/diapers',
+  '/sleep',
   '/growth',
   '/appointments',
   '/pumping',
@@ -138,4 +141,71 @@ self.addEventListener('message', (event) => {
     const urls = event.data.urls.filter((u) => PRECACHE.includes(u))
     event.waitUntil(Promise.allSettled(urls.map((url) => keepPage(url))))
   }
+})
+
+/*
+ * Push: the "nursing is running long" alert (lib/push/server.ts sends it).
+ * Only shows it — nothing here touches the caches above.
+ *
+ * Always shows SOMETHING: a push that ends without a notification counts
+ * against the site in Chrome (userVisibleOnly), so a payload that doesn't
+ * parse still gets a generic one. That fallback is in English: the worker
+ * has no dictionaries; the real alert comes already written in the
+ * device's language.
+ */
+const PUSH_ICON = '/icons/icon-192.png'
+
+/** Only a path on this origin: a push can't send the app somewhere else. */
+function sameOriginPath(value) {
+  try {
+    const url = new URL(typeof value === 'string' ? value : '/dashboard', self.location.origin)
+    return url.origin === self.location.origin ? url.pathname + url.search + url.hash : '/dashboard'
+  } catch {
+    return '/dashboard'
+  }
+}
+
+self.addEventListener('push', (event) => {
+  let data = null
+  try {
+    data = event.data ? event.data.json() : null
+  } catch {
+    data = null
+  }
+  const ok = data && typeof data.title === 'string' && data.title
+  const title = ok ? data.title : 'Amelia'
+  const options = {
+    body: ok && typeof data.body === 'string' ? data.body : 'Open Amelia to see what’s new.',
+    icon: PUSH_ICON,
+    badge: PUSH_ICON,
+    // Same tag = the same session's alert: a duplicate replaces it instead of
+    // stacking a second one, and doesn't buzz again.
+    tag: ok && typeof data.tag === 'string' ? data.tag : 'amelia',
+    renotify: false,
+    data: { url: sameOriginPath(ok ? data.url : undefined) },
+  }
+  event.waitUntil(self.registration.showNotification(title, options))
+})
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const path = sameOriginPath(event.notification.data && event.notification.data.url)
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (windows) => {
+      const mine = windows.find((w) => new URL(w.url).origin === self.location.origin)
+      if (mine) {
+        const focused = await mine.focus()
+        // navigate() only works on a window this worker controls.
+        if (new URL(focused.url).pathname !== path && 'navigate' in focused) {
+          try {
+            await focused.navigate(path)
+          } catch {
+            /* focused is enough */
+          }
+        }
+        return
+      }
+      await self.clients.openWindow(path)
+    }),
+  )
 })

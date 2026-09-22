@@ -45,6 +45,11 @@ export type NursingSession = {
   side: Side
   started_at: string
   ended_at: string | null
+  /**
+   * When the "nursing is running long" push went out (0009). Only the server
+   * check (lib/push/server.ts) reads or writes it; the pages don't select it.
+   */
+  long_alert_sent_at?: string | null
 }
 
 export type SleepSession = {
@@ -78,6 +83,22 @@ export type DoctorAppointment = {
   doctor_name: string | null
   notes: string | null
   completed: boolean
+}
+
+/**
+ * One device's push subscription (0009). Only the server reads these
+ * (lib/push/server.ts); RLS shows each parent only their own.
+ */
+export type PushSubscriptionRow = {
+  id: string
+  family_id: string
+  user_id: string
+  endpoint: string
+  p256dh: string
+  auth: string
+  lang: 'en' | 'es'
+  created_at: string
+  updated_at: string
 }
 
 /**

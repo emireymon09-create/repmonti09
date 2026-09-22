@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabaseClient'
 import { forgetSeen } from '@/lib/lastSeen'
+import { dropLocalAlerts } from '@/lib/push/client'
 import { Banner, Btn, Card, Page } from '@/components/ui'
 import { useT } from '@/lib/i18n/react'
 
@@ -41,6 +42,9 @@ export default function LoginPage() {
     // A new session starts clean: nothing another account left saved for
     // offline on this device (lib/lastSeen.ts).
     forgetSeen()
+    // Nor a push subscription it left in this browser: the menu would start
+    // at "On" with the previous account's alerts (lib/push/client.ts).
+    await dropLocalAlerts()
     router.push('/dashboard')
   }
 

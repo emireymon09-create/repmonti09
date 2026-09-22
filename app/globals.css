@@ -630,6 +630,29 @@ select.input {
   background: var(--c-accent);
   color: var(--c-on-accent);
 }
+/* Nursing alerts: a segment that can't act here (browser without push, a
+   switch in progress) reads as unavailable, same as a disabled menu item. */
+.seg-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+/* The line under a segment that says what it will do, or why it can't.
+   width 0 + min-width 100%: it wraps to the menu's width instead of
+   stretching the menu to the length of a long Spanish sentence. */
+.menu-note {
+  width: 0;
+  min-width: 100%;
+  font-size: var(--t-meta);
+  color: var(--c-muted);
+  margin: var(--s-2) 0 0;
+}
+.nav-menu-group .banner {
+  width: 0;
+  min-width: 100%;
+  box-sizing: border-box;
+  margin: var(--s-2) 0 0;
+  font-size: var(--t-meta);
+}
 
 /* The bottom-bar parts of the nav (below). Off everywhere else, so the
    tablet and wall nav render exactly as the pills above — except the gear,
@@ -869,10 +892,49 @@ select.input {
 
 /* --------------------------------------------------------------- dashboard */
 
-/* "Log a missed session…" and its time editor sit between the header and
-   the card grid; without this they touch the first row of cards. */
-.log-time {
-  margin-bottom: var(--col-gap);
+/* "Totals and log →" at the foot of each dashboard card: text, but a whole
+   touch target tall (the 44px floor is met at 52px, 84px on the wall). */
+.card-link {
+  min-height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+}
+
+/* --------------------------------------------------------------- section totals
+
+   /feeding, /diapers, /sleep: one card per window (Today, Last 7 days), each
+   a short list of label + number. A plain two-column list, not a row of
+   big-number tiles: at 3 AM it is read top to bottom, and the numbers line
+   up in a column (tabular) so today and the week compare at a glance. */
+.kpis {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin: var(--s-2) 0 0;
+}
+.kpis dt,
+.kpis dd {
+  padding: var(--s-2) 0;
+  border-bottom: 1px solid var(--c-line);
+  margin: 0;
+}
+.kpis dt {
+  font-size: var(--t-body);
+  color: var(--c-muted);
+}
+.kpis dd {
+  font-size: var(--t-value);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  padding-inline-start: var(--s-4);
+}
+.kpis dt:last-of-type,
+.kpis dd:last-of-type {
+  border-bottom: none;
+}
+/* A finished session's start–end · length, on its own line under the entry. */
+.feed-span {
+  display: block;
 }
 .page-head + .section-label {
   margin-top: 0;

@@ -4,6 +4,39 @@ Every version of Amelia, newest first. The current version is the `version`
 field in `package.json`; this file is the history. A test fails if the two
 disagree. Shown in the app under the settings gear → Version history.
 
+## [0.6.0] - 2026-09-22
+
+Today is down to three cards, each with its own page of totals, and this
+device can be told when nursing runs long.
+
+- Today now shows three cards — Feeding, Diaper and Sleep — each with the
+  last one that was logged and a link to its own page. The list of
+  everything logged today, and the next appointment, are no longer on
+  Today; the full list still lives on History, and appointments on Doctor.
+- New Feeding, Diaper and Sleep pages: how much today and over the last 7
+  days — feedings by kind, bottle total, time at the breast, diapers by
+  kind, time asleep and naps — with every entry underneath.
+- On those pages an entry can be corrected or removed, one at a time, and
+  a removed one stops counting toward the totals without disappearing
+  from the database.
+- "Log a past one" on each page replaces "Log a missed session" on Today,
+  and it can also log something that is still running — a nursing session
+  or a sleep that started a while ago and hasn't ended. It won't let you
+  open a second one while one is already running.
+- The totals say so when they include something that hasn't synced yet,
+  and show "—" instead of a made-up number when this device has nothing
+  saved and no connection.
+- The three new pages open without a connection, like the rest.
+- New in the settings gear: Nursing alerts. Turned on, this device gets a
+  notification when a nursing session has been running for 30 minutes and
+  nobody has stopped it — once per session, written in the language this
+  device is set to. It says why it can't be turned on where it can't
+  (a browser without notifications, an iPhone until Amelia is added to
+  the Home Screen, notifications blocked for the site). Signing out turns
+  it off on that device. **Not arriving by itself yet:** something has to
+  ask the server to check every minute, and that piece isn't set up.
+- Next feeding is no longer predicted while a nursing session is running.
+
 ## [0.5.0] - 2026-09-22
 
 The app opens without a connection, and syncing no longer gets stuck.

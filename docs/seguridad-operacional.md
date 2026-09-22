@@ -64,11 +64,11 @@ o queda caída.
 
 ## 5. Tokens de dispositivo
 
-Los dos endpoints de dispositivo (`/api/ingest`, `/api/quick/nurse`) se
-autentican con un token de la tabla `device_tokens` (migración `0007`), no con
+Los endpoints de dispositivo (`/api/ingest`, `/api/quick/nurse` y, desde
+`0009`, `/api/push/nursing-check`) se autentican con un token de la tabla `device_tokens` (migración `0007`), no con
 un secreto único y compartido. Cada token pertenece a **una** familia — y
 opcionalmente está clavado a **un** bebé de esa familia — y trae uno o más
-`scopes` (`ingest`, `quick_nurse`). La base guarda solo el hash sha-256; el
+`scopes` (`ingest`, `quick_nurse`, `push_check`). La base guarda solo el hash sha-256; el
 token en claro se muestra una sola vez, al crearlo.
 
 **Crear, listar, revocar** (`scripts/device-token.mts`, corre con
@@ -77,7 +77,7 @@ token en claro se muestra una sola vez, al crearlo.
 ```bash
 pnpm device-token families                                            # ver family_id / baby_id
 pnpm device-token create --family <uuid> [--baby <uuid>] --label <texto> \
-  --scope ingest|quick_nurse [--scope ...]
+  --scope ingest|quick_nurse|push_check [--scope ...]
 pnpm device-token list --family <uuid>
 pnpm device-token revoke --id <uuid>
 ```
@@ -214,7 +214,7 @@ Todavía no hay deploy (Vercel está previsto, no hecho). Cuando llegue:
 - [ ] `SUPABASE_SERVICE_ROLE_KEY` **sin** prefijo `NEXT_PUBLIC_`.
 - [ ] Crear los tokens de los dispositivos reales con `pnpm device-token`
       contra la base de producción (`pnpm device-token create --family <uuid>
-      [--baby <uuid>] --label <texto> --scope ingest|quick_nurse`) y
+      [--baby <uuid>] --label <texto> --scope ingest|quick_nurse|push_check`) y
       reconfigurar la automatización de Home Assistant y el Shortcut de iOS
       con esos tokens.
 - [ ] `pnpm audit` limpio.

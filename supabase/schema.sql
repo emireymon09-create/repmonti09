@@ -330,3 +330,51 @@ create policy "update growth_measurements" on growth_measurements
 
 -- Sin GRANT nuevo: 0005 ya otorgó update sobre todas las tablas de public a
 -- authenticated. Verificado por el test de integración, no supuesto.
+
+-- ---------- PUSH (0009) ----------
+-- Aviso push cuando una toma de pecho lleva demasiado tiempo abierta.
+-- Detalle y por qué de cada línea: supabase/migrations/0009_push.sql.
+
+create table push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  -- Scope directo por familia (no por join vía baby_id): fase 2 lo pide así.
+  family_id uuid not null references families(id) on delete cascade,
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  -- Siempre https; qué hosts se aceptan lo decide lib/push/endpoint.ts.
+  endpoint text not null check (endpoint ~ '^https://' and char_length(endpoint) <= 2048),
+  p256dh text not null check (char_length(p256dh) between 80 and 100),
+  auth text not null check (char_length(auth) between 16 and 32),
+  lang text not null default 'en' check (lang in ('en', 'es')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, endpoint)
+);
+
+create index push_subscriptions_family_id_idx on push_subscriptions (family_id);
+
+alter table push_subscriptions enable row level security;
+
+create policy "select own push_subscriptions" on push_subscriptions
+  for select using (user_id = auth.uid() and is_family_member(family_id));
+create policy "insert own push_subscriptions" on push_subscriptions
+  for insert with check (user_id = auth.uid() and is_family_member(family_id));
+create policy "update own push_subscriptions" on push_subscriptions
+  for update
+  using (user_id = auth.uid() and is_family_member(family_id))
+  with check (user_id = auth.uid() and is_family_member(family_id));
+create policy "delete own push_subscriptions" on push_subscriptions
+  for delete using (user_id = auth.uid() and is_family_member(family_id));
+
+revoke all on push_subscriptions from anon, authenticated;
+grant select, insert, update, delete on push_subscriptions to authenticated;
+
+-- Marca de "ya se avisó": el aviso sale una sola vez por sesión.
+alter table nursing_sessions add column if not exists long_alert_sent_at timestamptz;
+
+-- device_tokens suma el scope push_check (quien llama a /api/push/nursing-check).
+alter table device_tokens drop constraint device_tokens_scopes_check;
+alter table device_tokens add constraint device_tokens_scopes_check
+  check (
+    cardinality(scopes) > 0
+    and scopes <@ array['ingest', 'quick_nurse', 'push_check']::text[]
+  );

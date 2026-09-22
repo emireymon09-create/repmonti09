@@ -64,6 +64,9 @@ function data() {
   return createClient().schema(DATA_SCHEMA)
 }
 
+/** Something to run a query on: the app's client, or a signed-in test client. */
+type Db = Pick<ReturnType<typeof data>, 'from'>
+
 /**
  * The columns that say who a row belongs to. One definition, so adding
  * `household_id` later is a single edit rather than a hunt through
@@ -107,7 +110,7 @@ const store = browserQueueStore()
  * attempt never got an answer.
  */
 export async function sendOpWith(
-  db: Pick<ReturnType<typeof data>, 'from'>,
+  db: Db,
   op: PendingOp,
   mode: 'write' | 'replay',
   signal?: AbortSignal,
@@ -285,6 +288,88 @@ export function keepLastGood<T extends Record<string, unknown>>(
   return { rows, error }
 }
 
+// --------------------------------------------------------------- windows
+
+/*
+ * Reads for the totals on /feeding, /diapers and /sleep (lib/kpis.ts): every
+ * row from `sinceIso` on, with NO limit — a total cut at the newest N rows
+ * would be quietly wrong. A session counts for the part of it inside the
+ * window, so one that started before `sinceIso` and ended after it (or is
+ * still running) is read too.
+ *
+ * `db` is only for the integration tests, which run the same query as a
+ * signed-in parent (tests/integration/since.test.ts).
+ */
+
+/** A PostgREST `or` filter: started, ended, or still running since `sinceIso`. */
+function overlapsSince(sinceIso: string): string {
+  return `started_at.gte."${sinceIso}",ended_at.gte."${sinceIso}",ended_at.is.null`
+}
+
+export async function feedingsSince(
+  babyId: string,
+  sinceIso: string,
+  db: Db = data(),
+): Promise<Result<Feeding[]>> {
+  const { data: rows, error } = await db
+    .from('feedings')
+    .select('id, fed_at, feeding_type, amount_ml, notes')
+    .eq('baby_id', babyId)
+    .is('voided_at', null)
+    .gte('fed_at', sinceIso)
+    .order('fed_at', { ascending: false })
+  if (error) return fail([] as Feeding[], error)
+  return ok((rows ?? []) as Feeding[])
+}
+
+export async function nursingSince(
+  babyId: string,
+  sinceIso: string,
+  db: Db = data(),
+): Promise<Result<NursingSession[]>> {
+  const { data: rows, error } = await db
+    .from('nursing_sessions')
+    .select('id, side, started_at, ended_at')
+    .eq('baby_id', babyId)
+    .is('voided_at', null)
+    .or(overlapsSince(sinceIso))
+    .order('started_at', { ascending: false })
+  if (error) return fail([] as NursingSession[], error)
+  return ok((rows ?? []) as NursingSession[])
+}
+
+export async function diapersSince(
+  babyId: string,
+  sinceIso: string,
+  db: Db = data(),
+): Promise<Result<DiaperChange[]>> {
+  const { data: rows, error } = await db
+    .from('diaper_changes')
+    .select('id, changed_at, diaper_type')
+    .eq('baby_id', babyId)
+    .is('voided_at', null)
+    .gte('changed_at', sinceIso)
+    .order('changed_at', { ascending: false })
+  if (error) return fail([] as DiaperChange[], error)
+  return ok((rows ?? []) as DiaperChange[])
+}
+
+export async function sleepSince(
+  babyId: string,
+  sinceIso: string,
+  db: Db = data(),
+): Promise<Result<SleepSession[]>> {
+  const { data: rows, error } = await db
+    .from('sleep_sessions')
+    .select('id, started_at, ended_at, source')
+    .eq('baby_id', babyId)
+    .is('voided_at', null)
+    .or(overlapsSince(sinceIso))
+    .order('started_at', { ascending: false })
+  if (error) return fail([] as SleepSession[], error)
+  return ok((rows ?? []) as SleepSession[])
+}
+
 // --------------------------------------------------------------- babies
 
 export async function currentBaby(): Promise<Result<Baby | null>> {
@@ -428,11 +513,17 @@ export async function recentNursing(babyId: string, limit = 20): Promise<Result<
   return ok((rows ?? []) as NursingSession[])
 }
 
+/**
+ * `endedAt` logs a session that is already over ("Log a past one" on
+ * /feeding) as one insert, so it can never be left half-written as a
+ * session still running.
+ */
 export function startNursing(
   babyId: string,
   userId: string | null,
   side: Side,
   at?: string,
+  endedAt?: string,
 ): Promise<Result<null>> {
   return write(`Nursing (${side})`, {
     kind: 'insert',
@@ -442,7 +533,7 @@ export function startNursing(
       ...scope(babyId, userId),
       side,
       started_at: at ?? new Date().toISOString(),
-      ended_at: null,
+      ended_at: endedAt ?? null,
     },
   })
 }
@@ -488,10 +579,12 @@ export async function recentSleep(babyId: string, limit = 20): Promise<Result<Sl
   return ok((rows ?? []) as SleepSession[])
 }
 
+/** `endedAt`: a finished sleep, logged afterwards in one insert (see startNursing). */
 export function startSleep(
   babyId: string,
   userId: string | null,
   at?: string,
+  endedAt?: string,
 ): Promise<Result<null>> {
   return write('Sleep start', {
     kind: 'insert',
@@ -500,7 +593,7 @@ export function startSleep(
       id: newId(),
       ...scope(babyId, userId),
       started_at: at ?? new Date().toISOString(),
-      ended_at: null,
+      ended_at: endedAt ?? null,
       source: 'manual',
     },
   })
@@ -682,19 +775,6 @@ export async function listAppointments(babyId: string): Promise<Result<DoctorApp
     .order('scheduled_at', { ascending: true })
   if (error) return fail([] as DoctorAppointment[], error)
   return ok((rows ?? []) as DoctorAppointment[])
-}
-
-export async function nextAppointment(babyId: string): Promise<Result<DoctorAppointment | null>> {
-  const { data: rows, error } = await data()
-    .from('doctor_appointments')
-    .select(APPT_COLUMNS)
-    .eq('baby_id', babyId)
-    .eq('completed', false)
-    .gte('scheduled_at', new Date().toISOString())
-    .order('scheduled_at', { ascending: true })
-    .limit(1)
-  if (error) return fail(null, error)
-  return ok((rows && rows.length ? rows[0] : null) as DoctorAppointment | null)
 }
 
 export function addAppointment(

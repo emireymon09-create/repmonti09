@@ -17,6 +17,8 @@ import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabaseClient'
 import { resetPumpingTotal } from '@/lib/db'
 import { forgetSeen } from '@/lib/lastSeen'
+import { forgetAlertsOnSignOut } from '@/lib/push/client'
+import { NursingAlerts } from '@/components/NursingAlerts'
 import { useVolumeUnit } from '@/lib/useVolumeUnit'
 import { useTheme, type Theme } from '@/lib/theme'
 import { APP_VERSION } from '@/lib/version'
@@ -78,19 +80,7 @@ export function Btn({
   )
 }
 
-export function Banner({
-  kind,
-  children,
-}: {
-  kind: 'error' | 'ok' | 'warn'
-  children: React.ReactNode
-}) {
-  return (
-    <div role="status" className={`banner ${kind}`}>
-      {children}
-    </div>
-  )
-}
+export { Banner } from '@/components/Banner'
 
 const THEMES: { value: Theme; label: MessageKey }[] = [
   { value: 'light', label: 'theme.light' },
@@ -193,6 +183,10 @@ export function Nav({ babyId }: { babyId?: string }) {
     // First, and whatever signOut() does offline: this screen is shared,
     // and the family's rows saved for offline must not outlive the session.
     forgetSeen()
+    // Then this device's nursing alerts: the next person on this screen must
+    // not get this family's notifications. Before signOut() — deleting the
+    // server row needs the session — and bounded, so it can't block it.
+    await forgetAlertsOnSignOut()
     await createClient().auth.signOut()
     router.push('/login')
   }
@@ -297,6 +291,7 @@ export function Nav({ babyId }: { babyId?: string }) {
                 ))}
               </div>
             </div>
+            <NursingAlerts babyId={babyId} />
             <button role="menuitem" className="nav-menu-item" onClick={switchUnit}>
               {t('menu.switchUnit', { unit: unit === 'oz' ? 'ml' : 'oz' })}
             </button>

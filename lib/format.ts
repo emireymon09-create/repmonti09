@@ -143,6 +143,21 @@ export function durationBetween(startIso: string, endIso: string, lang: Lang = '
 }
 
 /**
+ * A total time, for a sum rather than one session: "0 min" · "45 min" ·
+ * "7h 20m". Unlike durationBetween, nothing is "under a minute": a total of
+ * zero says zero.
+ */
+export function formatDuration(ms: number, lang: Lang = 'en'): string {
+  const mins = Math.max(0, Math.round(ms / 60_000))
+  if (mins < 60) return translate(lang, 'duration.mins', { m: mins })
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return m
+    ? translate(lang, 'duration.hoursMins', { h, m })
+    : translate(lang, 'duration.hours', { h })
+}
+
+/**
  * A predicted clock time, read against now: "due in 45m" · "10m
  * overdue" · "due now". Signed on purpose — a predicted feeding or nap
  * that's already passed is exactly the thing worth surfacing.
@@ -372,7 +387,14 @@ export function fromHouseholdInputValue(value: string): string {
   return instant.toISOString()
 }
 
-/** Midnight tonight-past, household time — the window for "today". */
-export function startOfHouseholdDay(now: Date = new Date()): number {
-  return Date.parse(fromHouseholdInputValue(`${householdToday(now)}T00:00`))
+/**
+ * Midnight tonight-past, household time — the window for "today". With
+ * `daysBack`, the midnight that many household calendar days earlier: the
+ * arithmetic is on the calendar date, not on 24-hour steps, so a window that
+ * crosses a DST change still starts at midnight (a 23- or 25-hour day).
+ */
+export function startOfHouseholdDay(now: Date = new Date(), daysBack = 0): number {
+  const [y, m, d] = householdToday(now).split('-').map(Number)
+  const day = new Date(Date.UTC(y, m - 1, d - daysBack)).toISOString().slice(0, 10)
+  return Date.parse(fromHouseholdInputValue(`${day}T00:00`))
 }

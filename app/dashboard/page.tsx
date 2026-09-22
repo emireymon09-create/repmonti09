@@ -7,14 +7,12 @@ import { NoBaby } from '@/components/NoBaby'
 import { Banner, Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
 import {
   addGrowth,
-  buildActivity,
   endNursing,
   endSleep,
   logDiaper,
   logFeeding,
   keepLastGood,
   mergePending,
-  nextAppointment,
   pendingWrites,
   predictNextFeeding,
   predictNextNap,
@@ -31,11 +29,10 @@ import { SeenNote, SyncBar, SyncErrorBanner } from '@/components/SyncStatus'
 import { lastGood, seenKey, type LastGood, type SeenState } from '@/lib/lastSeen'
 import { useVolumeUnit } from '@/lib/useVolumeUnit'
 import { useT } from '@/lib/i18n/react'
+import { lastFeedingEvent, type LastFeeding } from '@/lib/kpis'
 import type {
-  ActivityEntry,
   DiaperChange,
   DiaperType,
-  DoctorAppointment,
   Feeding,
   NursingSession,
   Side,
@@ -45,19 +42,15 @@ import type {
 import { looksOffline, type PendingWrite } from '@/lib/queue'
 import {
   ageFrom,
-  apptWhen,
   clockTime,
   dueRelative,
   durationBetween,
   elapsed,
   formatVolume,
-  fromHouseholdInputValue,
   householdToday,
   lbOzToKg,
   longDate,
-  startOfHouseholdDay,
   timeAgo,
-  toHouseholdInputValue,
   unitToMl,
 } from '@/lib/format'
 
@@ -74,9 +67,38 @@ type ServerRows = {
   diapers: DiaperChange[]
   nursing: NursingSession[]
   sleep: SleepSession[]
-  appt: DoctorAppointment | null
 }
-const NO_ROWS: ServerRows = { feedings: [], diapers: [], nursing: [], sleep: [], appt: null }
+const NO_ROWS: ServerRows = { feedings: [], diapers: [], nursing: [], sleep: [] }
+
+/**
+ * Only the keys this page reads. A copy saved on this device before the
+ * appointment card left the dashboard still carries `appt`; it is
+ * read as usual and the extra key is dropped here, so it is not saved again.
+ */
+function ownRows(rows: ServerRows): ServerRows {
+  return {
+    feedings: rows.feedings,
+    diapers: rows.diapers,
+    nursing: rows.nursing,
+    sleep: rows.sleep,
+  }
+}
+
+/** "Totals and log →" under each card, to that section's page. */
+function CardLink({ href, section }: { href: string; section: string }) {
+  const { t } = useT()
+  return (
+    <div className="row-tight">
+      <Link
+        href={href}
+        className="linkish card-link"
+        aria-label={t('dash.detailsFor', { section })}
+      >
+        {t('dash.details')}
+      </Link>
+    </div>
+  )
+}
 
 export default function Dashboard() {
   const { baby, userId, loading, refreshBaby, unreachable } = useBaby()
@@ -87,8 +109,6 @@ export default function Dashboard() {
   const [diapers, setDiapers] = useState<WithPending<DiaperChange>[]>([])
   const [nursing, setNursing] = useState<WithPending<NursingSession>[]>([])
   const [sleep, setSleep] = useState<WithPending<SleepSession>[]>([])
-  const [appt, setAppt] = useState<DoctorAppointment | null>(null)
-  const [today, setToday] = useState<ActivityEntry[]>([])
 
   const [birthDate, setBirthDate] = useState(() => householdToday())
   const [birthLb, setBirthLb] = useState('')
@@ -101,13 +121,8 @@ export default function Dashboard() {
   const [flash, setFlash] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [now, setNow] = useState(() => Date.now())
-  // Every log button stamps "now" by default. This lets a missed
-  // feeding/diaper/nursing/sleep entry be logged with its real time
-  // instead -- it applies to the next single save only, then clears
-  // itself, so it can never silently backdate something later.
-  const [logAt, setLogAt] = useState<string | null>(null)
-  const [showTimeEditor, setShowTimeEditor] = useState(false)
-  const [timeInput, setTimeInput] = useState('')
+  // Every button here stamps "now". Logging with an earlier time lives on
+  // each section's page ("Log a past one": /feeding, /diapers, /sleep).
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Drives the stopwatches and the relative labels. The wall screen is
@@ -143,24 +158,17 @@ export default function Dashboard() {
 
   // Anything still queued is folded in and marked, so a tap made with
   // no signal is visible rather than apparently lost.
-  const show = useCallback(
-    (rows: ServerRows, queued: PendingWrite[]) => {
-      const mFeedings = mergePending(rows.feedings, 'feedings', queued)
-      const mDiapers = mergePending(rows.diapers, 'diaper_changes', queued)
-      const mNursing = mergePending(rows.nursing, 'nursing_sessions', queued)
-      const mSleep = mergePending(rows.sleep, 'sleep_sessions', queued)
+  const show = useCallback((rows: ServerRows, queued: PendingWrite[]) => {
+    const mFeedings = mergePending(rows.feedings, 'feedings', queued)
+    const mDiapers = mergePending(rows.diapers, 'diaper_changes', queued)
+    const mNursing = mergePending(rows.nursing, 'nursing_sessions', queued)
+    const mSleep = mergePending(rows.sleep, 'sleep_sessions', queued)
 
-      setFeedings(sortDesc(mFeedings, 'fed_at'))
-      setDiapers(sortDesc(mDiapers, 'changed_at'))
-      setNursing(sortDesc(mNursing, 'started_at'))
-      setSleep(sortDesc(mSleep, 'started_at'))
-      setAppt(rows.appt)
-      setToday(
-        buildActivity(mFeedings, mNursing, mDiapers, mSleep, startOfHouseholdDay(), unit, lang),
-      )
-    },
-    [unit, lang],
-  )
+    setFeedings(sortDesc(mFeedings, 'fed_at'))
+    setDiapers(sortDesc(mDiapers, 'changed_at'))
+    setNursing(sortDesc(mNursing, 'started_at'))
+    setSleep(sortDesc(mSleep, 'started_at'))
+  }, [])
 
   const refresh = useCallback(
     async (babyId: string) => {
@@ -179,31 +187,27 @@ export default function Dashboard() {
       if (read !== latestRead.current) return
       const offline = navigator.onLine === false
       if (queuedNow.length > 0 || offline) {
-        show(last.rows, queuedNow)
+        show(ownRows(last.rows), queuedNow)
         setSeen(last.state(offline))
       }
 
-      const [f, d, n, s, a, queued] = await Promise.all([
+      const [f, d, n, s, queued] = await Promise.all([
         recentFeedings(babyId),
         recentDiapers(babyId),
         recentNursing(babyId),
         recentSleep(babyId),
-        nextAppointment(babyId),
         pendingWrites(),
       ])
       if (read !== latestRead.current) return
 
-      const { rows, error } = keepLastGood(last.rows, {
+      const { rows, error } = keepLastGood(ownRows(last.rows), {
         feedings: f,
         diapers: d,
         nursing: n,
         sleep: s,
-        appt: a,
       })
       setSeen(last.settle(rows, error))
 
-      // Offline reads fail; that is expected and the sync bar already
-      // says so, so don't also shout an error over the top of it.
       // A read that failed for lack of network is not an error to shout:
       // the saved-copy note (or the "nothing saved" state) already says it,
       // and the next good read clears this. Kept apart from `err`, which
@@ -235,11 +239,7 @@ export default function Dashboard() {
     if (error) {
       setErr(t('dash.couldNotSaveLabel', { label, error }))
     } else {
-      const when = logAt ? t('dash.forTime', { time: clockTime(logAt, lang) }) : ''
-      confirm(t(queued ? 'dash.queuedLabel' : 'dash.loggedLabel', { label, when }))
-      // The time override was used by this save; clear it now so it can't
-      // backdate the next one.
-      setLogAt(null)
+      confirm(t(queued ? 'dash.queuedLabel' : 'dash.loggedLabel', { label, when: '' }))
       // A queued write is already on screen after refresh's quick repaint
       // from the queue, so the buttons needn't wait for the slow (offline)
       // server read. A write that reached the server only shows once that
@@ -256,13 +256,24 @@ export default function Dashboard() {
   const lastNursing = nursing.find((n) => n.ended_at) ?? null
   const activeSleep = sleep.find((s) => !s.ended_at) ?? null
   const lastSleep = sleep.find((s) => s.ended_at) ?? null
-  const lastFeeding = feedings[0] ?? null
+  const lastFeed = lastFeedingEvent(feedings, nursing)
   const lastDiaper = diapers[0] ?? null
   // Offline, with no read yet and nothing saved on this device: "no
   // sessions yet" would be a guess, so the cards say nothing instead.
   const unknown = seen.kind === 'nothing'
   const feedingPrediction = predictNextFeeding(feedings, nursing)
   const napPrediction = predictNextNap(sleep)
+
+  /** The Feeding card's line: time · kind (breast with its side) · amount or length. */
+  function feedingLegend(last: LastFeeding): string {
+    if (last.kind === 'nursing') {
+      const n = last.row
+      return `${clockTime(n.started_at, lang)} · ${t('legend.breast', { side: t(`side.${n.side}`) })} · ${durationBetween(n.started_at, n.ended_at, lang)}`
+    }
+    const f = last.row
+    const amount = f.amount_ml ? ` · ${formatVolume(f.amount_ml, unit)}` : ''
+    return `${clockTime(f.fed_at, lang)} · ${t(`feedingType.${f.feeding_type}`)}${amount}`
+  }
 
   async function onBirth(e: React.FormEvent) {
     e.preventDefault()
@@ -303,7 +314,7 @@ export default function Dashboard() {
     }
     const ml = amount === null ? null : unitToMl(amount, unit)
     run(t('dash.label.bottle'), async () => {
-      const res = await logFeeding(baby!.id, userId, 'bottle', ml, logAt ?? undefined)
+      const res = await logFeeding(baby!.id, userId, 'bottle', ml)
       if (!res.error) setBottleAmount('')
       return res
     })
@@ -409,57 +420,11 @@ export default function Dashboard() {
       {err && <Banner kind="error">{err}</Banner>}
       {flash && !err && <Banner kind="ok">{flash}</Banner>}
 
-      {logAt && !showTimeEditor && (
-        <Banner kind="warn">
-          {t('dash.backdating', { time: clockTime(logAt, lang) })}{' '}
-          <button type="button" className="linkish" onClick={() => setLogAt(null)}>
-            {t('dash.resetToNow')}
-          </button>
-        </Banner>
-      )}
-
-      <div className="row-tight row-wrap log-time">
-        {!showTimeEditor ? (
-          <Btn
-            variant="quiet"
-            onClick={() => {
-              setTimeInput(toHouseholdInputValue(logAt ? new Date(logAt) : new Date(now)))
-              setShowTimeEditor(true)
-            }}
-          >
-            {logAt ? t('dash.changeTime') : t('dash.logMissed')}
-          </Btn>
-        ) : (
-          <>
-            <input
-              type="datetime-local"
-              className="input"
-              value={timeInput}
-              onChange={(e) => setTimeInput(e.target.value)}
-              max={toHouseholdInputValue(new Date(now))}
-              aria-label={t('dash.timeActually')}
-            />
-            <Btn
-              disabled={!timeInput}
-              onClick={() => {
-                setLogAt(fromHouseholdInputValue(timeInput))
-                setShowTimeEditor(false)
-              }}
-            >
-              {t('dash.useThisTime')}
-            </Btn>
-            <Btn variant="quiet" onClick={() => setShowTimeEditor(false)}>
-              {t('common.cancel')}
-            </Btn>
-          </>
-        )}
-      </div>
-
       <Grid>
-        {/* ---------------- Breastfeeding ---------------- */}
+        {/* ---------------- Feeding: nursing, bottle, solids ---------------- */}
         <Card live={!!activeNursing}>
-          <Label>{t('dash.breastfeeding')}</Label>
-          {activeNursing ? (
+          <Label>{t('section.feeding')}</Label>
+          {activeNursing && (
             <>
               <div className="stopwatch">
                 <span className="clock">{elapsed(activeNursing.started_at, now)}</span>
@@ -475,27 +440,31 @@ export default function Dashboard() {
                   variant="live"
                   disabled={busy}
                   onClick={() =>
-                    run(t('dash.label.nursingEnd'), () =>
-                      endNursing(activeNursing.id, logAt ?? undefined),
-                    )
+                    run(t('dash.label.nursingEnd'), () => endNursing(activeNursing.id))
                   }
                 >
                   {t('dash.stopNursing')}
                 </Btn>
               </div>
             </>
-          ) : (
+          )}
+          <div className={activeNursing ? 'meta' : 'value'}>
+            {lastFeed ? feedingLegend(lastFeed) : unknown ? '—' : t('dash.noFeedings')}
+          </div>
+          {lastFeed && !activeNursing && (
+            <div className="meta">{timeAgo(lastFeed.at, now, lang)}</div>
+          )}
+          {lastFeed?.row.pending && <div className="pending-tag">{t('common.notSyncedYet')}</div>}
+          {!activeNursing && feedingPrediction.dueAt && (
+            <div className="meta">
+              {t('dash.nextFeeding', {
+                time: clockTime(feedingPrediction.dueAt, lang),
+                due: dueRelative(feedingPrediction.dueAt, now, lang) ?? '',
+              })}
+            </div>
+          )}
+          {!activeNursing && (
             <>
-              <div className="value">
-                {lastNursing
-                  ? `${timeAgo(lastNursing.ended_at, now, lang)} · ${t(`side.${lastNursing.side}`)} · ${durationBetween(lastNursing.started_at, lastNursing.ended_at!, lang)}`
-                  : unknown
-                    ? '—'
-                    : t('dash.noSessions')}
-              </div>
-              {lastNursing?.pending && (
-                <div className="pending-tag">{t('common.notSyncedYet')}</div>
-              )}
               {suggested && (
                 <div className="meta">{t('dash.startOn', { side: t(`side.${suggested}`) })}</div>
               )}
@@ -504,9 +473,7 @@ export default function Dashboard() {
                   disabled={busy}
                   variant={suggested === 'left' ? 'action' : 'quiet'}
                   onClick={() =>
-                    run(t('dash.label.nursingLeft'), () =>
-                      startNursing(baby.id, userId, 'left', logAt ?? undefined),
-                    )
+                    run(t('dash.label.nursingLeft'), () => startNursing(baby.id, userId, 'left'))
                   }
                 >
                   {t('sideButton.left')}
@@ -515,35 +482,13 @@ export default function Dashboard() {
                   disabled={busy}
                   variant={suggested === 'right' ? 'action' : 'quiet'}
                   onClick={() =>
-                    run(t('dash.label.nursingRight'), () =>
-                      startNursing(baby.id, userId, 'right', logAt ?? undefined),
-                    )
+                    run(t('dash.label.nursingRight'), () => startNursing(baby.id, userId, 'right'))
                   }
                 >
                   {t('sideButton.right')}
                 </Btn>
               </div>
             </>
-          )}
-        </Card>
-
-        {/* ---------------- Feeding ---------------- */}
-        <Card>
-          <Label>{t('dash.lastFeeding')}</Label>
-          <div className="value">
-            {lastFeeding
-              ? `${clockTime(lastFeeding.fed_at, lang)} · ${t(`feedingType.${lastFeeding.feeding_type}`)}${lastFeeding.amount_ml ? ` · ${formatVolume(lastFeeding.amount_ml, unit)}` : ''}`
-              : '—'}
-          </div>
-          {lastFeeding && <div className="meta">{timeAgo(lastFeeding.fed_at, now, lang)}</div>}
-          {lastFeeding?.pending && <div className="pending-tag">{t('common.notSyncedYet')}</div>}
-          {feedingPrediction.dueAt && (
-            <div className="meta">
-              {t('dash.nextFeeding', {
-                time: clockTime(feedingPrediction.dueAt, lang),
-                due: dueRelative(feedingPrediction.dueAt, now, lang) ?? '',
-              })}
-            </div>
           )}
           <div className="row-tight">
             <input
@@ -561,23 +506,24 @@ export default function Dashboard() {
               variant="quiet"
               disabled={busy}
               onClick={() =>
-                run(t('dash.label.solid'), () =>
-                  logFeeding(baby.id, userId, 'solid', null, logAt ?? undefined),
-                )
+                run(t('dash.label.solid'), () => logFeeding(baby.id, userId, 'solid', null))
               }
             >
               {t('dash.solid')}
             </Btn>
           </div>
+          <CardLink href="/feeding" section={t('section.feeding')} />
         </Card>
 
-        {/* ---------------- Diapers ---------------- */}
+        {/* ---------------- Diaper ---------------- */}
         <Card>
-          <Label>{t('dash.lastDiaper')}</Label>
+          <Label>{t('section.diaper')}</Label>
           <div className="value">
             {lastDiaper
               ? `${clockTime(lastDiaper.changed_at, lang)} · ${t(`diaper.${lastDiaper.diaper_type}`)}`
-              : '—'}
+              : unknown
+                ? '—'
+                : t('dash.noDiapers')}
           </div>
           {lastDiaper && <div className="meta">{timeAgo(lastDiaper.changed_at, now, lang)}</div>}
           {lastDiaper?.pending && <div className="pending-tag">{t('common.notSyncedYet')}</div>}
@@ -588,7 +534,7 @@ export default function Dashboard() {
                 disabled={busy}
                 onClick={() =>
                   run(t('dash.label.diaper', { type: t(`diaper.${kind}`) }), () =>
-                    logDiaper(baby.id, userId, kind, logAt ?? undefined),
+                    logDiaper(baby.id, userId, kind),
                   )
                 }
               >
@@ -596,11 +542,12 @@ export default function Dashboard() {
               </Btn>
             ))}
           </div>
+          <CardLink href="/diapers" section={t('section.diaper')} />
         </Card>
 
         {/* ---------------- Sleep ---------------- */}
         <Card live={!!activeSleep}>
-          <Label>{t('dash.sleep')}</Label>
+          <Label>{t('section.sleep')}</Label>
           {activeSleep ? (
             <>
               <div className="stopwatch">
@@ -614,29 +561,27 @@ export default function Dashboard() {
                 <Btn
                   variant="live"
                   disabled={busy}
-                  onClick={() =>
-                    run(t('dash.label.sleepEnd'), () =>
-                      endSleep(activeSleep.id, logAt ?? undefined),
-                    )
-                  }
+                  onClick={() => run(t('dash.label.sleepEnd'), () => endSleep(activeSleep.id))}
                 >
                   {t('dash.shesAwake')}
                 </Btn>
               </div>
             </>
-          ) : (
+          ) : null}
+          {/* The last finished sleep: when she woke · how long she slept. */}
+          <div className={activeSleep ? 'meta' : 'value'}>
+            {lastSleep
+              ? `${clockTime(lastSleep.ended_at, lang)} · ${durationBetween(lastSleep.started_at, lastSleep.ended_at!, lang)}`
+              : unknown
+                ? '—'
+                : t('dash.noSleep')}
+          </div>
+          {lastSleep && !activeSleep && (
+            <div className="meta">{timeAgo(lastSleep.ended_at, now, lang)}</div>
+          )}
+          {lastSleep?.pending && <div className="pending-tag">{t('common.notSyncedYet')}</div>}
+          {!activeSleep && (
             <>
-              <div className="value">
-                {lastSleep
-                  ? t('dash.lastSleep', {
-                      duration: durationBetween(lastSleep.started_at, lastSleep.ended_at!, lang),
-                      ago: timeAgo(lastSleep.ended_at, now, lang),
-                    })
-                  : unknown
-                    ? '—'
-                    : t('dash.noSleep')}
-              </div>
-              {lastSleep?.pending && <div className="pending-tag">{t('common.notSyncedYet')}</div>}
               {napPrediction.dueAt && (
                 <div className="meta">
                   {t('dash.nextNap', {
@@ -648,57 +593,14 @@ export default function Dashboard() {
               <div className="row-tight">
                 <Btn
                   disabled={busy}
-                  onClick={() =>
-                    run(t('dash.label.sleepStart'), () =>
-                      startSleep(baby.id, userId, logAt ?? undefined),
-                    )
-                  }
+                  onClick={() => run(t('dash.label.sleepStart'), () => startSleep(baby.id, userId))}
                 >
                   {t('dash.startSleep')}
                 </Btn>
               </div>
             </>
           )}
-        </Card>
-
-        {/* ---------------- Next appointment ---------------- */}
-        <Card>
-          <Label>{t('dash.nextAppointment')}</Label>
-          {appt ? (
-            <>
-              <div className="value">{appt.title}</div>
-              <div className="meta">
-                {apptWhen(appt.scheduled_at, lang)}
-                {appt.doctor_name ? ` · ${appt.doctor_name}` : ''}
-              </div>
-            </>
-          ) : (
-            <div className="empty">{unknown ? '—' : t('dash.nothingScheduled')}</div>
-          )}
-          <div className="row-tight">
-            <Link href="/appointments" className="linkish">
-              {t('dash.allAppointments')}
-            </Link>
-          </div>
-        </Card>
-
-        {/* ---------------- Today ----------------
-            Merged from this app's tables. Becomes one read of
-            core.activity when the shared backend lands. */}
-        <Card spanAll>
-          <Label>{t('dash.today')}</Label>
-          {today.length === 0 ? (
-            <div className="empty">{unknown ? t('sync.nothingSaved') : t('dash.nothingToday')}</div>
-          ) : (
-            <div className="feed">
-              {today.map((entry) => (
-                <div className="feed-item" key={`${entry.kind}-${entry.at}`}>
-                  <span className="feed-time">{clockTime(entry.at, lang)}</span>
-                  <span className="feed-what">{entry.what}</span>
-                </div>
-              ))}
-            </div>
-          )}
+          <CardLink href="/sleep" section={t('section.sleep')} />
         </Card>
       </Grid>
     </Page>

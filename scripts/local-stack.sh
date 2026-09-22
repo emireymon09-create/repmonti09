@@ -5,7 +5,8 @@
 #   up      genera las claves la primera vez, levanta y aplica migraciones pendientes
 #   down    baja los contenedores (los datos quedan en el volumen)
 #   reset   baja, BORRA el volumen y levanta de cero con todas las migraciones
-#   env     escribe .env.test y actualiza las 3 claves de Supabase en .env.local
+#   env     escribe .env.test, actualiza las 3 claves de Supabase en .env.local
+#           y agrega las de VAPID (push) si faltan — esas nunca se pisan
 #   psql    abre psql como postgres
 #   status  contenedores y puertos (tienen que decir 127.0.0.1)
 set -euo pipefail
@@ -57,8 +58,34 @@ write_env() {
   sed -i -e "s|^NEXT_PUBLIC_SUPABASE_URL=.*|NEXT_PUBLIC_SUPABASE_URL=$url|" \
          -e "s|^NEXT_PUBLIC_SUPABASE_ANON_KEY=.*|NEXT_PUBLIC_SUPABASE_ANON_KEY=$(get ANON_KEY)|" \
          -e "s|^SUPABASE_SERVICE_ROLE_KEY=.*|SUPABASE_SERVICE_ROLE_KEY=$(get SERVICE_ROLE_KEY)|" .env.local
+  ensure_vapid
   chmod 600 .env.local
   echo "Escritos .env.test y las 3 claves de Supabase en .env.local"
+}
+
+# Claves VAPID del push (scripts/vapid-keys.mjs). Solo las que falten: cambiar
+# una existente deja muertas todas las suscripciones que ya se hicieron con ella.
+ensure_vapid() {
+  local fresh has_pub=0 has_priv=0 added=0
+  grep -qE '^NEXT_PUBLIC_VAPID_PUBLIC_KEY=.+' .env.local && has_pub=1
+  grep -qE '^VAPID_PRIVATE_KEY=.+' .env.local && has_priv=1
+  if [ "$has_pub" != "$has_priv" ]; then
+    # Un par solo sirve entero, y generar la mitad que falta no lo arregla.
+    echo "Hay media clave VAPID en .env.local: completala a mano o borrá las dos líneas." >&2
+    exit 1
+  fi
+  fresh=$(node scripts/vapid-keys.mjs)
+  add() {
+    sed -i "/^$1=/d" .env.local
+    # Sin salto de línea al final, la clave quedaría pegada a la última línea.
+    if [ -s .env.local ] && [ -n "$(tail -c1 .env.local)" ]; then echo >> .env.local; fi
+    grep -E "^$1=" <<<"$fresh" >> .env.local
+    added=1
+  }
+  if [ "$has_pub" = 0 ]; then add NEXT_PUBLIC_VAPID_PUBLIC_KEY; add VAPID_PRIVATE_KEY; fi
+  grep -qE '^VAPID_SUBJECT=.+' .env.local || add VAPID_SUBJECT
+  [ "$added" = 1 ] && echo "Claves VAPID nuevas en .env.local (push)."
+  return 0
 }
 
 case "${1:-}" in

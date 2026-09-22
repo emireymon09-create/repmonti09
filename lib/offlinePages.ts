@@ -10,7 +10,16 @@
  * same static, English shell for everyone. Data never goes through the
  * worker (CLAUDE.md §5.5); offline data is lib/lastSeen.ts.
  */
-export const OFFLINE_PAGES = ['/dashboard', '/history', '/growth', '/pumping', '/appointments']
+export const OFFLINE_PAGES = [
+  '/dashboard',
+  '/feeding',
+  '/diapers',
+  '/sleep',
+  '/history',
+  '/growth',
+  '/pumping',
+  '/appointments',
+]
 
 let warmed = false
 

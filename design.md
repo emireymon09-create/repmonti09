@@ -210,20 +210,23 @@ Destinados a mudarse a `packages/ui` cuando llegue el monorepo.
 | `Card` | `.card` | Props `live` → borde `--c-live-ink`; `past` → `opacity: var(--o-past)` (.8 oscuro / .88 claro); `spanAll` → ocupa toda la fila |
 | `Label` | `.label` | Mayúsculas, `letter-spacing .09em`, color `--c-muted` |
 | `Btn` | `.btn` | Variantes `action` (default), `quiet`, `live`. `flex: 1`, `min-height: var(--tap)` |
-| `Banner` | `.banner` | Tipos `error` / `ok` / `warn`. Lleva `role="status"` |
+| `Banner` | `.banner` | Tipos `error` / `ok` / `warn`. Lleva `role="status"`. **Desde el 22 sep 2026 vive en `components/Banner.tsx`**, no en `ui.tsx`: lo usa `NursingAlerts`, que `ui.tsx` renderiza, y el import de vuelta era circular. `ui.tsx` lo re-exporta, así que `@/components/ui` sigue funcionando |
 | `Nav` | `.nav` | 5 tabs + menú de engranaje. En teléfono (<600px) es una barra inferior fija, ver §4 "Navegación" |
 | `SyncBar` | `.syncbar` | En `components/SyncStatus.tsx`. Estado offline / pendientes. `role="status"`, y `.has-pending` cuando la cola no está vacía |
 | `SyncStatus` | — | En `components/SyncStatus.tsx`. El que cablea `useSync()` con `SyncBar` y `SyncErrorBanner`; lo montan `/appointments` y `/pumping`. `/dashboard`, `/growth` y `/history` usan `useSync()` + `SyncBar` directo, porque necesitan releer al sincronizar y mostrar el error de sincronización |
 | `SeenNote` | `.syncbar` | En `components/SyncStatus.tsx` (22 sep 2026). Offline, avisa que se muestra la copia guardada en el dispositivo y de cuándo es. Informativo, con el mismo aspecto que `SyncBar`, `role="status"`; no renderiza nada si la lectura anduvo |
 | `SyncErrorBanner` | `.banner` (error) | En `components/SyncStatus.tsx` (22 sep 2026). "No se pudo sincronizar": nombra la entrada que el server rechazó (y de cuándo es) y ofrece **Descartar** (`Btn quiet`), siempre tras un `window.confirm` que dice qué se pierde (§5.6). Lo montan `/dashboard`, `/history`, `/growth` y, vía `SyncStatus`, `/appointments` y `/pumping` |
+| `SectionPage` | — | En `components/SectionPage.tsx` (22 sep 2026). La pantalla entera de `/feeding`, `/diapers` y `/sleep`: dos `Card` de totales (`Today`, `Last 7 days`) con `.kpis`, el log completo debajo (`.feed`, con editar y borrar, un panel a la vez) y "Log a past one". Las tres páginas son 7 líneas cada una que le pasan `section`. Queda en ~1000 líneas: el panel de edición está **copiado** de `/history`, no compartido (seguimiento en `CLAUDE.md` §6) |
+| `NursingAlerts` | `.nav-menu-group` | En `components/NursingAlerts.tsx` (22 sep 2026). El control "Nursing alerts" del menú de engranaje, con la misma forma de segmento que Theme y Language. Ver §5.9 |
 | `NoBaby` | — | En `components/NoBaby.tsx`. Estado vacío cuando no hay perfil de bebé. Variante `offline` (22 sep 2026): sin conexión y sin nada guardado en el dispositivo dice eso, no "no hay perfil de bebé" |
 | `ServiceWorker` | — | En `components/ServiceWorker.tsx`. No renderiza nada: registra `/sw.js`, **solo en producción** |
 
 Los cuatro exports de `components/ui.tsx` que faltaban en la tabla original
 —`SyncStatus`, `ServiceWorker` y la ubicación real de `SyncBar` y `NoBaby`—
 se agregaron en la auditoría del 20 sep 2026. `ui.tsx` exporta siete
-componentes: `Page`, `Grid`, `Card`, `Label`, `Btn`, `Banner`, `Nav`. Los
-otros cuatro viven en archivos propios.
+componentes: `Page`, `Grid`, `Card`, `Label`, `Btn`, `Banner`, `Nav` — aunque
+desde el 22 sep 2026 `Banner` está definido en `components/Banner.tsx` y
+`ui.tsx` solo lo re-exporta. Los demás viven en archivos propios.
 
 **Clases utilitarias de layout:** `.stack` `.row` `.row-tight` `.between`
 `.spread` `.grow`.
@@ -265,7 +268,26 @@ en Chromium a 390/320/600/1440px en los dos temas: 0 de 5 campos se salen de la
 tarjeta, alto 52px (84px en la pared). **No verificado en un iPhone real.**
 
 **Feed / historial:** `.feed` `.feed-item` `.feed-time` `.feed-what`
-`.feed-actions` `.edit-panel`.
+`.feed-actions` `.edit-panel`, y `.feed-span` (22 sep 2026: el
+inicio–fin · duración de una sesión terminada, en su propia línea debajo de
+la entrada).
+
+**Totales de sección** (22 sep 2026): `.kpis` es un `<dl>` en grid de dos
+columnas — etiqueta a la izquierda, número a la derecha con
+`font-variant-numeric: tabular-nums` (§5.1) y una línea `--c-line` entre
+filas. **No** es una fila de tiles de número gigante: a las 3 AM se lee de
+arriba abajo, y con los números en columna "hoy" y "7 días" se comparan de un
+vistazo. `.card-link` es el "Totals and log →" al pie de cada tarjeta del
+dashboard: es texto (`.linkish`), pero con `min-height: var(--tap)` para que
+el blanco táctil sea entero (52px en teléfono, 84px en la pared).
+
+**Menú de engranaje** (22 sep 2026): `.menu-note` es la línea bajo un
+segmento que dice qué va a hacer o por qué no puede — `--t-meta`,
+`--c-muted`, y `width: 0; min-width: 100%` para que envuelva al ancho del
+menú en vez de estirarlo con una frase larga en español. `.nav-menu-group
+.banner` usa el mismo truco para el banner de error del control de avisos.
+`.seg-btn:disabled` baja a `opacity: .45` y `cursor: default`: un segmento que
+acá no puede hacer nada se lee como deshabilitado, igual que un ítem de menú.
 
 **Navegación (5 tabs fijos):** Today · Milk · Growth · Doctor · History
 (en español: Hoy · Leche · **Medidas** · Médico · Historial — ver §5.9).
@@ -287,8 +309,9 @@ El tab activo se marca con `aria-current="page"` y se pinta con
 `--c-accent` sobre `--c-bg` (`--c-on-accent`). El menú de engranaje es la
 "Configuración" y contiene: Theme (Light / Dark / System), **Language
 (System / English / Español)** justo debajo y con la misma forma de segmento
-(21 sep 2026), cambiar oz↔ml, "Reset milk total", Version history, cerrar
-sesión. En el selector de idioma "System" va primero porque es lo que tiene un
+(21 sep 2026), **Nursing alerts (Off / On)** debajo de Language y con la misma
+forma (22 sep 2026, §5.10), cambiar oz↔ml, "Reset milk total", Version
+history, cerrar sesión. En el selector de idioma "System" va primero porque es lo que tiene un
 dispositivo hasta que alguien elige; cada idioma se nombra en sí mismo
 ("Español") y el botón lleva `lang` para que un lector de pantalla lo lea con
 las reglas de ese idioma. Se cierra con Escape
@@ -353,8 +376,20 @@ Es el patrón de UX más importante del proyecto.
   tarjetas no dicen "No sleep logged yet" ni "Nothing scheduled" (sería una
   suposición); dicen que no hay nada guardado en el dispositivo, y las
   tarjetas muestran "—". Lo mismo `NoBaby offline`.
-- En `/dashboard` las tarjetas de **Lactancia y Sueño** llevan `.pending-tag`
-  en la sesión en curso y en la última, como las de biberón y pañal.
+- En `/dashboard` las tres tarjetas (Comida, Pañal, Dormir) llevan
+  `.pending-tag` en el último evento que muestran y en la sesión en curso.
+  Desde el 22 sep 2026 la tarjeta de Comida muestra **lo último entre toma y
+  lactancia terminada** (`lastFeedingEvent`, `lib/kpis.ts`), así que la marca
+  sigue al evento que se ve, sea de la tabla que sea.
+- **Los totales de `/feeding`, `/diapers` y `/sleep` incluyen lo que está en
+  cola, y lo dicen** (22 sep 2026). Una fila encolada cuenta —es lo que el
+  padre registró—, y un borrado encolado deja de contar; en los dos casos la
+  tarjeta agrega `.pending-tag` → "These totals include entries not synced
+  yet." Un número sin ese aviso es lo que el server tiene.
+- **Sin copia guardada y sin conexión, los totales son "—", sin el aviso
+  anterior.** Los dos juntos se contradecían (el auditor lo encontró el 22 sep
+  2026): un "—" no incluye nada. Y el log dice que no hay nada guardado en
+  este dispositivo, no "no hay entradas".
 - **Un rechazo del server se muestra, no se traga.** `SyncErrorBanner` nombra
   la entrada que frena la cola y ofrece Descartar, siempre tras el `confirm`
   de §5.6 que dice qué se pierde (y cuántas ediciones de esa entrada se van
@@ -385,8 +420,31 @@ un dato de la familia.
 
 ### 5.8 Registrar con hora pasada
 
-Todas las acciones aceptan una hora anterior a la actual — casi nunca se
-registra en el momento exacto en que pasó.
+Casi nunca se registra en el momento exacto en que pasó, así que siempre tiene
+que haber forma de poner la hora real.
+
+**Dónde vive, desde el 22 sep 2026:** ya **no** en `/dashboard`. Se fue de ahí
+"Log a missed session" —con su banner de "backdating" y su `datetime-local`
+suelto, que aplicaba a la próxima escritura sea cual fuera—, y en su lugar
+cada página de sección tiene **"Log a past one"**: un formulario propio, con
+los campos de esa sección (lado y tipo en Comida, tipo en Pañal) y la hora
+adentro del mismo formulario. Lo que se registra es **una** fila, y la hora es
+de esa fila: no queda un estado global que pueda fechar hacia atrás algo
+posterior.
+
+- Comida y Dormir, que son sesiones, eligen entre **"Finished"** (inicio y
+  fin) y **"Still going"** (solo inicio: la sesión queda abierta desde esa
+  hora y sigue corriendo). "Still going" está **bloqueado si ya hay una sesión
+  activa** —servidor o cola—, con un texto que dice que hay que pararla desde
+  Today. Nunca se abren dos por esta vía.
+- Los botones del dashboard siguen estampando **ahora**, sin excepción.
+- **Parar una sesión a una hora anterior** no tiene botón propio: se para
+  (Today) y se corrige el fin desde el log de la sección. Es un rodeo
+  consciente, no un olvido.
+- Validación en `checkPastRange` (`lib/kpis.ts`): hace falta una hora, el fin
+  tiene que ser posterior al inicio y nada puede estar en el futuro. El `max`
+  nativo del campo ya frena casi todo el futuro; la validación está igual
+  porque el `max` no se puede dar por hecho en todos los motores.
 
 ### 5.9 Idioma de la interfaz (21 sep 2026)
 
@@ -421,6 +479,45 @@ el tema y oz↔ml; sin elección, o con "System", sigue a `navigator.languages`
   inglés." cuando la app no está en inglés), el detalle crudo de un error de
   Supabase/Postgres dentro de un banner (el marco se traduce), y el
   manifest/metadata.
+
+### 5.10 Avisos push (22 sep 2026)
+
+"Nursing alerts" en el menú de engranaje, debajo de Language y con la misma
+forma de segmento (Off / On). Es **por dispositivo**, como el tema y oz↔ml —
+pero, a diferencia de ellos, también existe del lado del servidor, que es
+quien manda la notificación.
+
+- **No dice "On" hasta que es verdad.** "On" exige las dos cosas: la
+  suscripción en este navegador **y** su fila confirmada en el servidor. Si no
+  se puede preguntar, el estado es `unknown` y lo dice ("no se pudo
+  verificar"), no "On" por las dudas.
+- **Donde no se puede, se explica por qué** en vez de ofrecer un botón que no
+  hace nada. Los estados, con su texto: `unsupported` (el navegador no recibe
+  notificaciones), `install` (iPhone/iPad: hace falta agregar la app a la
+  pantalla de inicio), `unavailable` (este servidor no tiene las claves
+  configuradas), `denied` (las notificaciones están bloqueadas para el sitio:
+  hay que permitirlas en la configuración del sitio). En `unsupported`,
+  `install` y `unavailable` los dos segmentos quedan deshabilitados
+  (`.seg-btn:disabled`); con `denied` siguen tocables —el segmento marcado es
+  "Off"— porque tocar "On" es lo que vuelve a leer el permiso una vez que lo
+  habilitaron en la configuración del sitio.
+- El texto explicativo va en `.menu-note`, con `role="status"`; un fallo
+  concreto sale como `Banner kind="error"` adentro del grupo.
+- **La notificación se escribe en el idioma que se guardó con la
+  suscripción**, no en el del servidor ni en el del navegador: el idioma es
+  una columna de la fila y se actualiza cuando se cambia el idioma de la app
+  con los avisos prendidos. Es el único texto de la app que **no** lo resuelve
+  el cliente (§5.9): cuando llega, la app puede estar cerrada.
+- **El texto de reserva del service worker queda en inglés, a propósito**
+  (`public/sw.js`): si el payload no se puede leer, muestra "Amelia" / "Open
+  Amelia to see what's new." El worker no tiene diccionarios, y un push que
+  termina **sin** mostrar nada se le cuenta en contra al sitio. El aviso real
+  llega ya escrito en el idioma del dispositivo.
+- Dos avisos de la misma sesión comparten `tag`, así que el segundo
+  **reemplaza** al primero en vez de apilar otro, y no vuelve a vibrar.
+- Cerrar sesión apaga los avisos de ese dispositivo (borra la fila y la
+  suscripción); iniciar sesión suelta la suscripción que hubiera quedado, para
+  que el menú no arranque en "On" con la cuenta anterior.
 
 ### Verificación de esta sección (20 sep 2026)
 
