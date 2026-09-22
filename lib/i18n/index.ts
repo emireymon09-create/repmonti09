@@ -88,7 +88,16 @@ function pick(entry: string | Plural, vars?: Vars): string {
  * on screen instead of vanishing.
  */
 export function translate(lang: Lang, key: MessageKey, vars?: Vars): string {
-  const entry = DICTIONARIES[lang][key] ?? en[key]
+  const entry = (DICTIONARIES[lang][key] ?? en[key]) as string | Plural | undefined
+  // A key built from data (`diaper.${row.diaper_type}`) with a value no
+  // dictionary knows — a row written by something newer, or by hand: show
+  // the raw value ("purple") rather than take the page down.
+  if (entry === undefined) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(`[i18n] no translation for "${String(key)}"; showing the raw value`)
+    }
+    return String(key).slice(String(key).lastIndexOf('.') + 1)
+  }
   return pick(entry, vars).replace(/\{(\w+)\}/g, (whole, name: string) =>
     vars && name in vars ? String(vars[name]) : whole,
   )

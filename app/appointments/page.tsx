@@ -13,7 +13,7 @@ import { useT } from '@/lib/i18n/react'
 const APPOINTMENT_TYPES: AppointmentType[] = ['checkup', 'vaccine', 'sick_visit', 'other']
 
 export default function AppointmentsPage() {
-  const { baby, userId, loading } = useBaby()
+  const { baby, userId, loading, unreachable } = useBaby()
   const { t } = useT()
 
   const [rows, setRows] = useState<DoctorAppointment[]>([])
@@ -100,7 +100,7 @@ export default function AppointmentsPage() {
     return (
       <Page>
         <Nav />
-        <NoBaby />
+        <NoBaby offline={unreachable} />
       </Page>
     )
 

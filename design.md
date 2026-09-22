@@ -213,8 +213,10 @@ Destinados a mudarse a `packages/ui` cuando llegue el monorepo.
 | `Banner` | `.banner` | Tipos `error` / `ok` / `warn`. Lleva `role="status"` |
 | `Nav` | `.nav` | 5 tabs + menú de engranaje. En teléfono (<600px) es una barra inferior fija, ver §4 "Navegación" |
 | `SyncBar` | `.syncbar` | En `components/SyncStatus.tsx`. Estado offline / pendientes. `role="status"`, y `.has-pending` cuando la cola no está vacía |
-| `SyncStatus` | — | En `components/SyncStatus.tsx`. El que cablea `useSync()` con `SyncBar`; lo montan `/appointments` y `/pumping`. `/dashboard`, `/growth` y `/history` usan `useSync()` + `SyncBar` directo, porque necesitan releer al sincronizar y mostrar el error de sincronización |
-| `NoBaby` | — | En `components/NoBaby.tsx`. Estado vacío cuando no hay perfil de bebé |
+| `SyncStatus` | — | En `components/SyncStatus.tsx`. El que cablea `useSync()` con `SyncBar` y `SyncErrorBanner`; lo montan `/appointments` y `/pumping`. `/dashboard`, `/growth` y `/history` usan `useSync()` + `SyncBar` directo, porque necesitan releer al sincronizar y mostrar el error de sincronización |
+| `SeenNote` | `.syncbar` | En `components/SyncStatus.tsx` (22 sep 2026). Offline, avisa que se muestra la copia guardada en el dispositivo y de cuándo es. Informativo, con el mismo aspecto que `SyncBar`, `role="status"`; no renderiza nada si la lectura anduvo |
+| `SyncErrorBanner` | `.banner` (error) | En `components/SyncStatus.tsx` (22 sep 2026). "No se pudo sincronizar": nombra la entrada que el server rechazó (y de cuándo es) y ofrece **Descartar** (`Btn quiet`), siempre tras un `window.confirm` que dice qué se pierde (§5.6). Lo montan `/dashboard`, `/history`, `/growth` y, vía `SyncStatus`, `/appointments` y `/pumping` |
+| `NoBaby` | — | En `components/NoBaby.tsx`. Estado vacío cuando no hay perfil de bebé. Variante `offline` (22 sep 2026): sin conexión y sin nada guardado en el dispositivo dice eso, no "no hay perfil de bebé" |
 | `ServiceWorker` | — | En `components/ServiceWorker.tsx`. No renderiza nada: registra `/sw.js`, **solo en producción** |
 
 Los cuatro exports de `components/ui.tsx` que faltaban en la tabla original
@@ -339,9 +341,28 @@ Es el patrón de UX más importante del proyecto.
   habitación de bebé es una condición normal.
 - Offline, una página **no se vacía**: sigue mostrando lo último que devolvió
   el server, con la cola encima (`/dashboard`, `/history`, `/growth`, desde
-  el 21 sep 2026). Hueco: en una primera carga sin conexión no hay nada que
-  mostrar, y en `/dashboard` las tarjetas de Lactancia y Sueño todavía no
-  llevan `.pending-tag` (ver `CLAUDE.md` §6).
+  el 21 sep 2026). Y una edición offline se marca al instante: la página
+  repinta desde la cola sin esperar a que la lectura se rinda.
+- **Abrir sin conexión muestra la copia guardada** (22 sep 2026): las últimas
+  filas buenas de cada página quedan en el dispositivo (`lib/lastSeen.ts`) y,
+  mientras se muestran, `SeenNote` dice de cuándo son — con el aspecto de
+  `.syncbar`, porque es información, no un error. Así la pantalla de pared no
+  hace pasar filas de hace horas por el estado actual. Al volver una lectura
+  buena, el aviso se va solo.
+- **"Nada guardado" no es "no hay nada"**: offline y sin copia, las listas y
+  tarjetas no dicen "No sleep logged yet" ni "Nothing scheduled" (sería una
+  suposición); dicen que no hay nada guardado en el dispositivo, y las
+  tarjetas muestran "—". Lo mismo `NoBaby offline`.
+- En `/dashboard` las tarjetas de **Lactancia y Sueño** llevan `.pending-tag`
+  en la sesión en curso y en la última, como las de biberón y pañal.
+- **Un rechazo del server se muestra, no se traga.** `SyncErrorBanner` nombra
+  la entrada que frena la cola y ofrece Descartar, siempre tras el `confirm`
+  de §5.6 que dice qué se pierde (y cuántas ediciones de esa entrada se van
+  con ella). Nada sale de la cola sin que alguien lo pida.
+- Hueco: **las páginas no se releen solas** — solo al montar, al volver
+  `online` y tras sincronizar. En la pared, lo que carga el otro padre no
+  aparece hasta recargar, y un corte con la página quieta no muestra el aviso
+  de copia guardada (ver `CLAUDE.md` §6).
 
 ### 5.5 Errores visibles, nunca silenciosos
 
@@ -410,9 +431,9 @@ Cada patrón de §5 afirma algo sobre el código. Se comprobó uno por uno:
 | 5.1 | `tabular-nums` en dígitos que cuentan | `app/globals.css:246` y `:484` |
 | 5.2 | El cronómetro usa `elapsed()` | `lib/format.ts:107` |
 | 5.3 | Relativo/absoluto con `timeAgo()` | `lib/format.ts:86`; TZ del hogar en `:16`. Cubierto por `tests/unit/format.test.ts` bajo cuatro timezones |
-| 5.4 | "Not synced yet" en todos lados | `.pending-tag` en `app/globals.css:864`, usado en `app/dashboard/page.tsx:507` y `:551` (líneas al 21 sep 2026); sufijo `· not synced yet` en `lib/db.ts:649`; `components/SyncStatus.tsx:29` |
-| 5.5 | Todo error se muestra en un `Banner` | `components/ui.tsx:76-84`, con `role="status"` |
-| 5.6 | Confirmación que dice qué se conserva | `components/ui.tsx:121` — textual: *"Zero out the \"in the stash\" total? Past sessions stay in History."* Y `app/history/page.tsx:249`, `app/pumping/page.tsx:143` |
+| 5.4 | "Not synced yet" en todos lados | `.pending-tag` en `app/globals.css:864`, usado en `app/dashboard/page.tsx:471` y `:497` (Lactancia: en curso / última), `:539` (biberón), `:583` (pañal), `:612` y `:639` (Sueño: en curso / último) (líneas al 22 sep 2026); sufijo `· not synced yet` en `lib/db.ts:745-746` (`mark`); `SyncBar` calla con conexión y cola vacía en `components/SyncStatus.tsx:22`; `SeenNote` como `.syncbar` en `:66-78`; Descartar con `window.confirm` en `SyncErrorBanner`, `:87` y `:116` |
+| 5.5 | Todo error se muestra en un `Banner` | `components/ui.tsx:81-93`, con `role="status"` (líneas al 22 sep 2026) |
+| 5.6 | Confirmación que dice qué se conserva | `components/ui.tsx:213` — textual: *"Zero out the \"in the stash\" total? Past sessions stay in History."* Y `app/history/page.tsx:320`, `app/pumping/page.tsx:151`, `app/growth/page.tsx:199`; descartar un registro rechazado, `components/SyncStatus.tsx:116` (líneas al 22 sep 2026) |
 | 5.7 | Unidad hablada, preferencia por dispositivo | `lib/useVolumeUnit.ts` + `formatVolume()` en `lib/format.ts:182` |
 | 5.8 | Hora pasada en todas las acciones | los parámetros `at?: string` de `lib/db.ts` (`:202`, `:253`, `:303`, `:318`, `:362`…) |
 

@@ -107,6 +107,8 @@ export type ActivityEntry = {
   what: string
   /** For a view that already labels the kind: "Wet". */
   detail: string
+  /** A nursing or sleep session still running: `at` is when it started. */
+  ongoing?: boolean
 }
 
 // Appointment type names live in the dictionaries (lib/i18n, `apptType.*`).

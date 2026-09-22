@@ -28,7 +28,7 @@ const SIDES: { value: PumpSide; label: MessageKey }[] = [
 ]
 
 export default function PumpingPage() {
-  const { baby, userId, loading } = useBaby()
+  const { baby, userId, loading, unreachable } = useBaby()
   const [unit] = useVolumeUnit()
   const { t, lang } = useT()
 
@@ -174,7 +174,7 @@ export default function PumpingPage() {
     return (
       <Page>
         <Nav />
-        <NoBaby />
+        <NoBaby offline={unreachable} />
       </Page>
     )
 

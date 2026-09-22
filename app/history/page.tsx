@@ -4,7 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useBaby } from '@/lib/useBaby'
 import { NoBaby } from '@/components/NoBaby'
 import { Banner, Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
-import { SyncBar } from '@/components/SyncStatus'
+import { SeenNote, SyncBar, SyncErrorBanner } from '@/components/SyncStatus'
+import { lastGood, seenKey, type LastGood, type SeenState } from '@/lib/lastSeen'
 import {
   buildActivity,
   keepLastGood,
@@ -28,6 +29,7 @@ import { useVolumeUnit } from '@/lib/useVolumeUnit'
 import { useT } from '@/lib/i18n/react'
 import { useReturnFocus } from '@/lib/useReturnFocus'
 import type { Lang } from '@/lib/i18n'
+import { looksOffline, type PendingWrite } from '@/lib/queue'
 import type {
   ActivityEntry,
   DiaperChange,
@@ -96,7 +98,7 @@ function isEditable(kind: ActivityEntry['kind']): kind is EditKind {
 }
 
 export default function HistoryPage() {
-  const { baby, loading } = useBaby()
+  const { baby, loading, unreachable } = useBaby()
   const [unit] = useVolumeUnit()
   const { t, lang } = useT()
 
@@ -106,6 +108,7 @@ export default function HistoryPage() {
   const [nursing, setNursing] = useState<WithPending<NursingSession>[]>([])
   const [sleep, setSleep] = useState<WithPending<SleepSession>[]>([])
   const [err, setErr] = useState<string | null>(null)
+  const [loadErr, setLoadErr] = useState<string | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -143,30 +146,15 @@ export default function HistoryPage() {
   // offline shows as "not synced yet" instead of looking stale. Offline the
   // reads fail after a few seconds of retries: the last rows the server
   // gave stay up, with the queue on top of them, rather than an empty list.
-  // And that slow read must not land over a newer one.
-  const serverRows = useRef<ServerRows>(NO_ROWS)
+  // They start from the copy this device saved last time (lib/lastSeen.ts),
+  // so a reload with no connection isn't empty either. And that slow read
+  // must not land over a newer one.
+  const serverRows = useRef<LastGood<ServerRows> | null>(null)
   const latestRead = useRef(0)
-  const refresh = useCallback(
-    async (babyId: string) => {
-      const read = ++latestRead.current
-      const [feedingsRead, diapersRead, nursingRead, sleepRead, queued] = await Promise.all([
-        recentFeedings(babyId, HISTORY_LIMIT),
-        recentDiapers(babyId, HISTORY_LIMIT),
-        recentNursing(babyId, HISTORY_LIMIT),
-        recentSleep(babyId, HISTORY_LIMIT),
-        pendingWrites(),
-      ])
-      if (read !== latestRead.current) return
+  const [seen, setSeen] = useState<SeenState>({ kind: 'live' })
 
-      const { rows, error } = keepLastGood(serverRows.current, {
-        feedings: feedingsRead,
-        diapers: diapersRead,
-        nursing: nursingRead,
-        sleep: sleepRead,
-      })
-      serverRows.current = rows
-      if (error && navigator.onLine) setErr(t('history.couldNotLoad', { error }))
-
+  const show = useCallback(
+    (rows: ServerRows, queued: PendingWrite[]) => {
       const mFeedings = mergePending(rows.feedings, 'feedings', queued)
       const mDiapers = mergePending(rows.diapers, 'diaper_changes', queued)
       const mNursing = mergePending(rows.nursing, 'nursing_sessions', queued)
@@ -181,15 +169,68 @@ export default function HistoryPage() {
       // merge dashboard uses for Today, just unfiltered. buildActivity
       // sorts newest first, queued entries included; the per-kind lists
       // above are only looked up by id, so their order doesn't matter.
-      const entries = buildActivity(mFeedings, mNursing, mDiapers, mSleep, 0, unit, lang)
+      // Today lists a running session first; here it goes by time like the
+      // rest, so it lands under the day it started.
+      const entries = buildActivity(mFeedings, mNursing, mDiapers, mSleep, 0, unit, lang).sort(
+        (a, b) => new Date(b.at).getTime() - new Date(a.at).getTime(),
+      )
       setDays(groupByHouseholdDay(entries, lang))
     },
-    [unit, lang, t],
+    [unit, lang],
   )
 
-  const { online, pending, syncing, syncError, reloadPending } = useSync(() => {
-    if (baby) refresh(baby.id)
-  })
+  const refresh = useCallback(
+    async (babyId: string) => {
+      const read = ++latestRead.current
+      const key = seenKey.page('history', babyId)
+      if (serverRows.current?.key !== key) serverRows.current = lastGood(key, NO_ROWS)
+      const last = serverRows.current
+
+      // Same quick repaint as /dashboard: the queue answers at once, so an
+      // edit made offline shows as "not synced yet" right away instead of
+      // when the server read gives up. Only with something queued, or with
+      // no connection: right after a flush the queue is empty and the last
+      // server rows predate it, so repainting them would drop what was sent.
+      const queuedNow = await pendingWrites()
+      if (read !== latestRead.current) return
+      const offline = navigator.onLine === false
+      if (queuedNow.length > 0 || offline) {
+        show(last.rows, queuedNow)
+        setSeen(last.state(offline))
+      }
+
+      const [feedingsRead, diapersRead, nursingRead, sleepRead, queued] = await Promise.all([
+        recentFeedings(babyId, HISTORY_LIMIT),
+        recentDiapers(babyId, HISTORY_LIMIT),
+        recentNursing(babyId, HISTORY_LIMIT),
+        recentSleep(babyId, HISTORY_LIMIT),
+        pendingWrites(),
+      ])
+      if (read !== latestRead.current) return
+
+      const { rows, error } = keepLastGood(last.rows, {
+        feedings: feedingsRead,
+        diapers: diapersRead,
+        nursing: nursingRead,
+        sleep: sleepRead,
+      })
+      setSeen(last.settle(rows, error))
+      // A read that failed for lack of network is not an error to shout:
+      // the saved-copy note (or the "nothing saved" state) already says it,
+      // and the next good read clears this. Kept apart from `err`, which
+      // belongs to the user's own writes.
+      setLoadErr(error && !looksOffline(error) ? t('history.couldNotLoad', { error }) : null)
+
+      show(rows, queued)
+    },
+    [show, t],
+  )
+
+  const { online, pending, syncing, syncError, syncFailed, discardFailed, reloadPending } = useSync(
+    () => {
+      if (baby) refresh(baby.id)
+    },
+  )
 
   useEffect(() => {
     if (baby) refresh(baby.id)
@@ -312,7 +353,7 @@ export default function HistoryPage() {
     return (
       <Page>
         <Nav />
-        <NoBaby />
+        <NoBaby offline={unreachable} />
       </Page>
     )
 
@@ -321,14 +362,18 @@ export default function HistoryPage() {
       <Nav babyId={baby.id} />
       <h1 className="title">{t('history.title')}</h1>
       <SyncBar online={online} pending={pending} syncing={syncing} />
-      {syncError && <Banner kind="error">{t('common.couldNotSync', { error: syncError })}</Banner>}
+      <SeenNote state={seen} />
+      <SyncErrorBanner error={syncError} failed={syncFailed} onDiscard={discardFailed} />
+      {loadErr && <Banner kind="error">{loadErr}</Banner>}
       {err && <Banner kind="error">{err}</Banner>}
       {flash && !err && <Banner kind="ok">{flash}</Banner>}
 
       <Grid>
         {days.length === 0 ? (
           <Card>
-            <div className="empty">{t('history.empty')}</div>
+            <div className="empty">
+              {seen.kind === 'nothing' ? t('sync.nothingSaved') : t('history.empty')}
+            </div>
           </Card>
         ) : (
           days.map((day) => (
@@ -347,15 +392,19 @@ export default function HistoryPage() {
                         </span>
                         {isEditable(entry.kind) && !isEditing && (
                           <span className="feed-actions">
-                            <button
-                              type="button"
-                              className="linkish"
-                              data-edit-for={`${entry.kind}-${entry.id}`}
-                              disabled={busy || editing !== null}
-                              onClick={() => startEdit(entry)}
-                            >
-                              {t('common.edit')}
-                            </button>
+                            {/* A session still running has no end to
+                                correct yet; it is stopped from Today. */}
+                            {!entry.ongoing && (
+                              <button
+                                type="button"
+                                className="linkish"
+                                data-edit-for={`${entry.kind}-${entry.id}`}
+                                disabled={busy || editing !== null}
+                                onClick={() => startEdit(entry)}
+                              >
+                                {t('common.edit')}
+                              </button>
+                            )}
                             <button
                               type="button"
                               className="linkish"

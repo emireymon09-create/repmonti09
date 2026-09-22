@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabaseClient'
+import { forgetSeen } from '@/lib/lastSeen'
 import { Banner, Btn, Card, Page } from '@/components/ui'
 import { useT } from '@/lib/i18n/react'
 
@@ -37,6 +38,9 @@ export default function LoginPage() {
       )
       return
     }
+    // A new session starts clean: nothing another account left saved for
+    // offline on this device (lib/lastSeen.ts).
+    forgetSeen()
     router.push('/dashboard')
   }
 

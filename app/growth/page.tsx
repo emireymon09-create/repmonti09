@@ -4,7 +4,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useBaby } from '@/lib/useBaby'
 import { NoBaby } from '@/components/NoBaby'
 import { Banner, Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
-import { SyncBar } from '@/components/SyncStatus'
+import { SeenNote, SyncBar, SyncErrorBanner } from '@/components/SyncStatus'
+import { lastGood, seenKey, type LastGood, type SeenState } from '@/lib/lastSeen'
+import { looksOffline, type PendingWrite } from '@/lib/queue'
 import { GrowthFields, UnitToggle } from '@/components/GrowthFields'
 import {
   addGrowth,
@@ -32,7 +34,7 @@ import {
 } from '@/lib/format'
 
 export default function GrowthPage() {
-  const { baby, userId, loading } = useBaby()
+  const { baby, userId, loading, unreachable } = useBaby()
   const { t, lang } = useT()
 
   const [rows, setRows] = useState<WithPending<GrowthMeasurement>[]>([])
@@ -51,6 +53,7 @@ export default function GrowthPage() {
   const [editNotes, setEditNotes] = useState('')
 
   const [err, setErr] = useState<string | null>(null)
+  const [loadErr, setLoadErr] = useState<string | null>(null)
   const [saved, setSaved] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   useReturnFocus(editing?.id ?? null, !busy)
@@ -59,29 +62,57 @@ export default function GrowthPage() {
   // offline shows as "not synced yet" instead of missing or looking stale.
   // Offline the read fails (after a few seconds of retries): the last rows
   // the server gave stay up, with the queue on top of them, rather than an
-  // empty list. And that slow read must not land over a newer one.
-  const serverRows = useRef<{ growth: GrowthMeasurement[] }>({ growth: [] })
+  // empty list. They start from the copy this device saved last time
+  // (lib/lastSeen.ts), so a reload with no connection isn't empty either.
+  // And that slow read must not land over a newer one.
+  const serverRows = useRef<LastGood<{ growth: GrowthMeasurement[] }> | null>(null)
   const latestRead = useRef(0)
+  const [seen, setSeen] = useState<SeenState>({ kind: 'live' })
+
+  const show = useCallback((growth: GrowthMeasurement[], queued: PendingWrite[]) => {
+    const merged = mergePending(growth, 'growth_measurements', queued)
+    // A queued entry lands at the end and a queued edit can move its date:
+    // back to newest first, which is what "since last visit" relies on.
+    merged.sort((a, b) => b.measured_at.localeCompare(a.measured_at))
+    setRows(merged)
+  }, [])
+
   const refresh = useCallback(
     async (babyId: string) => {
       const read = ++latestRead.current
+      const key = seenKey.page('growth', babyId)
+      if (serverRows.current?.key !== key) serverRows.current = lastGood(key, { growth: [] })
+      const last = serverRows.current
+
+      // Same quick repaint as /dashboard: the queue answers at once, so a
+      // change made offline shows right away, not when the read gives up.
+      const queuedNow = await pendingWrites()
+      if (read !== latestRead.current) return
+      const offline = navigator.onLine === false
+      if (queuedNow.length > 0 || offline) {
+        show(last.rows.growth, queuedNow)
+        setSeen(last.state(offline))
+      }
+
       const [growthRead, queued] = await Promise.all([listGrowth(babyId), pendingWrites()])
       if (read !== latestRead.current) return
-      const { rows, error } = keepLastGood(serverRows.current, { growth: growthRead })
-      serverRows.current = rows
-      if (error && navigator.onLine) setErr(t('growth.couldNotLoad', { error }))
-      const merged = mergePending(rows.growth, 'growth_measurements', queued)
-      // A queued entry lands at the end and a queued edit can move its date:
-      // back to newest first, which is what "since last visit" relies on.
-      merged.sort((a, b) => b.measured_at.localeCompare(a.measured_at))
-      setRows(merged)
+      const { rows, error } = keepLastGood(last.rows, { growth: growthRead })
+      setSeen(last.settle(rows, error))
+      // A read that failed for lack of network is not an error to shout:
+      // the saved-copy note (or the "nothing saved" state) already says it,
+      // and the next good read clears this. Kept apart from `err`, which
+      // belongs to the user's own writes.
+      setLoadErr(error && !looksOffline(error) ? t('growth.couldNotLoad', { error }) : null)
+      show(rows.growth, queued)
     },
-    [t],
+    [show, t],
   )
 
-  const { online, pending, syncing, syncError, reloadPending } = useSync(() => {
-    if (baby) refresh(baby.id)
-  })
+  const { online, pending, syncing, syncError, syncFailed, discardFailed, reloadPending } = useSync(
+    () => {
+      if (baby) refresh(baby.id)
+    },
+  )
 
   useEffect(() => {
     if (baby) refresh(baby.id)
@@ -192,7 +223,7 @@ export default function GrowthPage() {
     return (
       <Page>
         <Nav />
-        <NoBaby />
+        <NoBaby offline={unreachable} />
       </Page>
     )
 
@@ -201,7 +232,9 @@ export default function GrowthPage() {
       <Nav babyId={baby.id} />
       <h1 className="title">{t('growth.title')}</h1>
       <SyncBar online={online} pending={pending} syncing={syncing} />
-      {syncError && <Banner kind="error">{t('common.couldNotSync', { error: syncError })}</Banner>}
+      <SeenNote state={seen} />
+      <SyncErrorBanner error={syncError} failed={syncFailed} onDiscard={discardFailed} />
+      {loadErr && <Banner kind="error">{loadErr}</Banner>}
       {err && <Banner kind="error">{err}</Banner>}
       {saved && !err && <Banner kind="ok">{saved}</Banner>}
 
@@ -241,7 +274,9 @@ export default function GrowthPage() {
 
         {rows.length === 0 ? (
           <Card>
-            <div className="empty">{t('growth.empty')}</div>
+            <div className="empty">
+              {seen.kind === 'nothing' ? t('sync.nothingSaved') : t('growth.empty')}
+            </div>
           </Card>
         ) : (
           rows.map((row, index) => {

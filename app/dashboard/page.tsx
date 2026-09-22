@@ -27,7 +27,8 @@ import {
   startSleep,
 } from '@/lib/db'
 import { useSync } from '@/lib/useSync'
-import { SyncBar } from '@/components/SyncStatus'
+import { SeenNote, SyncBar, SyncErrorBanner } from '@/components/SyncStatus'
+import { lastGood, seenKey, type LastGood, type SeenState } from '@/lib/lastSeen'
 import { useVolumeUnit } from '@/lib/useVolumeUnit'
 import { useT } from '@/lib/i18n/react'
 import type {
@@ -41,7 +42,7 @@ import type {
   SleepSession,
   WithPending,
 } from '@/lib/types'
-import type { PendingWrite } from '@/lib/queue'
+import { looksOffline, type PendingWrite } from '@/lib/queue'
 import {
   ageFrom,
   apptWhen,
@@ -78,7 +79,7 @@ type ServerRows = {
 const NO_ROWS: ServerRows = { feedings: [], diapers: [], nursing: [], sleep: [], appt: null }
 
 export default function Dashboard() {
-  const { baby, userId, loading, refreshBaby } = useBaby()
+  const { baby, userId, loading, refreshBaby, unreachable } = useBaby()
   const [unit] = useVolumeUnit()
   const { t, lang } = useT()
 
@@ -96,6 +97,7 @@ export default function Dashboard() {
   const [birthBusy, setBirthBusy] = useState(false)
   const [bottleAmount, setBottleAmount] = useState('')
   const [err, setErr] = useState<string | null>(null)
+  const [loadErr, setLoadErr] = useState<string | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [now, setNow] = useState(() => Date.now())
@@ -132,9 +134,12 @@ export default function Dashboard() {
   // seconds of retries) and comes back empty; painting that would wipe
   // Today, hide a running timer and offer to start a second session. A
   // failed read keeps the previous good rows instead, and a slow read
-  // never lands over a newer one.
-  const serverRows = useRef<ServerRows>(NO_ROWS)
+  // never lands over a newer one. Those rows start from the copy this
+  // device saved last time (lib/lastSeen.ts), so a reload with no
+  // connection isn't a blank page either.
+  const serverRows = useRef<LastGood<ServerRows> | null>(null)
   const latestRead = useRef(0)
+  const [seen, setSeen] = useState<SeenState>({ kind: 'live' })
 
   // Anything still queued is folded in and marked, so a tap made with
   // no signal is visible rather than apparently lost.
@@ -160,15 +165,23 @@ export default function Dashboard() {
   const refresh = useCallback(
     async (babyId: string) => {
       const read = ++latestRead.current
+      const key = seenKey.page('dashboard', babyId)
+      if (serverRows.current?.key !== key) serverRows.current = lastGood(key, NO_ROWS)
+      const last = serverRows.current
 
       // The queue is local and answers at once: a session just started
       // offline shows as running (Stop, not Left/Right) right away, not
-      // after the server read gives up. Only when something is queued: right
-      // after a flush the queue is empty but the last server rows predate
-      // it, so repainting them would briefly drop what was just sent.
+      // after the server read gives up. Only when something is queued, or
+      // with no connection (the reads can only end up where they start):
+      // right after a flush the queue is empty but the last server rows
+      // predate it, so repainting them would briefly drop what was just sent.
       const queuedNow = await pendingWrites()
       if (read !== latestRead.current) return
-      if (queuedNow.length > 0) show(serverRows.current, queuedNow)
+      const offline = navigator.onLine === false
+      if (queuedNow.length > 0 || offline) {
+        show(last.rows, queuedNow)
+        setSeen(last.state(offline))
+      }
 
       const [f, d, n, s, a, queued] = await Promise.all([
         recentFeedings(babyId),
@@ -180,27 +193,33 @@ export default function Dashboard() {
       ])
       if (read !== latestRead.current) return
 
-      const { rows, error } = keepLastGood(serverRows.current, {
+      const { rows, error } = keepLastGood(last.rows, {
         feedings: f,
         diapers: d,
         nursing: n,
         sleep: s,
         appt: a,
       })
-      serverRows.current = rows
+      setSeen(last.settle(rows, error))
 
       // Offline reads fail; that is expected and the sync bar already
       // says so, so don't also shout an error over the top of it.
-      if (error && navigator.onLine) setErr(t('dash.couldNotLoad', { error }))
+      // A read that failed for lack of network is not an error to shout:
+      // the saved-copy note (or the "nothing saved" state) already says it,
+      // and the next good read clears this. Kept apart from `err`, which
+      // belongs to the user's own writes.
+      setLoadErr(error && !looksOffline(error) ? t('dash.couldNotLoad', { error }) : null)
 
       show(rows, queued)
     },
     [show, t],
   )
 
-  const { online, pending, syncing, syncError, reloadPending } = useSync(() => {
-    if (baby) refresh(baby.id)
-  })
+  const { online, pending, syncing, syncError, syncFailed, discardFailed, reloadPending } = useSync(
+    () => {
+      if (baby) refresh(baby.id)
+    },
+  )
 
   useEffect(() => {
     if (baby) refresh(baby.id)
@@ -239,6 +258,9 @@ export default function Dashboard() {
   const lastSleep = sleep.find((s) => s.ended_at) ?? null
   const lastFeeding = feedings[0] ?? null
   const lastDiaper = diapers[0] ?? null
+  // Offline, with no read yet and nothing saved on this device: "no
+  // sessions yet" would be a guess, so the cards say nothing instead.
+  const unknown = seen.kind === 'nothing'
   const feedingPrediction = predictNextFeeding(feedings, nursing)
   const napPrediction = predictNextNap(sleep)
 
@@ -297,7 +319,7 @@ export default function Dashboard() {
     return (
       <Page>
         <Nav />
-        <NoBaby />
+        <NoBaby offline={unreachable} />
       </Page>
     )
 
@@ -381,7 +403,9 @@ export default function Dashboard() {
       <p className="age">{age ?? ' '}</p>
 
       <SyncBar online={online} pending={pending} syncing={syncing} />
-      {syncError && <Banner kind="error">{t('common.couldNotSync', { error: syncError })}</Banner>}
+      <SeenNote state={seen} />
+      <SyncErrorBanner error={syncError} failed={syncFailed} onDiscard={discardFailed} />
+      {loadErr && <Banner kind="error">{loadErr}</Banner>}
       {err && <Banner kind="error">{err}</Banner>}
       {flash && !err && <Banner kind="ok">{flash}</Banner>}
 
@@ -443,6 +467,9 @@ export default function Dashboard() {
                   {t('dash.sideActive', { side: t(`side.${activeNursing.side}`) })}
                 </span>
               </div>
+              {activeNursing.pending && (
+                <div className="pending-tag">{t('common.notSyncedYet')}</div>
+              )}
               <div className="row-tight">
                 <Btn
                   variant="live"
@@ -462,8 +489,13 @@ export default function Dashboard() {
               <div className="value">
                 {lastNursing
                   ? `${timeAgo(lastNursing.ended_at, now, lang)} · ${t(`side.${lastNursing.side}`)} · ${durationBetween(lastNursing.started_at, lastNursing.ended_at!, lang)}`
-                  : t('dash.noSessions')}
+                  : unknown
+                    ? '—'
+                    : t('dash.noSessions')}
               </div>
+              {lastNursing?.pending && (
+                <div className="pending-tag">{t('common.notSyncedYet')}</div>
+              )}
               {suggested && (
                 <div className="meta">{t('dash.startOn', { side: t(`side.${suggested}`) })}</div>
               )}
@@ -577,6 +609,7 @@ export default function Dashboard() {
                   {activeSleep.source === 'nuc_derived' ? t('dash.detected') : t('dash.asleep')}
                 </span>
               </div>
+              {activeSleep.pending && <div className="pending-tag">{t('common.notSyncedYet')}</div>}
               <div className="row-tight">
                 <Btn
                   variant="live"
@@ -599,8 +632,11 @@ export default function Dashboard() {
                       duration: durationBetween(lastSleep.started_at, lastSleep.ended_at!, lang),
                       ago: timeAgo(lastSleep.ended_at, now, lang),
                     })
-                  : t('dash.noSleep')}
+                  : unknown
+                    ? '—'
+                    : t('dash.noSleep')}
               </div>
+              {lastSleep?.pending && <div className="pending-tag">{t('common.notSyncedYet')}</div>}
               {napPrediction.dueAt && (
                 <div className="meta">
                   {t('dash.nextNap', {
@@ -637,7 +673,7 @@ export default function Dashboard() {
               </div>
             </>
           ) : (
-            <div className="empty">{t('dash.nothingScheduled')}</div>
+            <div className="empty">{unknown ? '—' : t('dash.nothingScheduled')}</div>
           )}
           <div className="row-tight">
             <Link href="/appointments" className="linkish">
@@ -652,7 +688,7 @@ export default function Dashboard() {
         <Card spanAll>
           <Label>{t('dash.today')}</Label>
           {today.length === 0 ? (
-            <div className="empty">{t('dash.nothingToday')}</div>
+            <div className="empty">{unknown ? t('sync.nothingSaved') : t('dash.nothingToday')}</div>
           ) : (
             <div className="feed">
               {today.map((entry) => (

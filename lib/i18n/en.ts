@@ -92,6 +92,10 @@ export const en = {
   'activity.diaper': 'Diaper · {type}',
   'activity.woke': 'Woke',
   'activity.wokeDetected': 'Woke (detected)',
+  'activity.inProgress': 'in progress',
+  'activity.nursingNow': 'Nursing · {side}',
+  'activity.asleep': 'Asleep',
+  'activity.asleepDetected': 'Asleep (detected)',
 
   // ------------------------------------------------------------ nav + settings
   'nav.today': 'Today',
@@ -125,6 +129,33 @@ export const en = {
     one: 'Offline · {count} entry saved on this device, not synced yet.',
     other: 'Offline · {count} entries saved on this device, not synced yet.',
   },
+  'sync.showingSaved':
+    'Offline — showing what this device saw the last time it was connected ({when}).',
+  'sync.discard': 'Discard this entry',
+  'sync.rejected': 'It stopped at: {what}, saved on this device {when}.',
+  'sync.discardConfirm':
+    'Discard “{what}”? The server rejected it and it never got there, so it will be lost for good.',
+  'sync.discardConfirmEdits': {
+    one: 'Discard “{what}” and the change made to it afterwards? The server rejected it and it never got there, so they will be lost for good.',
+    other:
+      'Discard “{what}” and the {count} changes made to it afterwards? The server rejected it and it never got there, so they will be lost for good.',
+  },
+  'sync.what.insert': '{thing} (new)',
+  'sync.what.update': '{thing} (edit)',
+  'sync.what.delete': '{thing} (deletion)',
+  'sync.discardConfirmDelete':
+    'Discard “{what}”? The server rejected it, so the entry is not deleted and will show up again.',
+  'sync.thing.feedings': 'Feeding',
+  'sync.thing.diaper_changes': 'Diaper',
+  'sync.thing.nursing_sessions': 'Nursing',
+  'sync.thing.sleep_sessions': 'Sleep',
+  'sync.thing.pumping_sessions': 'Pumping',
+  'sync.thing.growth_measurements': 'Measurement',
+  'sync.thing.doctor_appointments': 'Appointment',
+  'sync.thing.babies': 'Baby profile',
+  'sync.thing.other': 'Entry',
+  'sync.nothingSaved':
+    'Offline — nothing is saved on this device yet. It will show up once there’s a connection.',
 
   // ------------------------------------------------------------ no baby
   'noBaby.lead': 'No baby profile found for your account yet.',

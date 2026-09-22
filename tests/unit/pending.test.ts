@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { keepLastGood, mergePending } from '@/lib/db'
+import { describeWrite, keepLastGood, mergePending } from '@/lib/db'
 import type { PendingOp, PendingWrite } from '@/lib/queue'
 
 // What a page shows offline: the last rows the server gave, with the
@@ -95,5 +95,25 @@ describe('keepLastGood', () => {
       { appt: { data: null, error: 'offline' } },
     )
     expect(rows.appt).toEqual({ id: 'x' })
+  })
+})
+
+describe('describeWrite (el nombre de una entrada encolada, para el aviso de descarte)', () => {
+  it('en el idioma de la interfaz, no la etiqueta en inglés guardada', () => {
+    const w = queued({ kind: 'insert', table: 'diaper_changes', row: { id: 'z' } })
+    expect(describeWrite(w, 'en')).toBe('Diaper (new)')
+    expect(describeWrite(w, 'es')).toBe('Pañal (alta)')
+    const e = queued({ kind: 'update', table: 'growth_measurements', id: 'z', patch: {} })
+    expect(describeWrite(e, 'es')).toBe('Medida (edición)')
+    const d = queued({
+      kind: 'update',
+      table: 'diaper_changes',
+      id: 'z',
+      patch: { voided_at: '2026-09-21T10:00:00Z' },
+    })
+    expect(describeWrite(d, 'en')).toBe('Diaper (deletion)')
+    expect(describeWrite(d, 'es')).toBe('Pañal (borrado)')
+    const o = queued({ kind: 'insert', table: 'nueva_tabla', row: { id: 'z' } })
+    expect(describeWrite(o, 'es')).toBe('Registro (alta)')
   })
 })

@@ -9,12 +9,18 @@
  *   · Same-origin GET only. Supabase requests are never touched — they
  *     carry auth tokens and must never sit in a cache on a shared
  *     wall-screen browser.
- *   · Never cache a non-OK or opaque response.
+ *   · Never cache a non-OK or opaque response, nor a REDIRECTED one:
+ *     installed from /login with nobody signed in, /dashboard answers
+ *     with the middleware's redirect to /login, and a redirected
+ *     response kept for a navigation fails it (ERR_FAILED) offline.
+ *   · The private pages are cached when a signed-in page asks for it
+ *     ('warm' message, lib/offlinePages.ts) — static HTML plus the
+ *     scripts it names, never data.
  *   · Never cache Next's RSC payloads; a stale one breaks navigation in
  *     ways that look like the app is broken rather than offline.
  */
 
-const VERSION = 'amelia-v2'
+const VERSION = 'amelia-v3'
 const SHELL = `${VERSION}-shell`
 const ASSETS = `${VERSION}-assets`
 
@@ -30,12 +36,37 @@ const PRECACHE = [
   '/icons/icon-512.png',
 ]
 
+/** A response worth keeping: ours, OK, and not the end of a redirect. */
+function keepable(response) {
+  return !!response && response.ok && !response.redirected && response.type === 'basic'
+}
+
+/**
+ * Fetch a page and keep it, plus the build files it names (its scripts
+ * and styles), so it can boot with no network. Nothing kept if the
+ * server redirected — e.g. to /login, with no session.
+ */
+async function keepPage(url) {
+  const response = await fetch(url, { credentials: 'same-origin', cache: 'no-cache' })
+  if (!keepable(response)) return
+  const html = await response.clone().text()
+  await (await caches.open(SHELL)).put(url, response)
+
+  const assets = await caches.open(ASSETS)
+  const files = new Set(html.match(/\/_next\/static\/[^"'\s)\\]+/g) || [])
+  await Promise.allSettled(
+    [...files].map(async (file) => {
+      if (await assets.match(file)) return
+      const res = await fetch(file)
+      if (keepable(res)) await assets.put(file, res)
+    }),
+  )
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(SHELL)
-      // Individually, so one 404 during a deploy can't fail the install.
-      .then((cache) => Promise.allSettled(PRECACHE.map((url) => cache.add(url))))
-      .then(() => self.skipWaiting()),
+    // Individually, so one 404 during a deploy can't fail the install.
+    Promise.allSettled(PRECACHE.map((url) => keepPage(url))).then(() => self.skipWaiting()),
   )
 })
 
@@ -69,7 +100,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          if (response && response.ok) {
+          if (keepable(response)) {
             const copy = response.clone()
             caches.open(SHELL).then((cache) => cache.put(request, copy))
           }
@@ -88,7 +119,7 @@ self.addEventListener('fetch', (event) => {
     caches.match(request).then((cached) => {
       if (cached) return cached
       return fetch(request).then((response) => {
-        if (response && response.ok && response.type === 'basic') {
+        if (keepable(response)) {
           const copy = response.clone()
           caches.open(ASSETS).then((cache) => cache.put(request, copy))
         }
@@ -101,4 +132,10 @@ self.addEventListener('fetch', (event) => {
 // Lets the page tell a waiting worker to take over immediately.
 self.addEventListener('message', (event) => {
   if (event.data === 'skip-waiting') self.skipWaiting()
+  // A signed-in page asking to keep the app's pages for offline.
+  if (event.data && event.data.type === 'warm' && Array.isArray(event.data.urls)) {
+    // Only this app's own page list: never a URL a message makes up.
+    const urls = event.data.urls.filter((u) => PRECACHE.includes(u))
+    event.waitUntil(Promise.allSettled(urls.map((url) => keepPage(url))))
+  }
 })

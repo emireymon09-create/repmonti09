@@ -16,6 +16,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabaseClient'
 import { resetPumpingTotal } from '@/lib/db'
+import { forgetSeen } from '@/lib/lastSeen'
 import { useVolumeUnit } from '@/lib/useVolumeUnit'
 import { useTheme, type Theme } from '@/lib/theme'
 import { APP_VERSION } from '@/lib/version'
@@ -189,6 +190,9 @@ export function Nav({ babyId }: { babyId?: string }) {
   }, [menuOpen])
 
   async function signOut() {
+    // First, and whatever signOut() does offline: this screen is shared,
+    // and the family's rows saved for offline must not outlive the session.
+    forgetSeen()
     await createClient().auth.signOut()
     router.push('/login')
   }

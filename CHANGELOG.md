@@ -4,6 +4,29 @@ Every version of Amelia, newest first. The current version is the `version`
 field in `package.json`; this file is the history. A test fails if the two
 disagree. Shown in the app under the settings gear → Version history.
 
+## [0.5.0] - 2026-09-22
+
+The app opens without a connection, and syncing no longer gets stuck.
+
+- Entries saved without a connection no longer clash or block syncing when
+  they're sent again after reconnecting — with two tabs open, or when the
+  answer from the server got lost on the way back.
+- A tab stuck on a request no longer holds up the others, and syncing tries
+  again by itself, also on bad wifi that the device still calls connected.
+- If the server rejects a saved entry, the warning names it and lets you
+  discard it, after a confirmation that says exactly what will be lost; the
+  entries behind it then sync.
+- The Nursing and Sleep cards on Today show "Not synced yet" too.
+- A nursing or sleep session that's still running now shows up in Today — at
+  the top, even if it started before midnight — and in History.
+- On History, an edit made without a connection is marked "Not synced yet"
+  right away.
+- Opening the app without a connection shows what this device last saw, with a
+  note saying from when, or a clear message if nothing is saved yet — instead
+  of sending you to the login page.
+- After you sign in, the app's pages open without a connection.
+- The copy saved on this device is erased when you sign out.
+
 ## [0.4.3] - 2026-09-21
 
 History and Today stay put when the connection drops.

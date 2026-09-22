@@ -21,12 +21,18 @@
 
 import { createClient } from '@/lib/supabaseClient'
 import { formatVolume } from '@/lib/format'
-import { documentLang, translate, type Lang } from '@/lib/i18n'
+import { documentLang, translate, type Lang, type MessageKey } from '@/lib/i18n'
 import {
   browserQueueStore,
   flushQueue,
   looksOffline,
   newId,
+  discardPlan,
+  discardWrites,
+  flushSettled,
+  isDeletion,
+  nudgeSync,
+  withFlushLock,
   type FlushResult,
   type PendingOp,
   type PendingWrite,
@@ -78,11 +84,44 @@ function fail<T>(empty: T, error: { message: string } | null): Result<T> {
 
 const store = browserQueueStore()
 
-/** Run one op against the server. Also the replay function for the queue. */
-async function sendOp(op: PendingOp): Promise<{ error: string | null }> {
-  const table = data().from(op.table)
-  const { error } =
-    op.kind === 'insert' ? await table.insert(op.row) : await table.update(op.patch).eq('id', op.id)
+/**
+ * Send one op through `db`. Exported so the integration tests run the
+ * exact call the app makes, with a signed-in test client.
+ *
+ * `replay` (the queue flush) sends an insert as INSERT … ON CONFLICT (id)
+ * DO NOTHING: the same entry sent twice — two tabs replaying the queue,
+ * or a replay of an insert whose response was lost — leaves one row and
+ * no error, instead of a primary-key violation that would stop the queue
+ * for good. It needs nothing beyond the INSERT grant and policy an insert
+ * already needs.
+ *
+ * A write made online (`write`) stays a plain insert: an id that clashes
+ * there is a real error and is shown as one, never reported as saved.
+ *
+ * What DO NOTHING could swallow on replay is an insert whose id is
+ * already taken by some other row — another family's included, silently.
+ * Ids are v4 uuids made on the device (newId); with crypto.randomUUID
+ * that collision doesn't happen in practice. newId's Math.random fallback
+ * for old WebViews is weaker, but a clash there would already have
+ * failed as an error on the first, online attempt — unless that first
+ * attempt never got an answer.
+ */
+export async function sendOpWith(
+  db: Pick<ReturnType<typeof data>, 'from'>,
+  op: PendingOp,
+  mode: 'write' | 'replay',
+  signal?: AbortSignal,
+): Promise<{ error: string | null }> {
+  const table = db.from(op.table)
+  const query =
+    op.kind === 'update'
+      ? table.update(op.patch).eq('id', op.id)
+      : mode === 'replay'
+        ? table.upsert(op.row, { onConflict: 'id', ignoreDuplicates: true })
+        : table.insert(op.row)
+  // The replay's deadline (flushQueue): an aborted request comes back as
+  // an error here, and flushQueue reports it as TIMED_OUT — offline.
+  const { error } = await (signal ? query.abortSignal(signal) : query)
   return { error: error ? error.message : null }
 }
 
@@ -98,7 +137,7 @@ async function write(label: string, op: PendingOp): Promise<Result<null>> {
     return enqueue(label, op)
   }
 
-  const { error } = await sendOp(op)
+  const { error } = await sendOpWith(data(), op, 'write')
   if (!error) return ok(null)
   if (looksOffline(error)) return enqueue(label, op)
   return { data: null, error }
@@ -113,6 +152,9 @@ async function enqueue(label: string, op: PendingOp): Promise<Result<null>> {
       queuedAt: new Date().toISOString(),
       op,
     })
+    // With the browser calling itself online (bad wifi) no 'online' event
+    // will come to start the replay: useSync schedules the retries.
+    nudgeSync('queued')
     return { data: null, error: null, queued: true }
   } catch (e) {
     // The underlying reason stays as the browser/queue wrote it; the frame
@@ -129,8 +171,63 @@ export function pendingWrites(): Promise<PendingWrite[]> {
   return store.all()
 }
 
-export function flushPending(): Promise<FlushResult> {
-  return flushQueue(store, DATA_SCHEMA, sendOp)
+/**
+ * One replay at a time across tabs; see withFlushLock in lib/queue.ts. If
+ * another flush holds the queue, nothing is sent and `busy` says so.
+ */
+export async function flushPending(): Promise<FlushResult> {
+  const result = await withFlushLock(() =>
+    flushQueue(store, DATA_SCHEMA, (op, signal) => sendOpWith(data(), op, 'replay', signal)),
+  )
+  if (result) return result
+  const remaining = (await store.all()).length
+  return { sent: 0, dropped: 0, remaining, error: null, busy: true }
+}
+
+/**
+ * Drop queued entries the server rejected — the user chose to, after a
+ * confirm naming them (components/SyncStatus.tsx): exactly the ids that
+ * confirm counted. See discardWrites in lib/queue.ts.
+ */
+export function discardPending(ids: string[]): Promise<PendingWrite[]> {
+  return discardWrites(store, ids)
+}
+
+/** What discarding `id` would take, read from the queue right now. */
+export function discardPendingPlan(id: string): Promise<PendingWrite[]> {
+  return discardPlan(store, id)
+}
+
+const THING: Record<string, MessageKey> = {
+  feedings: 'sync.thing.feedings',
+  diaper_changes: 'sync.thing.diaper_changes',
+  nursing_sessions: 'sync.thing.nursing_sessions',
+  sleep_sessions: 'sync.thing.sleep_sessions',
+  pumping_sessions: 'sync.thing.pumping_sessions',
+  growth_measurements: 'sync.thing.growth_measurements',
+  doctor_appointments: 'sync.thing.doctor_appointments',
+  babies: 'sync.thing.babies',
+}
+
+/**
+ * A queued entry named for the user, in the interface language — "Diaper
+ * (new)", "Pañal (edición)". Not the `label` stored with it: that is
+ * written once, in English, when it is queued.
+ */
+export function describeWrite(write: PendingWrite, lang: Lang = 'en'): string {
+  const thing = translate(lang, THING[write.op.table] ?? 'sync.thing.other')
+  const what =
+    write.op.kind === 'insert'
+      ? 'sync.what.insert'
+      : isDeletion(write)
+        ? 'sync.what.delete'
+        : 'sync.what.update'
+  return translate(lang, what, { thing })
+}
+
+/** Resolves once no flush (in any tab) is running. */
+export function pendingFlushSettled(): Promise<void> {
+  return flushSettled()
 }
 
 /**
@@ -656,6 +753,25 @@ export function buildActivity(
     what: string,
     detail: string,
   ) => out.push({ id: row.id, at, kind, what: mark(row, what), detail: mark(row, detail) })
+  // A session still running is listed where it started, marked as such —
+  // the same thing the card above shows with its stopwatch.
+  const running = (
+    row: { id: string; pending?: boolean },
+    at: string,
+    kind: ActivityEntry['kind'],
+    what: string,
+    detail: string,
+  ) => {
+    const now = t('activity.inProgress')
+    out.push({
+      id: row.id,
+      at,
+      kind,
+      what: mark(row, `${what} · ${now}`),
+      detail: mark(row, `${detail} · ${now}`),
+      ongoing: true,
+    })
+  }
 
   for (const f of feedings) {
     const text =
@@ -663,7 +779,9 @@ export function buildActivity(
         ? `${t('activity.bottle')}${f.amount_ml ? ` · ${formatVolume(f.amount_ml, unit)}` : ''}`
         : f.feeding_type === 'solid'
           ? t('activity.solids')
-          : t('activity.nursingFeed')
+          : f.feeding_type === 'nursing'
+            ? t('activity.nursingFeed')
+            : t(`feedingType.${f.feeding_type}`)
     entry(f, f.fed_at, 'feeding', text, text)
   }
   for (const n of nursing) {
@@ -673,6 +791,14 @@ export function buildActivity(
         n.ended_at,
         'nursing',
         t('activity.nursed', { side: t(`side.${n.side}`) }),
+        t(`activity.sideDetail.${n.side}`),
+      )
+    } else {
+      running(
+        n,
+        n.started_at,
+        'nursing',
+        t('activity.nursingNow', { side: t(`side.${n.side}`) }),
         t(`activity.sideDetail.${n.side}`),
       )
     }
@@ -690,12 +816,22 @@ export function buildActivity(
     if (s.ended_at) {
       const text = s.source === 'nuc_derived' ? t('activity.wokeDetected') : t('activity.woke')
       entry(s, s.ended_at, 'sleep', text, text)
+    } else {
+      const text = s.source === 'nuc_derived' ? t('activity.asleepDetected') : t('activity.asleep')
+      running(s, s.started_at, 'sleep', text, text)
     }
   }
 
+  // A session still running stays in Today even if it began before
+  // midnight, and goes first: it is what is happening now. History wants
+  // plain time order and sorts again (app/history/page.tsx).
   return out
-    .filter((e) => new Date(e.at).getTime() >= since)
-    .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+    .filter((e) => e.ongoing || new Date(e.at).getTime() >= since)
+    .sort(
+      (a, b) =>
+        Number(!!b.ongoing) - Number(!!a.ongoing) ||
+        new Date(b.at).getTime() - new Date(a.at).getTime(),
+    )
 }
 
 // --------------------------------------------------------------- predictions

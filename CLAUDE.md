@@ -138,7 +138,17 @@ No es un monorepo. Hay un solo `package.json`, en la raíz.
 
 ```
 lib/db.ts          ÚNICA puerta a la base de datos. Las páginas nunca arman una query.
-lib/queue.ts       Cola offline en IndexedDB + replay ordenado.
+lib/queue.ts       Cola offline en IndexedDB + replay ordenado, lock entre
+                   pestañas (navigator.locks), timeout por envío, reintento solo
+                   para errores de red y descarte de un rechazo.
+lib/useSync.ts     Hook de conectividad + cola: vacía al montar y al volver
+                   `online`, reintenta, avisa a otras pestañas y expone el
+                   rechazo (`syncFailed` / `discardFailed`).
+lib/lastSeen.ts    Copia en localStorage (`amelia:seen:*`) de las últimas filas
+                   buenas por página y bebé, para abrir sin conexión. Sin tokens;
+                   se borra al cerrar sesión, al iniciarla y sin sesión.
+lib/offlinePages.ts   Lista de páginas que el service worker precalienta tras
+                   iniciar sesión (mensaje 'warm' a public/sw.js).
 lib/format.ts      Fechas/horas en la TZ del hogar + conversión de unidades.
 lib/types.ts       Tipos de fila (stand-in de los types generados de fase 2).
 lib/tokens.ts      Design tokens en TS, espejo de app/globals.css.
@@ -146,6 +156,8 @@ lib/supabaseClient.ts   anon key — browser. Protegido por RLS.
 lib/supabaseAdmin.ts    service_role — SOLO server. Salta RLS.
 app/globals.css    TODO el CSS del proyecto.
 components/ui.tsx  Page, Grid, Card, Label, Btn, Banner, Nav.
+components/SyncStatus.tsx   SyncBar, SyncStatus, SeenNote (aviso de copia
+                   guardada) y SyncErrorBanner (rechazo, con Descartar).
 components/VersionHistory.tsx   Pantalla de /version ('use client'). La página
                    (server) lee CHANGELOG.md en el build y le pasa las versiones.
 lib/i18n/en.ts     Diccionario inglés: la FUENTE de claves (`MessageKey`).
@@ -163,7 +175,8 @@ lib/deviceAuth.ts  Auth de los endpoints de dispositivo: token por hash + scope,
                    intentos, validación de payload.
 middleware.ts      Guard de auth server-side. NO reemplaza a RLS: evita que una
                    ruta privada se renderice antes de rebotar al login.
-public/sw.js       Service worker: que la app ABRA sin conexión.
+public/sw.js       Service worker: que la app ABRA sin conexión. Nunca cachea
+                   datos de Supabase ni una respuesta redirigida.
 tests/             Vitest. unit/ no necesita nada; integration/ necesita el
                    stack local levantado.
 supabase/docker/   Stack local de Supabase sin el CLI (docker-compose.yml,
@@ -203,8 +216,9 @@ pnpm start
 
 # Tests
 pnpm test                   # unit (lib/format.ts, lib/queue.ts, lib/deviceTokens.ts,
-                             # lib/changelog.ts, lib/i18n, buildActivity,
-                             # keepLastGood y mergePending de lib/db.ts). Sin Docker
+                             # lib/changelog.ts, lib/i18n, lib/lastSeen.ts,
+                             # buildActivity, keepLastGood y mergePending de
+                             # lib/db.ts). Sin Docker
 pnpm test:tz                # los mismos, bajo UTC / LA / Tokio / Kiritimati
 pnpm test:integration       # RLS + endpoints. NECESITA el stack local
 pnpm test:all               # test:tz + test:integration
@@ -408,22 +422,28 @@ seleccionable** (engranaje → Theme: Light / Dark / System, por dispositivo),
 **idioma español / inglés** (engranaje → Language: System / English / Español,
 por dispositivo en `localStorage` `amelia:lang`; "System" sigue a
 `navigator.languages` — gana el primer idioma soportado, si no hay ninguno,
-inglés — 21 sep 2026, `lib/i18n/`), y **una suite de tests**.
+inglés — 21 sep 2026, `lib/i18n/`), **apertura sin conexión** (copia
+guardada por dispositivo con aviso de cuándo es, páginas precalentadas por el
+service worker tras iniciar sesión — 22 sep 2026), **sync robusta** (replay
+idempotente, lock entre pestañas, reintento solo y descarte de un rechazo — 22
+sep 2026), y **una suite de tests**.
 
 **Alcance exacto de los tests** (que no es "hay tests" a secas):
 
 | Cubierto | Archivo |
 |---|---|
 | `lib/format.ts` — fechas, horas, DST, unidades, edad | `tests/unit/format.test.ts`, bajo cuatro TZ |
-| `lib/queue.ts` — orden de replay, descartes, `looksOffline`, `newId` | `tests/unit/queue.test.ts` |
+| `lib/queue.ts` — orden de replay, descartes, `looksOffline`, `newId`; replay de un alta que ya está en el server, lock entre pestañas (`withFlushLock`, con y sin Web Locks), timeout por envío, `syncOnce` (cuándo relee la página), `retryDelay` (5 s → 15 s → 60 s, nunca ante un rechazo), nudges, y descartar un rechazo con sus ediciones dependientes | `tests/unit/queue.test.ts` |
 | `lib/deviceTokens.ts` — formato del token, hash, scopes | `tests/unit/deviceTokens.test.ts` |
 | `lib/changelog.ts` — parseo del CHANGELOG y que su primera entrada coincida con `version` de `package.json` | `tests/unit/changelog.test.ts` |
-| `buildActivity` de `lib/db.ts` — texto del feed de Today y de History (sin repetir el tipo) | `tests/unit/activity.test.ts` |
+| `buildActivity` de `lib/db.ts` — texto del feed de Today y de History (sin repetir el tipo); sesiones de lactancia y sueño en curso (marcadas, primero en Today aunque empezaran antes de medianoche); valores que ningún diccionario conoce | `tests/unit/activity.test.ts` |
+| `lib/lastSeen.ts` — copia guardada por página y bebé, `forgetSeen`, `seenState`/`lastGood` ("saved" / "nothing"), corte a mitad de sesión con el navegador "online", storage que se niega | `tests/unit/lastSeen.test.ts` |
 | `keepLastGood` y `mergePending` de `lib/db.ts` — qué se ve offline: últimas filas buenas por lectura, cola encima, un alta encolada que el server ya devolvió no se duplica | `tests/unit/pending.test.ts` |
-| `lib/i18n` — `es` con exactamente las claves de `en`, sin vacías ni sin traducir y con las mismas variables; `translate` (interpolación, variable faltante visible, plurales); detección de idioma y elección guardada; que el script de `lib/i18n/boot.ts` decida igual que `resolveLang()`; `lib/format.ts` y `buildActivity` en español | `tests/unit/i18n.test.ts` |
+| `lib/i18n` — `es` con exactamente las claves de `en`, sin vacías ni sin traducir y con las mismas variables; `translate` (interpolación, variable faltante visible, plurales); detección de idioma y elección guardada; que el script de `lib/i18n/boot.ts` decida igual que `resolveLang()`; `lib/format.ts` y `buildActivity` en español; `translate` con una clave armada desde datos que no existe; `describeWrite` | `tests/unit/i18n.test.ts` |
 | Aislamiento entre familias por RLS, por el camino real (PostgREST + JWT) | `tests/integration/rls.test.ts` |
 | Corregir y retractar `growth_measurements` sin cruzar de familia | `tests/integration/rls.test.ts` |
 | Los dos endpoints de dispositivo: auth, validación, rate limit, scoping | `tests/integration/{ingest,quick-nurse}.test.ts` |
+| Replay de la cola por el camino real (`sendOpWith` de `lib/db.ts`): alta repetida y dos "pestañas" a la vez → sin error y una fila (`ON CONFLICT (id) DO NOTHING`); el reenvío no pisa una edición; la escritura online sigue siendo insert común (un id repetido es error); señal abortada = offline y no escribe; con RLS real no cruza de familia (alta contra el bebé de otra familia rechazada; reusar el id de una fila ajena no la toca) | `tests/integration/queue-replay.test.ts` |
 
 **NO hay tests de componentes ni de páginas.** Lo que se cubre es `lib/`
 y la base.
@@ -468,26 +488,87 @@ y la base.
   coincide; `/history` 7/7 offline y correcta tras sincronizar. Decisión: una
   fila borrada offline sigue en la lista con "not synced yet" hasta que se
   sincroniza, igual que en `/growth`.)*
-- **Replay de la cola sin protección contra mandar dos veces la misma alta.**
-  Con dos pestañas abiertas, las dos vacían la cola al volver `online` y una
-  recibe `duplicate key value violates unique constraint
-  "diaper_changes_pkey"` (los datos quedan bien; visto con Playwright el 21
-  sep 2026). Leyendo el código, **no reproducido**: si un insert llega al
-  server pero se pierde la respuesta, queda encolado, cada replay choca con la
-  PK y `flushQueue` (`lib/queue.ts`) se detiene en el primer error → la cola
-  queda trabada. Pariente de la falta de idempotencia. Arreglos posibles:
-  tratar PK duplicada de un insert encolado como éxito, upsert con
-  `ignoreDuplicates`, o un lock entre pestañas (`navigator.locks`).
-- **`/dashboard`: las tarjetas de Lactancia y Sueño no muestran "Not synced
-  yet"** — solo Today y las del último biberón/pañal. Contradice §5.5 ("en
-  todos los lugares donde aparece").
-- **Un sueño en curso no aparece en Today** (`buildActivity` solo agrega los
-  sueños con `ended_at`).
-- **`/history` no repinta al toque desde la cola:** tras una edición offline,
-  la marca "not synced yet" aparece recién cuando la lectura del server se
-  rinde (~7 s). El aviso ya dice que quedó guardado en este dispositivo.
-- **Primera carga sin conexión = lista vacía**, en `/growth`, `/history` y
-  `/dashboard`: las últimas filas buenas viven en memoria y arrancan vacías.
+- *(Cerrado el 22 sep 2026: replay de la cola sin protección contra mandar
+  dos veces la misma alta. Las altas del **replay** salen como `INSERT … ON
+  CONFLICT (id) DO NOTHING` (`sendOpWith` en `lib/db.ts`, modo `replay`); la
+  escritura online sigue siendo un insert común, así un choque de id ahí se ve
+  como error y nunca como "Saved". Además: lock entre pestañas con
+  `navigator.locks` en modo `ifAvailable` (la pestaña que encuentra la cola
+  tomada no hace fila: espera a que termine y relee) + fallback dentro de la
+  pestaña sin Web Locks (`withFlushLock` en `lib/queue.ts`); timeout de 15 s
+  por envío (`REPLAY_TIMEOUT_MS`), que cuenta como offline; reintento solo a
+  5 s → 15 s → 60 s, **solo para errores de red** y nunca para un rechazo
+  (`retryDelay`, también arrancado por "nudges" cuando se encola algo o una
+  lectura falla con el navegador diciendo `online`); y un rechazo real se
+  puede descartar desde `SyncErrorBanner` (`components/SyncStatus.tsx`) tras un
+  `window.confirm` que nombra la entrada y cuántas ediciones dependientes se
+  van con ella. Verificado por el auditor (Playwright contra `next start` +
+  service worker, Chromium, stack local): dos pestañas 6/6 con locks (5 altas
+  → +3 pañales +2 tomas, 0 ids duplicados, cola 0 en las dos a ~255 ms, 5 POST,
+  0 respuestas 409, 0 "duplicate key") y 6/6 sin `navigator.locks` (10 POST,
+  0 errores); respuesta perdida (`page.route` abortando tras llegar al server,
+  y con inyección directa en IndexedDB) → cola 0, 1 fila; POST colgado en una
+  pestaña → la otra manda a 15,0 s, cola 0 a 15,8 s, 3/3 filas; "wifi malo"
+  (`onLine` true, Supabase bloqueado) → recupera a 7,5 s con 1 POST y 0
+  banners; rechazo de RLS encolado → 1 solo POST en 90 s, sin bucle; Discard
+  aceptado → cola 0 a ~130 ms y la entrada válida de atrás entra; cancelado →
+  no cambia nada.)*
+- *(Cerrado el 22 sep 2026: `/dashboard`, tarjetas de Lactancia y Sueño sin
+  "Not synced yet". Llevan `.pending-tag` en la sesión en curso y en la
+  última terminada. Verificado: la marca se va a ~110 ms de reconectar.)*
+- *(Cerrado el 22 sep 2026: un sueño en curso no aparecía en Today. La
+  anotación solo nombraba el sueño, pero **la lactancia en curso tampoco
+  aparecía**. `buildActivity` lista ahora las dos sesiones en curso, a la hora
+  en que empezaron y con el sufijo "· in progress" / "· en curso"; en Today van
+  primero, aunque hayan empezado antes de medianoche (verificado: un sueño de
+  ayer a las 22:00 es la primera entrada). History las ordena por hora como
+  al resto y no les ofrece Editar (se paran desde Today). Al terminarlas, sin
+  duplicados.)*
+- *(Cerrado el 22 sep 2026: `/history` sin repintado rápido desde la cola.
+  Repinta al toque desde la cola, como `/dashboard`, cuando la cola no está
+  vacía o el navegador dice offline; `/growth` también. Verificado: la marca
+  "not synced yet" aparece a 57–66 ms de la edición offline (antes ~7 s).)*
+- *(Cerrado el 22 sep 2026: primera carga sin conexión = lista vacía.
+  `lib/lastSeen.ts` guarda en `localStorage` (`amelia:seen:*`, por página y
+  por bebé; sin tokens ni sesión) las últimas filas buenas, y se borra al
+  cerrar sesión (`components/ui.tsx`), al iniciarla (`app/login`) y cuando no
+  hay sesión (`lib/useBaby.ts`). Offline, la página muestra esa copia con el
+  aviso `SeenNote` (clase `.syncbar`, informativo, no error) que dice la hora
+  de la última lectura buena; si no hay nada guardado, un estado explícito
+  "sin conexión, nada guardado en este dispositivo" en vez de "No sleep logged
+  yet" o listas vacías (y `NoBaby offline` en vez de "no hay perfil de bebé").
+  Hallazgo al investigarlo: offline en frío `useBaby` mandaba **al login**
+  (`getUser()` falla sin red); ahora distingue "no se pudo preguntar" de "no
+  hay sesión" y usa el bebé guardado. Y el service worker (`amelia-v3`) no
+  tenía las páginas privadas (se instala desde `/login`, donde responden con
+  un redirect): un reload offline daba `ERR_FAILED`. Ahora las precalienta
+  tras iniciar sesión (`lib/offlinePages.ts`, mensaje `warm`) y nunca guarda
+  una respuesta redirigida. Verificado: offline, `/dashboard` 3 entradas,
+  `/history` 3, `/growth` 4,2 kg, con aviso; al volver la conexión sin
+  recargar, el aviso se va en ~110–210 ms; cerrar sesión deja 0 claves
+  `amelia:seen:*`.)*
+- **Las páginas no se releen solas.** Ninguna página vuelve a leer por su
+  cuenta: no hay relectura periódica ni en `visibilitychange`/`focus`; solo al
+  montar, al volver `online` y después de sincronizar. En la pantalla de
+  pared, lo que registra el otro padre desde su teléfono no aparece hasta
+  recargar. Y si internet se cae con la página abierta y nadie la toca
+  (`navigator.onLine` sigue en true), el aviso de copia guardada no aparece
+  nunca (auditor: 0 en 30 s; con una acción del usuario aparece a ~12 s). Se
+  empezó a implementar (un hook de relectura mientras la página está visible)
+  y se descartó en este pase por decisión de Emilio, para cerrar lo aprobado.
+- **Recarga durante un corte con la cola vacía.** Con `navigator.onLine` en
+  true y nada en cola, una página recargada en medio de un corte muestra el
+  estado vacío ~7 s, hasta que sus lecturas se rinden; recién ahí aparecen la
+  copia y el aviso. La marca `amelia:seen:net-down` existe (`lib/lastSeen.ts`)
+  pero el repintado rápido solo corre con algo en cola o con el navegador
+  offline.
+- **Menores, aceptados:** el "hace X" del aviso de copia guardada y del
+  banner de rechazo no avanza con la página abierta (se calcula al pintar);
+  carrera estrecha: una edición encolada en otra pestaña después de descartar
+  su alta queda como un update sobre 0 filas (inocuo); la cola de IndexedDB
+  **no** se borra al cerrar sesión (a propósito: perdería escrituras sin
+  sincronizar), así que filas de la familia pueden quedar en el dispositivo
+  hasta que sincronicen.
 - *(Cerrado el 21 sep 2026: `select.input` de Doctor. En iOS no desbordaba,
   pero su tema le bajaba el alto a ~29px; ahora lleva `appearance: none`,
   detalle en `design.md` §4.)*

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { runInNewContext } from 'node:vm'
 import { en, type MessageKey, type Plural } from '@/lib/i18n/en'
 import { es } from '@/lib/i18n/es'
@@ -55,6 +55,25 @@ describe('diccionarios', () => {
       const source = texts(en[key] as string | Plural)
       const target = texts(es[key] as string | Plural)
       source.forEach((text, i) => expect(placeholders(target[i]), key).toEqual(placeholders(text)))
+    }
+  })
+})
+
+describe('translate con una clave armada desde datos que no existe', () => {
+  it('muestra el último segmento (el valor crudo) y avisa solo fuera de producción', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      expect(translate('es', 'diaper.purple' as MessageKey)).toBe('purple')
+      expect(translate('en', 'activity.sideDetail.middle' as MessageKey)).toBe('middle')
+      expect(warn).toHaveBeenCalledTimes(2)
+
+      vi.stubEnv('NODE_ENV', 'production')
+      warn.mockClear()
+      expect(translate('es', 'diaper.purple' as MessageKey)).toBe('purple')
+      expect(warn).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllEnvs()
+      warn.mockRestore()
     }
   })
 })

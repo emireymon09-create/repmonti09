@@ -87,6 +87,10 @@ export const es: Dictionary = {
   'activity.diaper': 'Pañal · {type}',
   'activity.woke': 'Se despertó',
   'activity.wokeDetected': 'Se despertó (detectado)',
+  'activity.inProgress': 'en curso',
+  'activity.nursingNow': 'Lactancia · {side}',
+  'activity.asleep': 'Dormida',
+  'activity.asleepDetected': 'Dormida (detectada)',
 
   // ------------------------------------------------------------ nav + settings
   'nav.today': 'Hoy',
@@ -129,6 +133,33 @@ export const es: Dictionary = {
     other:
       'Sin conexión · {count} registros guardados en este dispositivo, todavía sin sincronizar.',
   },
+  'sync.showingSaved':
+    'Sin conexión: mostrando lo que vio este dispositivo la última vez que tuvo conexión ({when}).',
+  'sync.discard': 'Descartar este registro',
+  'sync.rejected': 'Se frenó en: {what}, guardado en este dispositivo {when}.',
+  'sync.discardConfirm':
+    '¿Descartar “{what}”? El servidor lo rechazó y nunca llegó, así que se pierde para siempre.',
+  'sync.discardConfirmEdits': {
+    one: '¿Descartar “{what}” y el cambio que le hiciste después? El servidor lo rechazó y nunca llegó, así que se pierden para siempre.',
+    other:
+      '¿Descartar “{what}” y los {count} cambios que le hiciste después? El servidor lo rechazó y nunca llegó, así que se pierden para siempre.',
+  },
+  'sync.what.insert': '{thing} (alta)',
+  'sync.what.update': '{thing} (edición)',
+  'sync.what.delete': '{thing} (borrado)',
+  'sync.discardConfirmDelete':
+    '¿Descartar “{what}”? El servidor lo rechazó, así que el registro no se borra y vuelve a aparecer.',
+  'sync.thing.feedings': 'Toma',
+  'sync.thing.diaper_changes': 'Pañal',
+  'sync.thing.nursing_sessions': 'Lactancia',
+  'sync.thing.sleep_sessions': 'Sueño',
+  'sync.thing.pumping_sessions': 'Extracción',
+  'sync.thing.growth_measurements': 'Medida',
+  'sync.thing.doctor_appointments': 'Turno',
+  'sync.thing.babies': 'Perfil del bebé',
+  'sync.thing.other': 'Registro',
+  'sync.nothingSaved':
+    'Sin conexión: todavía no hay datos guardados en este dispositivo. Van a aparecer cuando vuelva la conexión.',
 
   // ------------------------------------------------------------ no baby
   'noBaby.lead': 'Todavía no hay un perfil de bebé para tu cuenta.',
