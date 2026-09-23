@@ -114,6 +114,16 @@ const ICONS = {
   diapers: ['M4 5h16v5a9 9 0 0 1-8 9 9 9 0 0 1-8-9z', 'M9 19.5c1-2 5-2 6 0'],
   sleep: ['M20 14.5A8 8 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z', 'M15 4.5h4l-4 4h4'],
   version: ['M12 3.5 20 8v8l-8 4.5L4 16V8z', 'M12 12v8.5', 'M4 8l8 4 8-4'],
+  /**
+   * Statistics: un eje en L y tres barras paradas encima.
+   *
+   * Tiene que distinguirse de otros dos que están en la misma barra o en el
+   * mismo menú: `growth`, que es una LÍNEA que sube con una flecha, y `menu`,
+   * que son tres líneas verticales iguales. Por eso las barras son rectángulos
+   * abiertos abajo (se apoyan en el eje) y de tres alturas distintas: de lejos
+   * se lee "columnas", no "tres rayas".
+   */
+  statistics: ['M4.5 3.5v16.5h16', 'M7.5 20v-6h3v6', 'M12.25 20v-10.5h3v10.5', 'M17 20v-7.5h3v7.5'],
   /** Esquina de una tarjeta de Today: "abrir esta sección". */
   open: ['M8 16 16 8', 'M10 8h6v6'],
   doctor: ['M9.5 3.5h5v6h6v5h-6v6h-5v-6h-6v-5h6z'],
@@ -184,41 +194,49 @@ export function EmptyState({
 
 /**
  * La barra ancha (tablet y pantalla de pared): los destinos que entran en una
- * línea. En el teléfono, app/globals.css deja visible SOLO el primero — ver
- * SECTIONS.
+ * línea.
+ *
+ * `phone` es qué sobrevive en la barra de abajo del teléfono, que son cuatro
+ * ítems: Today, Milk, Statistics y el botón Menu. Hasta acá eso se decidía con
+ * `:not(.tab-home)` en el CSS —"todos menos el primero"—, que ataba el
+ * contenido de la barra al ORDEN de esta lista: mover un destino acá cambiaba
+ * en silencio lo que ve un teléfono. Ahora cada ítem lo dice.
  */
 const TABS = [
-  { href: '/dashboard', label: 'nav.today', icon: 'today' },
-  { href: '/pumping', label: 'nav.milk', icon: 'milk' },
-  { href: '/growth', label: 'nav.growth', icon: 'growth' },
-  { href: '/appointments', label: 'nav.doctor', icon: 'doctor' },
-  { href: '/history', label: 'nav.history', icon: 'history' },
+  { href: '/dashboard', label: 'nav.today', icon: 'today', phone: true },
+  { href: '/pumping', label: 'nav.milk', icon: 'milk', phone: true },
+  { href: '/statistics', label: 'nav.statistics', icon: 'statistics', phone: true },
+  { href: '/growth', label: 'nav.growth', icon: 'growth', phone: false },
+  { href: '/appointments', label: 'nav.doctor', icon: 'doctor', phone: false },
+  { href: '/history', label: 'nav.history', icon: 'history', phone: false },
 ] as const
 
 /**
- * Las 8 pantallas que NO son Today, adentro del menú: UNA COLUMNA, el ícono a
- * la izquierda y el texto al lado, todas las filas del mismo alto.
+ * LAS DIEZ pantallas de la app, adentro del menú: UNA COLUMNA, el ícono a la
+ * izquierda y el texto al lado, todas las filas del mismo alto.
  *
- * En el teléfono la barra inferior es de dos ítems —Today y Menu— porque con
- * seis no entraba: a 320px las etiquetas se cortaban y el área táctil de cada
- * una quedaba por debajo de lo que se puede acertar con el pulgar a las 3 de
- * la mañana. Todo lo demás vive acá.
+ * Es la lista completa, no "las que no están en la barra". Today y Milk están
+ * también en la barra de abajo del teléfono y se repiten acá a propósito: el
+ * menú es el índice de la app, y un índice al que le faltan dos entradas
+ * obliga a recordar cuáles son. El destino en el que ya estás se marca con
+ * `aria-current`, así que la repetición no confunde.
  *
- * Y de paso cierra un hueco viejo: /feeding, /diapers y /sleep existen desde
- * el 22 sep 2026 y no tenían ninguna entrada de navegación — solo se llegaba
- * desde el pie de su tarjeta en Today.
+ * Y sigue cerrando el hueco viejo: /feeding, /diapers y /sleep existen desde
+ * el 22 sep 2026 y no tienen ninguna entrada en la barra — solo acá.
  *
- * Desde el 22 sep 2026 el menú es SOLO navegación: los ajustes (tema, idioma,
+ * Desde el 23 sep 2026 el menú es SOLO navegación: los ajustes (tema, idioma,
  * avisos, unidad, reset de leche, cerrar sesión) se mudaron enteros a
- * /settings, que es la octava entrada. "Version history" salió de la lista: el
- * número de versión al pie del menú ES el enlace a esa pantalla, así que sigue
- * habiendo una sola puerta y ningún control vive en dos lados.
+ * /settings, que es la última entrada. "Version history" no está en la lista:
+ * el número de versión al pie del menú ES el enlace a esa pantalla, así que
+ * sigue habiendo una sola puerta y ningún control vive en dos lados.
  */
 const SECTIONS = [
+  { href: '/dashboard', label: 'nav.today', icon: 'today' },
   { href: '/feeding', label: 'nav.feeding', icon: 'feeding' },
   { href: '/diapers', label: 'nav.diapers', icon: 'diapers' },
   { href: '/sleep', label: 'nav.sleep', icon: 'sleep' },
   { href: '/pumping', label: 'nav.milk', icon: 'milk' },
+  { href: '/statistics', label: 'nav.statistics', icon: 'statistics' },
   { href: '/growth', label: 'nav.growth', icon: 'growth' },
   { href: '/appointments', label: 'nav.doctor', icon: 'doctor' },
   { href: '/history', label: 'nav.history', icon: 'history' },
@@ -255,13 +273,15 @@ export function Nav() {
 
   return (
     <nav className="nav">
-      {TABS.map((tab, i) => (
+      {TABS.map((tab) => (
         <Link
           key={tab.href}
           href={tab.href}
-          // `tab-home` es el único que sobrevive en el teléfono: la barra de
-          // abajo son dos ítems, Today y Menu (app/globals.css, @max-599px).
-          className={i === 0 ? 'tab tab-home' : 'tab'}
+          // `tab-phone` marca los que sobreviven en el teléfono: la barra de
+          // abajo son cuatro ítems, Today, Milk, Statistics y Menu
+          // (app/globals.css, @max-599px). Los demás siguen en el HTML para la
+          // barra ancha y se apagan ahí.
+          className={tab.phone ? 'tab tab-phone' : 'tab'}
           aria-current={pathname === tab.href ? 'page' : undefined}
         >
           <NavIcon name={tab.icon} />
@@ -290,10 +310,10 @@ export function Nav() {
         </button>
         {menuOpen && (
           <div className="nav-menu" role="menu" aria-label={t('nav.menu')}>
-            {/* Las 8 pantallas que no son Today, una debajo de la otra. En el
-                teléfono es la ÚNICA forma de llegar a ellas; en la pared
-                duplica la barra de arriba, y aun así suma: /feeding, /diapers
-                y /sleep no están en ninguna barra. */}
+            {/* Las diez pantallas, una debajo de la otra. En el teléfono es
+                la única forma de llegar a siete de ellas; en la pared duplica
+                la barra de arriba, y aun así suma: /feeding, /diapers y
+                /sleep no están en ninguna barra. */}
             <div className="nav-menu-links">
               {SECTIONS.map((s) => (
                 <Link

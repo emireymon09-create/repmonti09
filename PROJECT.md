@@ -161,13 +161,22 @@ predicted while a nursing session is running.
 
 **`/feeding`, `/diapers`, `/sleep`** (2026-09-22) — one shared screen,
 `components/SectionPage.tsx`, three 7-line pages:
-- Totals for **today** and the **last 7 days** (today plus the 6 days
-  before it, household timezone): feedings by kind, bottle total, time
-  at the breast; diapers by kind; time asleep and naps. The maths is
-  `lib/kpis.ts`, pure functions with no clock and no database, so it is
-  unit-tested under four timezones. A session counts for the part of it
-  that falls inside the window, so last night's sleep gives today its
-  hours after midnight
+- Totals for the **last 24 hours** and the **last 7 days**. Since
+  2026-09-23 the short window is **rolling** — `now − 24 h` to `now`,
+  not "since household midnight" — because at 00:05 the numbers used to
+  reset and an 11 pm feed disappeared. The property is called `last24h`,
+  not `today`, and the label says "Last 24 hours" / "Últimas 24 horas":
+  both used to lie. The 7-day window was **deliberately left alone**
+  (still today plus the 6 calendar days before it) and there is an open
+  question about it in `CLAUDE.md` §7.7. What they count: feedings by
+  kind, bottle total, time at the breast; diapers by kind; time asleep
+  and naps. The maths is `lib/kpis.ts`, pure functions with no clock and
+  no database, so it is unit-tested under four timezones. A session
+  counts for the part of it that falls inside the window
+- The log below stays grouped by **calendar day**, on purpose: a total
+  answers "how much since roughly this time yesterday", a list answers
+  "what happened on Tuesday". So one screen deliberately mixes three
+  units of time
 - The full log underneath, with per-entry edit and delete (soft-delete
   via `voided_at`, one panel open at a time, focus returns to Edit)
 - **"Log a past one"**: one entry with the time it really happened, and
@@ -178,8 +187,8 @@ predicted while a nursing session is running.
   `sleepSince` in `lib/db.ts`, with **no `limit`** (a total cut at the
   newest N rows would be quietly wrong)
 - All three are in `middleware.ts`, in `lib/offlinePages.ts` and in the
-  service worker's precache (`amelia-v4`), so they open offline like the
-  rest
+  service worker's precache (`amelia-v6` since 2026-09-23), so they open
+  offline like the rest
 
 **Nursing alerts** (2026-09-22) — a web push notification when a nursing
 session has been running for 30 minutes and nobody stopped it:
@@ -212,12 +221,24 @@ stored value instead of re-deriving it from rounded lb/oz. Deleting is
 a soft-delete (`voided_at`, 0008): the entry stops counting toward the
 growth curve but the row stays in the database.
 
-**`/appointments`:** upcoming and past, add form, tap to mark done.
+**`/appointments`:** upcoming and past, add form, tap to mark done. With no
+appointment at all the form starts open (which is what `/growth` already did);
+that is how the empty screen stopped ending in blank space.
 
-**`/settings`** (2026-09-23): theme, language, nursing alerts, the oz/ml
-switch, "Reset milk total" and signing out. All six used to live inside the
-Menu's drop-down, which was navigation and control panel at once; none of them
-is left there. The Menu is now a single-column list of the eight other screens,
+**`/statistics`** (2026-09-23): a real destination — in the bottom bar, in the
+Menu, in `middleware.ts`, in `lib/offlinePages.ts` and in the precache — that
+**draws nothing yet**. It carries a title and an empty state that says so,
+with no date promised. Measured empty it leaves 286.7 px of ink-to-bar gap,
+which is a known gap this pass opened: there is nothing honest to put there
+until the charts exist.
+
+**`/settings`** (2026-09-23): theme, language, nursing alerts and signing out.
+They used to live inside the Menu's drop-down, which was navigation and control
+panel at once; none of them is left there. The oz/ml switch and "Reset milk
+total" moved with them and then **left the app entirely** the same day: amounts
+are always shown in ounces, and the milk total can no longer be reset (a reset
+done earlier still applies — `babies.pumping_reset_at` is still honoured and
+now has no writer). The Menu is a single-column list of **all ten** screens,
 with the version number at its foot.
 
 **`/version`:** the current version and the full change history, read from
@@ -312,10 +333,25 @@ database) — useful for quickly showing the design, not for real use.
   HA automation, or a double-tap on the Shortcut) still writes twice —
   two rows in `monitor_events`, or two open sleep/nursing sessions ⇒
   `proposals/device-tokens-and-idempotency.md` §4.
-- **The phone's bottom bar is two items** since 2026-09-22 — Today and Menu —
-  with the other eight screens inside the menu's "Go to" group. Feeding,
-  Diapers and Sleep had no navigation entry at all before that. The tablet and
-  wall nav is unchanged. Details and the measurements in `design.md` §5.11.
+- **The phone's bottom bar is four items** since 2026-09-23 — Today, Milk,
+  Stats, Menu. It had gone down to two (Today and Menu) on 2026-09-22, from
+  six before that. The labels are shortened to `Stats` / `Datos`: the full
+  words fit at 390px but "Estadísticas" is 74.5 of 77 px at 320px, the same
+  reason "Crecimiento" is already "Medidas". Which tabs a phone shows is now
+  an explicit `phone: boolean` per item instead of "every tab but the first",
+  so moving a destination no longer silently changes the bar. The Menu lists
+  all ten screens in one column; Today and Milk repeat on purpose, because an
+  index missing two entries makes you remember which two. On a tablet or the
+  wall the bar is 7 items. Details and measurements in `design.md` §5.11.
+- **Correcting a running session's start** (2026-09-23): while a feeding or a
+  sleep is running, an open minutes field moves its `started_at` back, as many
+  times as needed. Validation is pure (`shiftStart` in `lib/kpis.ts`: 240
+  minutes per apply, 12 hours on the result) and the write goes through
+  `updateNursing`/`updateSleep`, so it inherits the offline queue and the "not
+  synced yet" mark. The row is re-read first (`sessionById`): no page in this
+  app refreshes on its own, so the wall screen can be showing a session the
+  other phone already stopped, and writing over it would stretch a finished
+  session instead of correcting it.
 - **A page's loading state renders the nav too** since 2026-09-22. It used to
   return a bare page, so every navigation emptied the whole window, bottom bar
   included — that was the "flash" between screens (`design.md` §5.13).

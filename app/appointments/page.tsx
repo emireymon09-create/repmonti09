@@ -17,7 +17,16 @@ export default function AppointmentsPage() {
   const { t } = useT()
 
   const [rows, setRows] = useState<DoctorAppointment[]>([])
-  const [showForm, setShowForm] = useState(false)
+  // Hasta que la primera lectura vuelve, `rows` está vacío y eso NO significa
+  // que no haya turnos. Sin esto, una agenda llena abría el formulario un
+  // instante y lo cerraba sola al llegar las filas.
+  const [loaded, setLoaded] = useState(false)
+  // `null` = nadie tocó el botón todavía, así que manda el estado de la
+  // pantalla: sin un solo turno, el formulario arranca abierto. Es lo que ya
+  // hace /growth (su formulario está siempre a la vista) y es la razón por la
+  // que /growth sin datos se lee bien y Doctor no: acá quedaban 656px de caja
+  // vacía alrededor de 119px de estado vacío. Ver .empty-fill en globals.css.
+  const [formChoice, setFormChoice] = useState<boolean | null>(null)
   const [title, setTitle] = useState('')
   const [type, setType] = useState<AppointmentType>('checkup')
   const [when, setWhen] = useState(() => toHouseholdInputValue())
@@ -32,6 +41,7 @@ export default function AppointmentsPage() {
       const { data, error } = await listAppointments(babyId)
       if (error) setErr(t('doctor.couldNotLoad', { error }))
       setRows(data)
+      setLoaded(true)
     },
     [t],
   )
@@ -74,7 +84,7 @@ export default function AppointmentsPage() {
     setNotes('')
     setType('checkup')
     setWhen(toHouseholdInputValue())
-    setShowForm(false)
+    setFormChoice(false)
     refresh(baby.id)
   }
 
@@ -115,6 +125,7 @@ export default function AppointmentsPage() {
   const upcoming = rows.filter((r) => !r.completed && new Date(r.scheduled_at).getTime() >= now)
   const past = rows.filter((r) => r.completed || new Date(r.scheduled_at).getTime() < now).reverse()
   const noAppointments = upcoming.length === 0 && past.length === 0
+  const showForm = formChoice ?? (loaded && noAppointments)
 
   return (
     <Page>
@@ -124,7 +135,7 @@ export default function AppointmentsPage() {
         <button
           className="pill"
           onClick={() => {
-            setShowForm((v) => !v)
+            setFormChoice(!showForm)
             setErr(null)
           }}
         >

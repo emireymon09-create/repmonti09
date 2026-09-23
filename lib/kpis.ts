@@ -3,17 +3,25 @@
  * no database: the page hands in the rows (queue already merged in, see
  * mergePending in lib/db.ts), the window and "now".
  *
- * Windows are in the household timezone (lib/format.ts):
+ * The two windows:
  *
- *   · today  — from the household midnight until now.
+ *   · last24h — the LAST 24 HOURS, rolling: from exactly 24 h ago until now.
+ *              Not a calendar day (23 sep 2026). At 00:10 a feeding from
+ *              23:50 still counts, which is the whole point at 3 AM: what
+ *              matters is how much she ate since about this time yesterday,
+ *              not since a midnight that just went by. The label says
+ *              "Last 24 hours", never "Today" — see lib/i18n ('kpi.last24h').
  *   · week   — the last 7 days: from the household midnight 6 days ago
- *              until now, today included. Rolling, not a calendar week.
+ *              until now, today included. CALENDAR days, deliberately left
+ *              alone in that pass: nobody asked for it to roll, and the
+ *              household timezone (lib/format.ts) is what makes it survive
+ *              the two DST changes.
  *
  * Point events (a bottle, a diaper) count when they happened inside the
  * window. Sessions (nursing, sleep) count twice over: as a feeding or a nap
  * when they STARTED inside it, and as time for the part of
- * [started_at, ended_at ?? now] that overlaps it — a sleep that began at
- * 22:00 yesterday gives today its hours after midnight.
+ * [started_at, ended_at ?? now] that overlaps it — a sleep that began before
+ * the window gives it only the hours inside.
  *
  * A row still in the offline queue counts (it is what the parent logged) and
  * raises `pending`, so the page can say the total includes it. A row whose
@@ -30,10 +38,14 @@ export type KpiWindow = { start: number; end: number }
 /** Rows as a page holds them: queue merged in, maybe a queued deletion. */
 type Row<T> = WithPending<T> & { voided_at?: string | null }
 
-export function kpiWindows(now: Date = new Date()): { today: KpiWindow; week: KpiWindow } {
+/** The rolling window's length. Plain clock hours: a DST change moves what
+ * wall-clock time "24 hours ago" lands on, and that is the honest answer. */
+export const DAY_MS = 24 * 60 * 60 * 1000
+
+export function kpiWindows(now: Date = new Date()): { last24h: KpiWindow; week: KpiWindow } {
   const end = now.getTime()
   return {
-    today: { start: startOfHouseholdDay(now), end },
+    last24h: { start: end - DAY_MS, end },
     week: { start: startOfHouseholdDay(now, 6), end },
   }
 }
@@ -240,4 +252,48 @@ export function checkPastRange(
   if (end > now) return 'inFuture'
   if (end <= start) return 'endBeforeStart'
   return null
+}
+
+// --------------------------------------------------------- running sessions
+
+export type ShiftProblem = 'notNumber' | 'notPositive' | 'tooLong' | 'tooFarBack'
+
+/** The most one correction may move a start back, in minutes. Four hours is
+ * already longer than any nursing session or nap this app has seen; past
+ * that it is a typo, not a correction. */
+export const MAX_SHIFT_MINUTES = 240
+
+/** And however many corrections are applied, the start may not end up more
+ * than this before now: a session running for half a day is a session that
+ * was never stopped, and backdating it would quietly rewrite the totals. */
+export const MAX_SHIFT_BACK_MS = 12 * 60 * 60 * 1000
+
+/**
+ * "She started nursing five minutes before I hit the button": the new
+ * `started_at` for a session already running, moved `minutes` earlier.
+ *
+ * Pure on purpose — the page hands in the row's current start and its own
+ * clock, so it can be tested without React, a database or a timer. It is
+ * CUMULATIVE by construction: it shifts the start it is given, so applying
+ * it twice moves the session twice.
+ *
+ * Returns the problem instead of a value when the number can't be used; the
+ * card shows it in a Banner and writes nothing (design.md §5.5).
+ */
+export function shiftStart(
+  startIso: string,
+  minutes: number,
+  now: number,
+): { at: string | null; problem: ShiftProblem | null } {
+  if (typeof minutes !== 'number' || !Number.isFinite(minutes))
+    return { at: null, problem: 'notNumber' }
+  if (minutes <= 0) return { at: null, problem: 'notPositive' }
+  if (minutes > MAX_SHIFT_MINUTES) return { at: null, problem: 'tooLong' }
+
+  const start = new Date(startIso).getTime()
+  if (Number.isNaN(start)) return { at: null, problem: 'notNumber' }
+
+  const shifted = start - minutes * 60_000
+  if (shifted < now - MAX_SHIFT_BACK_MS) return { at: null, problem: 'tooFarBack' }
+  return { at: new Date(shifted).toISOString(), problem: null }
 }

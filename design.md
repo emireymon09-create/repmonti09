@@ -12,6 +12,17 @@ agregados del 21 sep 2026 (idioma, campos de fecha) se verificaron contra
 línea del 20 sep: el i18n movió el código y **no se re-verificaron línea por
 línea**; los textos citados ahora viven en `lib/i18n/en.ts`.
 
+**Puesto al día el 23 sep 2026 (cierre del pase de nav / 24 h / onzas /
+offsets).** Lo que se corrigió: §4 (la tabla de `Nav` y `.card-link`), §5.6
+(usaba como ejemplo una acción que ya no existe), §5.7 (describía el toggle
+oz↔ml como preferencia por dispositivo: dejó de serlo), §5.11 y §5.15 (la
+barra y el menú cambiaron de número), §5.14 (sus números eran **de caja**, y
+la caja es una constante — ver el recuadro de esa sección), §8 ("doce SVG" →
+trece), y §5.16, nueva. **Todo lo de este pase se midió en Chromium headless
+shell 148 sobre Linux, a 390×844 y 1440×900. Nada se probó en un teléfono
+real**, así que `env(safe-area-inset-*)` vale 0 en todas esas cifras: los
+56,7 px de la barra no son el número que se ve en un iPhone.
+
 > **Antes de proponer cualquier decisión de diseño nueva** — un color, un
 > componente, un patrón de interacción, una tipografía, una animación —
 > **pasá por la skill `impeccable`** (v4.3.1, instalada como plugin en este
@@ -69,7 +80,9 @@ arriba es el default y **no cambió**: sin atributo `data-theme`, o con
 `:root[data-theme='light']` (y se repite bajo
 `@media (prefers-color-scheme: light)` para `data-theme="system"`). Se elige
 en el engranaje → Theme (Light / Dark / System); es preferencia **por
-dispositivo** en `localStorage` (`amelia:theme`, `lib/theme.ts`), como oz↔ml.
+dispositivo** en `localStorage` (`amelia:theme`, `lib/theme.ts`), como el
+idioma. (Decía "como oz↔ml": esa preferencia dejó de existir el 23 sep 2026,
+ver §5.7.)
 Un script inline en `<head>` (`lib/themeBoot.ts`) aplica el tema antes del
 primer pintado, así el claro no parpadea en oscuro.
 
@@ -211,13 +224,13 @@ Destinados a mudarse a `packages/ui` cuando llegue el monorepo.
 | `Label` | `.label` | Mayúsculas, `letter-spacing .09em`, color `--c-muted` |
 | `Btn` | `.btn` | Variantes `action` (default), `quiet`, `live`. `flex: 1`, `min-height: var(--tap)` |
 | `Banner` | `.banner` | Tipos `error` / `ok` / `warn`. Lleva `role="status"`. **Desde el 22 sep 2026 vive en `components/Banner.tsx`**, no en `ui.tsx`: lo usa `NursingAlerts`, que `ui.tsx` renderiza, y el import de vuelta era circular. `ui.tsx` lo re-exporta, así que `@/components/ui` sigue funcionando |
-| `Nav` | `.nav` | 5 tabs + botón **Menu**. Desde el 23 sep 2026 es **solo navegación**: el desplegable es una lista de una columna con las 8 pantallas y el número de versión al pie, y ya no recibe `babyId`. En teléfono (<600px) es una barra inferior fija, ver §4 "Navegación" |
+| `Nav` | `.nav` | 6 tabs + botón **Menu**. Es **solo navegación** desde el 23 sep 2026: no recibe `babyId` y no tiene ningún ajuste adentro. El desplegable es una lista de **una columna con las diez pantallas** y el número de versión al pie. En teléfono (<600px) es una barra inferior fija de **cuatro** ítems — Today · Milk · Stats · Menu — y qué tab aparece ahí lo decide un `phone: boolean` explícito por ítem, no el orden de la lista. Ver §5.11 |
 | `EmptyState` | `.empty-state` | En `components/ui.tsx` (23 sep 2026). Ícono de la sección + título + una línea que dice qué va a aparecer ahí. Se monta dentro de un `.empty-fill`, que ocupa el alto que sobra — ver §5.14 |
 | `SyncBar` | `.syncbar` | En `components/SyncStatus.tsx`. Estado offline / pendientes. `role="status"`, y `.has-pending` cuando la cola no está vacía |
 | `SyncStatus` | — | En `components/SyncStatus.tsx`. El que cablea `useSync()` con `SyncBar` y `SyncErrorBanner`; lo montan `/appointments` y `/pumping`. `/dashboard`, `/growth` y `/history` usan `useSync()` + `SyncBar` directo, porque necesitan releer al sincronizar y mostrar el error de sincronización |
 | `SeenNote` | `.syncbar` | En `components/SyncStatus.tsx` (22 sep 2026). Offline, avisa que se muestra la copia guardada en el dispositivo y de cuándo es. Informativo, con el mismo aspecto que `SyncBar`, `role="status"`; no renderiza nada si la lectura anduvo |
 | `SyncErrorBanner` | `.banner` (error) | En `components/SyncStatus.tsx` (22 sep 2026). "No se pudo sincronizar": nombra la entrada que el server rechazó (y de cuándo es) y ofrece **Descartar** (`Btn quiet`), siempre tras un `window.confirm` que dice qué se pierde (§5.6). Lo montan `/dashboard`, `/history`, `/growth` y, vía `SyncStatus`, `/appointments` y `/pumping` |
-| `SectionPage` | — | En `components/SectionPage.tsx` (22 sep 2026). La pantalla entera de `/feeding`, `/diapers` y `/sleep`: dos `Card` de totales (`Today`, `Last 7 days`) con `.kpis`, el log completo debajo (`.feed`, con editar y borrar, un panel a la vez) y "Log a past one". Las tres páginas son 7 líneas cada una que le pasan `section`. Queda en ~1000 líneas: el panel de edición está **copiado** de `/history`, no compartido (seguimiento en `CLAUDE.md` §6) |
+| `SectionPage` | — | En `components/SectionPage.tsx` (22 sep 2026). La pantalla entera de `/feeding`, `/diapers` y `/sleep`: dos `Card` de totales (`Last 24 hours`, `Last 7 days`) con `.kpis`, el log completo debajo (`.feed`, con editar y borrar, un panel a la vez) y "Log a past one". Las tres páginas son 7 líneas cada una que le pasan `section`. Queda en ~1000 líneas: el panel de edición está **copiado** de `/history`, no compartido (seguimiento en `CLAUDE.md` §6) |
 | `NursingAlerts` | `.setting-group` | En `components/NursingAlerts.tsx` (22 sep 2026). El control "Nursing alerts", desde el 23 sep 2026 en **`/settings`** y no en el menú; misma forma de segmento que Theme y Language, con `role="radio"` dentro de un `radiogroup`. Ver §5.10 |
 | `NoBaby` | — | En `components/NoBaby.tsx`. Estado vacío cuando no hay perfil de bebé. Variante `offline` (22 sep 2026): sin conexión y sin nada guardado en el dispositivo dice eso, no "no hay perfil de bebé" |
 | `ServiceWorker` | — | En `components/ServiceWorker.tsx`. No renderiza nada: registra `/sw.js`, **solo en producción** |
@@ -289,9 +302,8 @@ columnas — etiqueta a la izquierda, número a la derecha con
 `font-variant-numeric: tabular-nums` (§5.1) y una línea `--c-line` entre
 filas. **No** es una fila de tiles de número gigante: a las 3 AM se lee de
 arriba abajo, y con los números en columna "hoy" y "7 días" se comparan de un
-vistazo. `.card-link` es el "Totals and log →" al pie de cada tarjeta del
-dashboard: es texto (`.linkish`), pero con `min-height: var(--tap)` para que
-el blanco táctil sea entero (52px en teléfono, 84px en la pared).
+vistazo. (`.card-link`, el "Totals and log →" al pie de cada tarjeta del dashboard, se
+borró el 23 sep 2026 — ver §5.12.)
 
 **Ajustes de `/settings`** (23 sep 2026; hasta acá eran el menú de engranaje):
 `.setting-note` es la línea bajo un segmento que dice qué va a hacer o por qué no puede — `--t-meta`,
@@ -301,40 +313,82 @@ menú en vez de estirarlo con una frase larga en español. `.nav-menu-group
 `.seg-btn:disabled` baja a `opacity: .45` y `cursor: default`: un segmento que
 acá no puede hacer nada se lee como deshabilitado, igual que un ítem de menú.
 
-> **Actualizado el 23 sep 2026:** el párrafo que sigue describe el menú
-> *antes* de este pase. Lo que cambió: el desplegable es **solo navegación**
-> (una columna, 8 pantallas, versión al pie) y los seis ajustes que se listan
-> abajo —Theme, Language, Nursing alerts, oz↔ml, "Reset milk total" y cerrar
-> sesión— viven ahora en **`/settings`**. Ver §5.11 y §5.15.
+> **Reescrito el 23 sep 2026 (segundo pase del día).** El párrafo de abajo
+> describía la barra de 5 tabs + engranaje y un menú que era navegación y
+> panel de control a la vez. Nada de eso sigue en pie: la barra del teléfono
+> es de **cuatro** ítems, el menú es **solo navegación** con las **diez**
+> pantallas en una columna, y los ajustes viven en **`/settings`** — sin la
+> unidad oz↔ml ni "Reset milk total", que se fueron de la app. Ver §5.11,
+> §5.15 y §5.7.
 
-**Navegación (5 tabs fijos):** Today · Milk · Growth · Doctor · History
-(en español: Hoy · Leche · **Medidas** · Médico · Historial — ver §5.9).
+**Navegación.** `TABS` tiene seis destinos —Today · Milk · Stats · Growth ·
+Doctor · History (en español: Hoy · Leche · **Datos** · **Medidas** · Médico ·
+Historial — ver §5.9)— más el botón **Menu**.
+
 **En teléfono (`max-width: 599px`) la barra baja al borde inferior** (21 sep
-2026): fija, con ícono + label siempre visible por destino y el engranaje como
-sexto ítem ("Settings"), cuyo menú abre hacia arriba. Por qué: los 5 tabs +
-engranaje no entran en una línea por debajo de ~480px ("History" caía sola a
-una segunda fila), y abajo quedan al alcance del pulgar a una mano. Se
-descartó ícono-solo (a las 3 AM un ícono de "Milk" o "History" no se adivina)
-y el scroll horizontal (esconde justo el tab que no entraba). Es el mismo
-markup: los íconos (`NavIcon` en `components/ui.tsx`, SVG de trazo en
-`currentColor`) se ocultan por encima de 599px, donde el nav de pills queda
-exactamente como antes — salvo el del engranaje, que ahí es el ícono solo
-(reemplazó al glifo `⚙`, 21 sep 2026). El destino activo se marca con `--c-accent` y un
-relleno suave (`--c-accent-soft`) detrás del ícono. `.page` suma padding
-inferior para que la barra no tape el final de la página, y la barra respeta
-`env(safe-area-inset-bottom)`.
-El tab activo se marca con `aria-current="page"` y se pinta con
-`--c-accent` sobre `--c-bg` (`--c-on-accent`). El menú de engranaje es la
-"Configuración" y contiene: Theme (Light / Dark / System), **Language
-(System / English / Español)** justo debajo y con la misma forma de segmento
-(21 sep 2026), **Nursing alerts (Off / On)** debajo de Language y con la misma
-forma (22 sep 2026, §5.10), cambiar oz↔ml, "Reset milk total", Version
-history, cerrar sesión. En el selector de idioma "System" va primero porque es lo que tiene un
-dispositivo hasta que alguien elige; cada idioma se nombra en sí mismo
-("Español") y el botón lleva `lang` para que un lector de pantalla lo lea con
-las reglas de ese idioma. Se cierra con Escape
-(el foco vuelve al engranaje) y con cualquier toque afuera — `onBlur` solo no
-alcanza porque Safari de iOS no enfoca un botón tocado.
+2026): fija, con ícono + label siempre visible por destino. Abajo quedan al
+alcance del pulgar a una mano. Se descartó ícono-solo (a las 3 AM un ícono de
+"Milk" o "History" no se adivina) y el scroll horizontal (esconde justo el tab
+que no entraba). Es el mismo markup: los íconos (`NavIcon` en
+`components/ui.tsx`, SVG de trazo en `currentColor`) se ocultan por encima de
+599px, donde el nav de pills queda como siempre — salvo el del botón Menu, que
+ahí es el ícono solo (reemplazó al glifo `⚙`, 21 sep 2026). **Qué tabs se ven
+en el teléfono lo dice cada ítem** (`phone: boolean` en `components/ui.tsx`,
+23 sep 2026), no el CSS por posición: hasta ese día la regla era
+`.nav .tab:not(.tab-home)`, "todos menos el primero", y mover un destino de
+lugar cambiaba en silencio lo que ve un teléfono.
+
+El destino activo se marca con `aria-current="page"`, `--c-accent` sobre
+`--c-bg` (`--c-on-accent`) y un relleno suave (`--c-accent-soft`) detrás del
+ícono. La barra respeta `env(safe-area-inset-bottom)`.
+
+**La barra es `sticky`, no `fixed` (23 sep 2026).** Con `position: fixed`,
+Safari de iOS la despegaba del borde durante el scroll y la dejaba flotando
+sobre el medio de la lista; al soltar volvía sola abajo. Confirmado en un
+iPhone 16 Pro real con iOS 26.6.2, **app instalada desde la pantalla de
+inicio**, en varias pantallas y en las dos orientaciones — y también en cada
+transición cargando→cargado. No era nuestro CSS: en toda la hoja no hay un
+solo `transform`, `filter`, `overflow`, `will-change` ni `contain` en ningún
+ancestro de la barra (`html > body > .page > nav`), así que el containing
+block estaba sano. Es WebKit, que trata los elementos fijos como capas atadas
+al viewport y las reposiciona recién al terminar el gesto.
+
+Una barra sticky viaja **dentro** del contenido scrolleado: no hay capa fija
+que reposicionar. Cómo se sostiene, en tres piezas (`@media (max-width: 599px)`
+en `app/globals.css`):
+
+- `.page` es `display: flex; flex-direction: column` con `min-height: 100dvh`.
+  Sticky solo puede quedarse abajo si su contenedor llega hasta abajo.
+- `.nav` lleva `order: 1` y `margin-top: auto`. `order` la pone última en la
+  columna **sin moverla del DOM** — el orden del HTML lo necesitan la barra
+  ancha y la pared, donde la barra va arriba y nada de esto aplica — y el
+  margen automático la manda al fondo cuando el contenido no llena la
+  pantalla.
+- `width: 100vw` con `margin: auto calc(50% - 50vw) 0` la saca del ancho de
+  columna de `.page` (max-width 520px + padding lateral) y la deja de borde a
+  borde, que es lo que hacía `left: 0; right: 0` cuando era fija. El
+  porcentaje se resuelve contra el ancho de contenido de `.page`, así que la
+  cuenta cierra igual a 390px que a 599px.
+
+**Y `.page` ya no reserva el alto de la barra con padding inferior.** Hacía
+falta con una barra fija, que tapa el final del documento para siempre; una
+sticky se corre sola cuando el documento se termina, así que el último renglón
+nunca queda debajo. Consecuencia medida: el documento de cada pantalla larga
+del teléfono es **38 px más corto** (los 100 px que reservaba menos los 61,7
+que mide la barra), y el estado vacío quedó **19,2 px más abajo** porque ahora
+se centra contra la barra de verdad y no contra ese padding.
+
+> **Sin verificar, y hay que decirlo:** que el salto desaparezca **en un
+> iPhone**. Este servidor no tiene WebKit ni iOS —solo Chromium— y la
+> emulación de dispositivo no implementa ni el toolbar dinámico de Safari ni
+> el mecanismo de capas fijas de WebKit, que es justo el del bug. Lo que sí
+> está medido acá es que el cambio no rompe nada (abajo) y que la barra queda
+> pegada al borde en cada posición de scroll. La confirmación del bug en sí
+> tiene que salir del teléfono de Luis.
+
+El desplegable del botón Menu es **solo navegación** (§5.15). Se cierra con
+Escape (el foco vuelve al botón) y con cualquier toque afuera — `onBlur` solo
+no alcanza porque Safari de iOS no enfoca un botón tocado.
 
 **Un solo panel de edición a la vez** (Growth, History, Milk): mientras una
 entrada se edita, el Editar/Borrar de las demás queda deshabilitado, así
@@ -424,17 +478,51 @@ en un `Banner kind="error"`. Ninguna acción falla en silencio.
 
 ### 5.6 Confirmación antes de destruir
 
-Las acciones destructivas ("Reset milk total", borrar una entrada) pasan
-por `window.confirm` con un texto que dice **qué se conserva**:
-*"Past sessions stay in History."*
-Y el borrado es lógico (`voided_at`), nunca un `DELETE`.
+Las acciones destructivas —borrar una entrada del log, de `/growth`, de
+`/history` o de Milk; descartar un registro que el server rechazó— pasan por
+`window.confirm` con un texto que dice **qué se conserva** o qué se pierde
+(y, en el caso del descarte, cuántas ediciones dependientes se van con la
+entrada). Y el borrado es lógico (`voided_at`), nunca un `DELETE`.
+
+> **Corregido el 23 sep 2026:** este párrafo usaba "Reset milk total" y su
+> texto *"Past sessions stay in History."* como ejemplo. **Esa acción ya no
+> existe** (§5.7): salió de Settings junto con `resetPumpingTotal` de
+> `lib/db.ts` y sus seis claves de i18n. `babies.pumping_reset_at` sigue
+> filtrando el total de Milk y **ya no tiene escritor**.
 
 ### 5.7 Entrada en la unidad que se habla
 
 El consultorio dice "7 libras 4 onzas"; la bomba dice "4 oz". La app
-**entra en esa unidad** y convierte a la métrica que guarda la base. El
-toggle oz↔ml es una preferencia **por dispositivo** (`localStorage`), no
-un dato de la familia.
+**entra en esa unidad** y convierte a la métrica que guarda la base. Eso no
+cambió. Lo que cambió el 23 sep 2026 es **quién elige la unidad**.
+
+- **Mostrar: siempre onzas.** `DISPLAY_UNIT = 'oz'` en `lib/format.ts`. Se
+  borró `lib/useVolumeUnit.ts` y con él la preferencia oz↔ml por dispositivo
+  en `localStorage`. Este párrafo decía que era una preferencia por
+  dispositivo; **dejó de serlo**.
+- **Entrar: por campo, no por dispositivo.** Al lado del campo de cantidad de
+  un biberón hay un toggle oz/ml (`components/AmountUnit.tsx`, clase
+  `.seg-inline`): es el mismo segmento de Settings, con `role="radiogroup"` y
+  dos `role="radio"`, y el `placeholder` del campo sigue a la unidad activa.
+  Vale **para esa entrada y nada más**: no se guarda, vuelve a `oz` al montar
+  la tarjeta **y después de cada guardado exitoso**. Ese reset importa: sin
+  él, un "4" tipeado después de un guardado en ml se registra como 4 ml —
+  0,1 oz— y parece una entrada normal. Es el modo de fallo más caro de esa
+  fila.
+- **Dónde NO va el toggle: en los paneles de edición.** Ese campo viene
+  **precargado** con el valor de la fila en onzas (`mlToUnit(row.amount_ml,
+  DISPLAY_UNIT)`). Si se pudiera cambiar la unidad ahí, un `4.1` precargado en
+  oz pasaría a leerse como 4,1 **ml** al tocar el toggle, y guardar sin volver
+  a tipear destruiría el dato en silencio. Los campos de creación arrancan
+  vacíos y no tienen ese problema. **Consecuencia aceptada:** una cantidad
+  tipeada en ml deja de ser editable sin redondeo (150 ml abiertos y guardados
+  sin tocar nada quedan en 5,1 oz → 150,82 ml; deriva ±1,48 ml, una sola vez).
+- **No se convierte ml → oz → ml al guardar.** La columna es `amount_ml`, la
+  base de fase 2 sigue siendo métrica, y el viaje de ida y vuelta solo
+  perdería precisión. Verificado contra la base: 150 tipeados en ml quedan
+  `150`; 4 tipeados en oz quedan `118.294`; los dos se muestran en oz.
+- **El toggle lb/oz/in de `/growth` no se tocó.** Ahí la unidad hablada sigue
+  siendo una elección de la pantalla.
 
 ### 5.8 Registrar con hora pasada
 
@@ -468,7 +556,7 @@ posterior.
 
 Inglés y español rioplatense (voseo), `lib/i18n/`. Preferencia **por
 dispositivo** en `localStorage` (`amelia:lang`: `en` / `es` / `system`), como
-el tema y oz↔ml; sin elección, o con "System", sigue a `navigator.languages`
+el tema; sin elección, o con "System", sigue a `navigator.languages`
 (gana el primer idioma soportado; si ninguno, inglés).
 
 - **Sin parpadeo inglés → español.** El server siempre renderiza inglés
@@ -501,7 +589,7 @@ el tema y oz↔ml; sin elección, o con "System", sigue a `navigator.languages`
 ### 5.10 Avisos push (22 sep 2026)
 
 "Nursing alerts" en el menú de engranaje, debajo de Language y con la misma
-forma de segmento (Off / On). Es **por dispositivo**, como el tema y oz↔ml —
+forma de segmento (Off / On). Es **por dispositivo**, como el tema y el idioma —
 pero, a diferencia de ellos, también existe del lado del servidor, que es
 quien manda la notificación.
 
@@ -537,85 +625,116 @@ quien manda la notificación.
   suscripción); iniciar sesión suelta la suscripción que hubiera quedado, para
   que el menú no arranque en "On" con la cuenta anterior.
 
-### 5.11 La barra de abajo son dos ítems (22 sep 2026)
+### 5.11 La barra de abajo: de seis a dos, de dos a cuatro (23 sep 2026)
 
-En el teléfono, la barra fija de abajo tiene **exactamente dos**: **Today** y
-**Menu**. Nada más.
+En el teléfono, la barra fija de abajo tiene **exactamente cuatro**:
+**Today · Milk · Stats · Menu**.
 
-Hasta acá eran seis (cinco pestañas + el engranaje). A 390px eso deja ~65px por
-ítem: las etiquetas largas se cortaban —"Historial", "Crecimiento", que ya
-había tenido que abreviarse a "Medidas" para entrar— y el ícono quedaba
-apretado contra el borde de su área táctil. El caso de uso de esta app es una
-mano, de noche, con el otro brazo ocupado. Dos ítems le dan a cada uno medio
-ancho de pantalla.
+Historia corta, porque el número cambió dos veces en dos días y conviene saber
+por qué. Eran **seis** (cinco pestañas + el engranaje): a 390px eso deja ~65px
+por ítem, las etiquetas largas se cortaban —"Historial", "Crecimiento", que ya
+había tenido que abreviarse a "Medidas"— y el ícono quedaba apretado contra el
+borde de su área táctil. El 22 sep bajaron a **dos** (Today y Menu), medio
+ancho de pantalla cada uno. El 23 sep subieron a **cuatro**, al entrar
+`/statistics`: con dos destinos más la barra sigue entrando cómoda y los tres
+lugares que se miran sin registrar nada —lo de hoy, la leche guardada y los
+datos— quedan a un toque, sin abrir el menú.
 
-Las **ocho** pantallas restantes —Feeding, Diapers, Sleep, Milk, Growth,
-Doctor, History y Version history— están en el grupo **"Go to"**, arriba de
-todo en el menú, en dos columnas, cada una con su ícono. Abajo siguen el tema,
-el idioma, los avisos de lactancia, la unidad, el reset de leche y cerrar
-sesión.
+Medido a 390×844, build de producción, los cuatro ítems:
 
-Tres cosas deliberadas:
+| ítem | x | ancho | alto táctil | cortado |
+|---|---|---|---|---|
+| Today / Hoy | 6 | 94,5 | 56,7 | no |
+| Milk / Leche | 100,5 | 94,5 | 56,7 | no |
+| Stats / Datos | 195 | 94,5 | 56,7 | no |
+| Menu / Menú | 289,5 | 94,5 | 56,7 | no |
 
+56,7 px está por encima del piso de 52 px de §1, y `horizScroll` es 0 en los
+dos idiomas. A 320px los cuatro siguen entrando (77px cada uno).
+
+Cuatro cosas deliberadas:
+
+- **La etiqueta se acortó a `Stats` / `Datos`.** A 390px las palabras enteras
+  entran (`Statistics` 58,3px, `Estadísticas` 74,5px sobre 94,5 disponibles).
+  El motivo es **320px**: ahí el ítem mide 77px y "Estadísticas" mide 74,5 —
+  pegada a los dos bordes. Es el mismo motivo por el que "Crecimiento" ya era
+  "Medidas" (§5.9). El nombre completo vive en el `<h1>` de la página.
+  Y **`Datos`, no `Gráficos`**: la pantalla todavía no dibuja nada, y una
+  etiqueta que promete gráficos sería una etiqueta que miente (§5.4).
+- **Qué tabs se ven en el teléfono lo dice cada ítem, no su posición.** Antes
+  era `.nav .tab:not(.tab-home)` — "todos menos el primero" — así que mover un
+  destino de lugar cambiaba en silencio lo que ve un teléfono. Ahora cada
+  entrada de `TABS` lleva `phone: boolean`, incluidos los `false`.
 - **El menú reusa el patrón de §5 tal cual**: `aria-haspopup="menu"` y
   `aria-expanded` en el botón, `role="menu"` con `aria-label` en el panel,
   `role="menuitem"` en cada link, Escape cierra y devuelve el foco al botón,
   y un `pointerdown` afuera cierra (no `onBlur`: en iOS un `<button>` tocado
   nunca recibe foco). No se inventó nada nuevo.
-- **El menú puede scrollear** (`max-height` con `100dvh` + `overflow-y: auto`).
-  Con ocho destinos más los ajustes, en un teléfono apaisado no entraba.
-- **En tablet y en la pantalla de pared no cambia nada.** Los cinco `.tab`
-  siguen en el HTML y solo se apagan con `display: none` abajo de 600px —
-  lo que además los saca del árbol de accesibilidad, así que un lector de
-  pantalla en el teléfono anuncia dos ítems, no seis.
+- **En tablet y en la pantalla de pared no cambia la naturaleza, sí el largo.**
+  Los `.tab` siguen en el HTML y solo se apagan con `display: none` abajo de
+  600px —lo que además los saca del árbol de accesibilidad, así que un lector
+  de pantalla en el teléfono anuncia cuatro ítems y no siete—. A 1440px la
+  barra pasó a **7** (6 pestañas + Menu), sin cortes ni scroll horizontal, en
+  los dos idiomas.
 
-Verificado con CDP (390px y 1440px, tema claro y oscuro, inglés y español):
-2 ítems visibles en teléfono, 6 en la pared, `aria-expanded` va
-false→true→false, los 8 links con `role="menuitem"`, Escape cierra y el foco
-vuelve al botón, el toque afuera cierra, y el menú mide 716px en una ventana
-de 844.
-
-### 5.15 Settings es una pantalla, el menú es una lista (23 sep 2026)
+### 5.15 Settings es una pantalla, el menú es una lista de diez (23 sep 2026)
 
 El desplegable del botón Menu era **las dos cosas a la vez**: la única
 navegación del teléfono y el panel de control de la app. Crecía sin techo —ocho
 destinos más seis ajustes, con scroll propio— y obligaba a sostener abierto un
 menú para tocar un segmento.
 
-- **Los seis ajustes se mudaron enteros a `/settings`**: Theme, Language,
-  Nursing alerts, la unidad oz↔ml, "Reset milk total" y cerrar sesión.
-  **Ninguno quedó duplicado** (verificado en el DOM: 0 `.seg` y 0
-  `.nav-menu-item` dentro de `.nav-menu`).
+- **Los ajustes se mudaron enteros a `/settings`**: Theme, Language, Nursing
+  alerts y cerrar sesión. **Ninguno quedó duplicado** (verificado en el DOM:
+  0 `.seg` y 0 `.nav-menu-item` dentro de `.nav-menu`). La unidad oz↔ml y
+  "Reset milk total" se mudaron con ellos y **el mismo día se fueron de la
+  app**: no están ni en el menú ni en Settings (§5.6 y §5.7). Con eso
+  `/settings` se quedó sin un solo `Banner` —su único error era el del reset—
+  y sin `useState`.
 - **Los roles cambian con el contenedor.** Adentro de un `role="menu"` los
   segmentos eran `menuitemradio`; en una página son `role="radio"` dentro de un
   `role="radiogroup"`. No es cosmético: un lector de pantalla anuncia otra cosa.
-- **El menú es una columna**, ícono + texto, filas de 52px, en el orden de las
-  pantallas tal como se usan: Feeding, Diapers, Sleep, Milk, Growth, Doctor,
-  History, Settings. Dos columnas obligaban a barrer en zigzag.
+- **El menú es una columna de diez**, ícono + texto, filas de 52px, en el orden
+  de las pantallas tal como se usan: **Today, Feeding, Diapers, Sleep, Milk,
+  Stats, Growth, Doctor, History, Settings**. Dos columnas obligaban a barrer
+  en zigzag. **Today y Milk se repiten con la barra a propósito:** el menú es
+  el índice de la app, y un índice al que le faltan dos entradas obliga a
+  acordarse de cuáles son; `aria-current="page"` marca dónde estás, así que la
+  repetición no confunde.
 - **La versión va al pie**, chiquita y a la derecha, y **es el enlace a
   `/version`**: esa pantalla salió de la lista y no tenía otra puerta. No es
   una fila más; el texto ya dice de qué habla, y lleva `aria-label` completo.
 - **La accesibilidad no se tocó**: `aria-haspopup`/`aria-expanded`,
-  `role="menu"`, los 8 links con `role="menuitem"`, Escape cierra y devuelve el
-  foco al botón, un `pointerdown` afuera cierra. Medido: `aria-expanded` va
-  false→true→false, y el foco vuelve al botón.
+  `role="menu"`, los links con `role="menuitem"`, Escape cierra y devuelve el
+  foco al botón, un `pointerdown` afuera cierra.
 
-Verificado a 390px: los 8 links con el mismo `left` (151) y el mismo ancho
-(226), 52px de alto cada uno, menú de 490px en una ventana de 844. En español
-las etiquetas son Comida · Pañales · Sueño · Leche · Medidas · Médico ·
-Historial · Ajustes, ninguna cortada. Barrido de 40 combinaciones (390/1440 ×
-claro/oscuro × inglés/español × 4 pantallas + el menú abierto): 0 scroll
-horizontal, 0 desbordes.
+Verificado a 390×844 con el menú abierto: **10 links**, todos con el mismo
+`left` (151) y el mismo ancho (226), **52px** de alto cada uno, ninguno
+recortado en ninguno de los dos idiomas; **11 `role="menuitem"`** (los 10 más
+la versión al pie); `aria-expanded` va false→true→false y el foco vuelve al
+botón; `aria-current="page"` en la fila de la pantalla actual. El menú mide
+**598px** en una ventana de 844 y `scrollHeight === clientHeight` (596/596):
+con diez filas **todavía no necesita scrollear**. La regla de `max-height` +
+`overflow-y: auto` sigue ahí para un teléfono apaisado o con el texto del
+sistema agrandado. **Sin verificar:** el menú a 320px o en apaisado.
 
 ### 5.12 La cabecera y las tarjetas de Today (22 sep 2026)
 
-**Nombre y edad en la misma línea, fecha arriba a la derecha.** Antes iban en
-tres renglones apilados y el primero era la fecha. En una pantalla de pared lo
+**Nombre con la edad debajo, fecha arriba a la derecha.** Antes iban en tres
+renglones apilados y el primero era la fecha. En una pantalla de pared lo
 primero que se lee tiene que ser de quién es la pantalla, no qué día es. La
-edad se apoya en la misma línea de base que el nombre (`align-items: baseline`
-— alinear por caja las dejaba flotando) y pierde el peso del título: es un
-dato, no un encabezado. La fecha usa `longDate()`, el mismo formato por idioma
-que ya usaba. En un teléfono angosto la fecha baja sola, por `flex-wrap`.
+fecha usa `longDate()`, el mismo formato por idioma que ya usaba, y se apoya
+en la misma línea de base que el nombre (`align-items: baseline` — alinear por
+caja las dejaba flotando). En un teléfono angosto baja sola, por `flex-wrap`.
+
+**La edad va en su propio renglón** (revertido el 23 sep 2026). El 22 se había
+puesto en la misma línea que el nombre; se lee peor y se volvió atrás por
+pedido de Luis. Sigue dentro del `<h1>` y pierde el peso y el tamaño del
+título: es un dato, no un encabezado. Medido a 390 / 768 / 1440 px, la edad
+arranca en el mismo `left` que el nombre y debajo de su primera línea. **A
+390px no cambió nada**: el nombre y la edad ya envolvían a dos renglones
+dentro de la columna angosta, así que la línea única solo existía de 768px
+para arriba (la tinta de Today bajó 20 px a 768 y 27 px a 1440).
 
 **Las tres tarjetas miden lo mismo, y cada una tiene su atajo.** El ícono de la
 esquina abre esa sección; va en gris y solo se acentúa al tocarlo o enfocarlo.
@@ -633,7 +752,7 @@ proporción interna también coincide. Medido en la pared: 455 / 455 / 455 px.
 alto sería agregar 90px de aire a dos tarjetas para que empaten con la que
 tiene el cronómetro abierto.
 
-### 5.14 Una pantalla vacía termina en algo (23 sep 2026)
+### 5.14 Una pantalla vacía termina en algo — y cómo se mide (23 sep 2026)
 
 `/growth` y `/appointments`, sin una sola fila, terminaban en la tarjeta del
 formulario y dejaban el resto en blanco hasta la barra de abajo. **El hueco no
@@ -647,19 +766,98 @@ que dice qué va a aparecer. El tono es el de una bitácora, no el de un formula
 vacío: *"Save the first one above — weight and length — and every visit after it
 will line up here"*.
 
-Tres cosas deliberadas:
+> **El hallazgo más importante del pase del 23 sep 2026 (segundo pase), y hay
+> que leerlo antes que los números: `.empty-fill` es `flex: 1 1 auto` con
+> `align-items: center`, así que su caja termina SIEMPRE a la misma distancia
+> de la barra, pase lo que pase adentro.** Esa distancia era de 38,3 px
+> mientras `.page` reservaba el alto de la barra con padding; desde que la
+> barra es `sticky` y vive en el flujo (§5.11) la caja termina justo donde
+> empieza la barra: **0,0 px, medido en las 16 combinaciones**. El número
+> cambió; que sea una constante no. Medir la caja es medir el `flex: 1`: daba
+> 38 px con 119 px de contenido y daría 38 px con nada. Esta sección decía
+> *"Growth 412px → 38px, Doctor 686px → 38px"* y esos son **números de caja**:
+> registraban el arreglo como hecho mientras el blanco seguía ahí. En Doctor
+> eran 656 px de caja para 119 px de estado vacío — 268 px de aire arriba y
+> 307 abajo.
+>
+> **La métrica correcta es la tinta:** el `getBoundingClientRect().bottom` del
+> último elemento que tiene un nodo de texto propio o es un `<svg>`, ignorando
+> los contenedores. Cualquier medición futura de "cuánto blanco queda" se hace
+> así, no con la caja.
+
+Medido a 390×844, tema oscuro, inglés, sin una sola fila, **por tinta**:
+
+| pantalla | antes | después | `.empty-fill` |
+|---|---|---|---|
+| `/appointments` (Doctor) | **306,7 px** | **92,2 px** | sí (656 px) → sí (227 px) |
+| `/dashboard` (Today) | **261,3 px** | **68,7 px** | no → sí (198 px) |
+| `/growth` | 157,7 px | 157,7 px (sin cambio) | sí (394 px) |
+
+`docH` = 844 en los tres: no se introdujo scroll. En español el hueco de Today
+baja a 59,7 px (el texto envuelve una línea más).
+
+**Remedido el 23 sep 2026, después de pasar la barra a `sticky` (§5.11):** los
+tres huecos bajaron **19,2 px** exactos, porque `.empty-fill` ya no se centra
+contra los 100 px de padding que reservaba la barra fija sino contra la barra
+de verdad, y la mitad de esos 38,3 px de más le toca al aire de abajo. 390×844,
+sin una sola fila, por tinta, las cuatro combinaciones de tema × idioma:
+
+| pantalla | inglés | español |
+|---|---|---|
+| `/appointments` (Doctor) | 92,2 → **73,0 px** | **73,0 px** |
+| `/dashboard` (Today) | 68,7 → **46,5 px** | **37,5 px** |
+| `/growth` | 157,7 → **138,5 px** | **138,5 px** |
+| `/statistics` | 286,7 → **267,5 px** | 277,7 → **258,5 px** |
+
+El tema no cambia ni un píxel (claro y oscuro dan lo mismo en las cuatro), la
+barra sigue arrancando en `top: 782,3` y `docH` sigue en 844: el cambio no
+introdujo scroll en ninguna. **Las cifras "con datos" de más abajo no se
+mueven**: ahí no hay `.empty-fill`, el contenido arranca donde arrancaba y a
+la barra la baja `margin-top: auto` hasta el mismo `top: 782,3`.
+
+Y el arreglo de Doctor **no fue CSS**: el blanco de una pantalla sin nada no se
+arregla con CSS —no hay nada que poner ahí— se arregla poniendo algo. Su
+formulario "New appointment" ahora **arranca abierto cuando no hay un solo
+turno**, que es exactamente lo que `/growth` ya hacía y la razón por la que
+Growth sin datos se leía bien. Today, que **nunca** tuvo `.empty-fill`, ahora
+lo monta en su estado sin datos.
+
+Cuatro cosas deliberadas:
 
 - **Solo sin datos.** El `:has()` no matchea con una sola fila cargada, así que
   con datos `.page` sigue en `display: block` y `min-height: 0`. Verificado.
+- **Y solo cuando se sabe que no hay datos.** El estado vacío de Today espera a
+  que una primera lectura haya vuelto (§5.4): afirmar "acá arranca el registro"
+  mientras todavía se está leyendo es afirmar un hecho falso, y con mala
+  conexión duraba segundos.
 - **El ícono no compite con `.card.is-live`** (§2, economía del color): va en
   `--c-line`, que es el borde, no un color.
-- **Piso sin `:has()`**: `.empty-fill` lleva además `min-height: 40dvh`, así un
-  motor viejo igual no deja la pantalla partida al medio.
+- **Piso sin `:has()`**: el `min-height: 40dvh` de `.empty-fill` pasó a vivir
+  dentro de `@supports not selector(:has(*))`. Donde `:has()` existe el
+  `flex: 1` ya da el alto y ese piso **estorbaba**: con una tarjeta de
+  formulario arriba empujaba la página a scrollear (documento de 955 px en una
+  ventana de 844) por culpa de un bloque cuyo trabajo es no agregar alto.
+  **Sin verificar:** un motor que no soporta **ni** `@supports selector()`
+  **ni** `:has()` (Chrome ≤ 82) se queda sin piso.
 
-Medido a 390×844, hueco entre el último elemento con contenido y la barra:
-Growth **412px → 38px**, Doctor **686px → 38px**. Contraste del texto nuevo
-sobre el fondo: título 13.62:1 (claro) / 13.45:1 (oscuro), línea 7.26:1 /
-9.16:1.
+Contraste del texto nuevo sobre el fondo: título 13.62:1 (claro) / 13.45:1
+(oscuro), línea 7.26:1 / 9.16:1.
+
+**Hueco conocido que este patrón NO cierra, medido y anotado:** con datos, las
+tres pantallas siguen terminando donde termina su contenido —`.empty-fill`
+solo existe en la rama "cero filas"— y eso da 620 px de tinta a barra en
+Doctor con un solo turno, 335 px en Growth con una medición y 181 px en Today.
+Y `/statistics`, que nació el mismo día, tiene **267,5 px** de tinta a barra
+(258,5 en español; eran 286,7 y 277,7 antes de que la barra pasara a `sticky`)
+— casi el número que Doctor tenía antes de arreglarse: un `<h1>` y un
+`EmptyState` de 120 px centrados en el alto que sobra. Se deja así a propósito:
+no hay nada honesto que poner hasta que existan las gráficas.
+
+*(Ojo con una frase que acá decía y ya no es cierta: "`.page` es `display:
+block` con `min-height: 0`". Desde el 23 sep 2026 eso vale solo **de 600px
+para arriba**. En el teléfono `.page` es una columna flex de `min-height:
+100dvh` — es lo que sostiene la barra sticky, §5.11. Los números de arriba no
+cambian por eso, porque el contenido sigue arrancando arriba.)*
 
 ### 5.13 La app nunca se queda sin marco (22 sep 2026)
 
@@ -698,6 +896,98 @@ Medido cuadro por cuadro con `requestAnimationFrame` y un clic real en el
 
 El nav midió opacidad 1 en todos los cuadros, y 0 cuadros sin nav.
 
+### 5.16 Ventanas, correcciones y unidades (23 sep 2026)
+
+Tres patrones nuevos del mismo pase. Los tres tienen la misma raíz: **una
+pantalla no puede llamar a algo por un nombre que no es.**
+
+**a · La ventana rodante de 24 h, y por qué la etiqueta no puede decir "hoy".**
+La tarjeta corta de `/feeding`, `/diapers` y `/sleep` contaba desde la
+medianoche del hogar. A las 00:05 los números se ponían en cero y una toma de
+las 23:50 desaparecía de la pantalla: a esa hora, en esta app, es cuando más
+se la mira. Ahora la ventana es `{ ahora − 24 h, ahora }`.
+
+- **La propiedad también se renombró**: `kpiWindows().today` → **`last24h`**.
+  Corregir la etiqueta y dejar la propiedad llamándose `today` habría dejado la
+  mentira una capa más abajo, donde nadie la mira.
+- **La etiqueta dice `Last 24 hours` / `Últimas 24 horas`.** "Hoy" sobre una
+  ventana rodante es falso, y §5.4 aplica a los rótulos igual que a los datos.
+- **El log de abajo sigue agrupado por día de calendario**, a propósito: un
+  total responde *"cuánto comió desde más o menos esta hora de ayer"*, una
+  lista responde *"qué pasó el martes"*. Son dos preguntas distintas y ahora la
+  pantalla las escribe distinto. Consecuencia visible y aceptada: una fila del
+  domingo puede aparecer bajo el encabezado del domingo y a la vez contar en la
+  tarjeta de 24 h.
+- **La de 7 días NO cambió** (sigue siendo hoy + los 6 días de calendario
+  anteriores), así que la pantalla mezcla **tres** unidades de tiempo a
+  propósito. Hay una pregunta abierta para el dueño (`CLAUDE.md` §7.7).
+
+**b · Corregir el inicio de una sesión en curso.** "Empezó cinco minutos antes
+de que tocara el botón" es el caso normal, no la excepción. Mientras hay una
+lactancia corriendo, el lugar del campo de cantidad + Biberón lo ocupa un
+**campo numérico abierto** más un botón; la tarjeta Sleep, que no tiene
+selector de tipo, lo suma debajo de "She's awake".
+
+- **Campo abierto, no un menú de minutos.** El atraso real nunca es una de tres
+  cifras elegidas de antemano.
+- **Acumulativo.** Cada aplicación corre el inicio que la fila tiene *ahora*.
+  El cronómetro salta en pantalla porque la fila se relee (medido: 0:02 → 5:04
+  → 8:06 → 10:39 aplicando 5, 3 y 2,5).
+- **Topes: 240 minutos por aplicación y 12 h sobre el resultado.** El segundo
+  se evalúa sobre el resultado justamente para que también frene una suma de
+  correcciones chicas. Todo rechazo sale en el `Banner` de la página (§5.5),
+  nunca en silencio, y no se manda la escritura.
+- **Escribe por el camino de la cola**, no por uno nuevo:
+  `updateNursing`/`updateSleep`, lo mismo que usa el panel de edición del log.
+  Así hereda `mergePending` y la marca "Not synced yet" de §5.4. Medido sin
+  conexión: a los 800 ms el cronómetro ya dice 9:02, hay `.pending-tag` y la
+  `SyncBar` dice *"Offline · 1 entry saved on this device, not synced yet."*;
+  la base no cambia hasta que vuelve la conexión, y ahí se mueve −9,000 min.
+- **Antes de escribir se relee la fila.** Ninguna página de esta app se relee
+  sola (§5.4, último punto), así que la pared puede estar mostrando desde hace
+  horas una sesión que el otro teléfono ya paró. Sin la relectura, aplicar 60
+  minutos sobre una toma terminada de 10 la dejaba **registrada como de 70**
+  mientras la pantalla decía "Start moved back 60 min". Ahora no se escribe
+  nada y el banner dice que esa sesión ya terminó y dónde corregirla. La
+  relectura se saltea con el navegador `offline` (esperar una lectura condenada
+  costaría ~7 s y el caso offline ya funcionaba) y cuando la fila todavía es un
+  insert **en la cola** — ahí el UPDATE directo matchearía 0 filas, PostgREST
+  lo llamaría éxito y la corrección se perdería con un "listo" en pantalla.
+- **Lo que esto NO resuelve:** dos pestañas aplicando −5 a la vez sobre el
+  mismo valor escriben el mismo resultado y una de las dos correcciones se
+  pierde sin error. No hay optimistic locking en este repo.
+
+**c · La unidad como propiedad del campo, no del dispositivo.** El detalle
+está en §5.7. Lo que corresponde a esta sección es la forma: un `.seg-inline`
+—el mismo segmento de Settings, sin el `margin-top` que lo separa de su label y
+sin estirarse— pegado al campo, con el `placeholder` siguiendo a la unidad
+activa. Los dos segmentos miden lo mismo entre sí (`min-width: 3em`) porque sin
+ese piso quedaban en 27 y 29 px y el pill cambiaba de tamaño al tocarlo, que es
+justo lo que §5.1 no quiere.
+
+**Y su área táctil es `--tap`, no el piso de 44px.** `.seg-btn` nace con
+`min-height: 44px`, que es el piso de los controles **secundarios** de §1
+(tabs, pills, el engranaje) y le alcanza a un segmento de `/settings`, que se
+toca una vez por mes. Éste vive en la fila de registro que se usa a una mano a
+las 3 de la mañana, al lado de un campo y de un botón que sí miden `--tap`:
+medía **36×44 px** en el teléfono y **51×44** en la pared, visiblemente más
+bajo que sus vecinos. Con `min-height: var(--tap)` en `.seg-inline .seg-btn`
+mide **52** y **84**. Como `.row-tight` no fija `align-items`, la fila entera
+se empareja a 58 px en el teléfono y 92 en la pared — campo, toggle y botón
+iguales. **El `.seg` de Settings no se tocó**: ahí el piso de 44px es el que
+corresponde.
+
+**Y el idioma no puede cambiar el alto de la pared.** En español y a 1440px el
+botón "Biberón" bajaba a un segundo renglón, y como el grid iguala las tres
+tarjetas de Today (§5.12) las tres crecían **96 px** (328 → 424). La causa
+medida: el botón necesitaba **128,2 px** y tenía **127,2** — **1,1 px**. No se
+tocó la palabra: se sacó el sobrante de al lado. `.input.narrow` estaba en
+`6.5em`, o sea 136,5 px en la pared para escribir "150"; a `5.5em` el campo
+sigue sobrado y la fila queda con ~21 px de aire, que es margen de verdad y no
+un empate al pixel. Medido después: EN y ES a 1440 dan **290 / 290 / 290** en
+las tres tarjetas, las dos en una sola línea, y a 390 la fila no cambió de
+forma. La medida es relativa, así que vale igual en las dos superficies.
+
 ### Verificación de esta sección (20 sep 2026)
 
 Cada patrón de §5 afirma algo sobre el código. Se comprobó uno por uno:
@@ -710,10 +1000,11 @@ Cada patrón de §5 afirma algo sobre el código. Se comprobó uno por uno:
 | 5.4 | "Not synced yet" en todos lados | `.pending-tag` en `app/globals.css:864`, usado en `app/dashboard/page.tsx:471` y `:497` (Lactancia: en curso / última), `:539` (biberón), `:583` (pañal), `:612` y `:639` (Sueño: en curso / último) (líneas al 22 sep 2026); sufijo `· not synced yet` en `lib/db.ts:745-746` (`mark`); `SyncBar` calla con conexión y cola vacía en `components/SyncStatus.tsx:22`; `SeenNote` como `.syncbar` en `:66-78`; Descartar con `window.confirm` en `SyncErrorBanner`, `:87` y `:116` |
 | 5.5 | Todo error se muestra en un `Banner` | `components/ui.tsx:81-93`, con `role="status"` (líneas al 22 sep 2026) |
 | 5.6 | Confirmación que dice qué se conserva | `components/ui.tsx:213` — textual: *"Zero out the \"in the stash\" total? Past sessions stay in History."* Y `app/history/page.tsx:320`, `app/pumping/page.tsx:151`, `app/growth/page.tsx:199`; descartar un registro rechazado, `components/SyncStatus.tsx:116` (líneas al 22 sep 2026) |
-| 5.7 | Unidad hablada, preferencia por dispositivo | `lib/useVolumeUnit.ts` + `formatVolume()` en `lib/format.ts:182` |
+| 5.7 | Unidad hablada; **mostrar** siempre en oz y **entrar** con un toggle por campo | `DISPLAY_UNIT` y `formatVolume()` / `unitToMl()` en `lib/format.ts`; `components/AmountUnit.tsx`. Reverificado el 23 sep 2026: `lib/useVolumeUnit.ts`, que esta fila citaba, **ya no existe** |
 | 5.8 | Hora pasada en todas las acciones | los parámetros `at?: string` de `lib/db.ts` (`:202`, `:253`, `:303`, `:318`, `:362`…) |
 
-Nada de §5 quedó sin verificar.
+Nada de §5 quedó sin verificar en aquella pasada. **§5.11, §5.12, §5.14,
+§5.15 y §5.16 son posteriores** y traen sus mediciones adentro.
 
 ---
 
@@ -730,7 +1021,7 @@ Todo esto ya está en `app/globals.css` y `app/layout.tsx`:
   impide que iOS haga zoom al enfocar.
 - `role="status"` en `Banner` y en `SyncBar`.
 - `aria-current="page"` en el tab activo; `aria-haspopup` / `aria-expanded`
-  en el engranaje; `role="menu"` / `role="menuitem"` en el desplegable.
+  en el botón Menu; `role="menu"` / `role="menuitem"` en el desplegable.
 - Viewport: `width=device-width, initialScale=1, viewport-fit=cover`,
   `themeColor #211D1B`. `viewport-fit=cover` (21 sep 2026) es lo que hace que
   `env(safe-area-inset-*)` valga algo en un iPhone: `.page` suma el inset de
@@ -787,11 +1078,18 @@ exportados. **Por definir.**
 - **Contraste:** medido en ambos temas (§2). Los cuatro pares del oscuro bajo
   AA se corrigieron el 21 sep 2026; sólo queda `--c-danger` como texto sobre
   elevado (2.78:1), en una clase que hoy no usa nada.
-- **Íconos del nav:** **doce** SVG dibujados a mano en `components/ui.tsx`; no
+- **Íconos del nav:** **trece** SVG dibujados a mano en `components/ui.tsx`; no
   son una librería, y este repo no tiene ninguna instalada (se confirmó el 23
   sep 2026 contra `package.json`). El de `menu` —tres líneas verticales del
   mismo alto— se dibujó el 23 sep 2026 con la misma regla; el de `settings`
-  (sliders), que era el del botón del menú, pasó a nombrar a Settings. Desde el 21 sep 2026 el engranaje de tablet/pared también es el
+  (sliders), que era el del botón del menú, pasó a nombrar a Settings. El
+  **decimotercero**, `statistics` (23 sep 2026), es un eje en L con **tres
+  rectángulos** de altura distinta: se dibujó con rectángulos y no con tres
+  líneas a propósito, porque en la misma barra queda al lado de `menu`
+  (`M7 5v14 / M12 5v14 / M17 5v14`, tres líneas verticales iguales) y tiene
+  que distinguirse también de `growth` (una línea que sube con flecha). Misma
+  convención que el resto: grilla de 24, `viewBox="0 0 24 24"`, `fill="none"`,
+  `stroke="currentColor"`, `strokeWidth="1.75"`. Desde el 21 sep 2026 el engranaje de tablet/pared también es el
   SVG `settings` (el mismo de la barra del teléfono, solo, 1.3em dentro del
   círculo de 44px), no el glifo `⚙`.
 - **`docs/design/preview.html`** es una preview visual standalone (storage

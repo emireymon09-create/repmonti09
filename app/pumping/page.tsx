@@ -6,13 +6,13 @@ import { NoBaby } from '@/components/NoBaby'
 import { Banner, Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
 import { SyncStatus } from '@/components/SyncStatus'
 import { logPumping, recentPumping, totalPumped, updatePumping, voidPumping } from '@/lib/db'
-import { useVolumeUnit } from '@/lib/useVolumeUnit'
 import { useT } from '@/lib/i18n/react'
 import { useReturnFocus } from '@/lib/useReturnFocus'
 import type { MessageKey } from '@/lib/i18n'
 import type { PumpingSession, PumpSide } from '@/lib/types'
 import {
   clockTime,
+  DISPLAY_UNIT,
   formatVolume,
   fromHouseholdInputValue,
   longDate,
@@ -29,7 +29,6 @@ const SIDES: { value: PumpSide; label: MessageKey }[] = [
 
 export default function PumpingPage() {
   const { baby, userId, loading, unreachable } = useBaby()
-  const [unit] = useVolumeUnit()
   const { t, lang } = useT()
 
   const [rows, setRows] = useState<PumpingSession[]>([])
@@ -77,7 +76,7 @@ export default function PumpingPage() {
         setErr(t('milk.amountNotNumber'))
         return
       }
-      amountMl = Number(unitToMl(parsed, unit).toFixed(1))
+      amountMl = Number(unitToMl(parsed, DISPLAY_UNIT).toFixed(1))
     }
 
     const atIso = fromHouseholdInputValue(at)
@@ -107,7 +106,7 @@ export default function PumpingPage() {
   function startEdit(row: PumpingSession) {
     setErr(null)
     setESide(row.side)
-    setEAmount(row.amount_ml != null ? String(mlToUnit(row.amount_ml, unit)) : '')
+    setEAmount(row.amount_ml != null ? String(mlToUnit(row.amount_ml, DISPLAY_UNIT)) : '')
     setENotes(row.notes ?? '')
     setEAt(toHouseholdInputValue(new Date(row.pumped_at)))
     setEditingId(row.id)
@@ -125,7 +124,7 @@ export default function PumpingPage() {
         setErr(t('milk.amountNotNumber'))
         return
       }
-      amountMl = Number(unitToMl(parsed, unit).toFixed(1))
+      amountMl = Number(unitToMl(parsed, DISPLAY_UNIT).toFixed(1))
     }
 
     setBusy(true)
@@ -221,8 +220,8 @@ export default function PumpingPage() {
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 inputMode="decimal"
-                placeholder={t('common.unitOptional', { unit })}
-                aria-label={t('milk.amount', { unit })}
+                placeholder={t('common.unitOptional', { unit: t(`unit.${DISPLAY_UNIT}`) })}
+                aria-label={t('milk.amount', { unit: t(`unit.${DISPLAY_UNIT}`) })}
               />
               <input
                 className="input"
@@ -255,7 +254,7 @@ export default function PumpingPage() {
 
         <Card>
           <Label>{t('milk.inStash')}</Label>
-          <div className="value">{formatVolume(total, unit)}</div>
+          <div className="value">{formatVolume(total, DISPLAY_UNIT)}</div>
           <div className="meta">
             {t('milk.counted', { count: counted.length })}
             {resetAt && t('milk.since', { date: longDate(resetAt, lang) })}
@@ -288,8 +287,8 @@ export default function PumpingPage() {
                     value={eAmount}
                     onChange={(e) => setEAmount(e.target.value)}
                     inputMode="decimal"
-                    placeholder={t('common.unitOptional', { unit })}
-                    aria-label={t('milk.amount', { unit })}
+                    placeholder={t('common.unitOptional', { unit: t(`unit.${DISPLAY_UNIT}`) })}
+                    aria-label={t('milk.amount', { unit: t(`unit.${DISPLAY_UNIT}`) })}
                   />
                   <input
                     className="input"
@@ -342,7 +341,9 @@ export default function PumpingPage() {
                     </span>
                   </div>
                   <div className="value">
-                    {row.amount_ml != null ? formatVolume(row.amount_ml, unit) : t('milk.noAmount')}
+                    {row.amount_ml != null
+                      ? formatVolume(row.amount_ml, DISPLAY_UNIT)
+                      : t('milk.noAmount')}
                     {' · '}
                     {t(`sideButton.${row.side}`)}
                   </div>

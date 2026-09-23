@@ -51,6 +51,7 @@ import type {
   PumpingSession,
   PumpSide,
   Result,
+  RunningSession,
   Side,
   SleepSession,
   VolumeUnit,
@@ -135,7 +136,18 @@ export async function sendOpWith(
  * queued — replaying it would just fail again — so it comes back as a
  * plain error for the page to show.
  */
-async function write(label: string, op: PendingOp): Promise<Result<null>> {
+async function write(
+  label: string,
+  op: PendingOp,
+  opts?: { queueOnly?: boolean },
+): Promise<Result<null>> {
+  // `queueOnly`: the row this update targets is itself still an insert in
+  // the queue, so the server has never seen its id. A direct UPDATE would
+  // match zero rows, which PostgREST reports as success — the page would
+  // say "saved" over a write that did nothing. Queue it behind the insert
+  // instead; the replay sends them in order.
+  if (opts?.queueOnly) return enqueue(label, op)
+
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
     return enqueue(label, op)
   }
@@ -551,8 +563,9 @@ export function endNursing(sessionId: string, at?: string): Promise<Result<null>
 export function updateNursing(
   id: string,
   patch: Partial<{ side: Side; started_at: string; ended_at: string | null }>,
+  opts?: { queueOnly?: boolean },
 ): Promise<Result<null>> {
-  return write('Edit nursing', { kind: 'update', table: 'nursing_sessions', id, patch })
+  return write('Edit nursing', { kind: 'update', table: 'nursing_sessions', id, patch }, opts)
 }
 
 /** Soft-delete: marks the row retracted rather than removing history. */
@@ -612,8 +625,9 @@ export function endSleep(sessionId: string, at?: string): Promise<Result<null>> 
 export function updateSleep(
   id: string,
   patch: Partial<{ started_at: string; ended_at: string | null }>,
+  opts?: { queueOnly?: boolean },
 ): Promise<Result<null>> {
-  return write('Edit sleep', { kind: 'update', table: 'sleep_sessions', id, patch })
+  return write('Edit sleep', { kind: 'update', table: 'sleep_sessions', id, patch }, opts)
 }
 
 /** Soft-delete: marks the row retracted rather than removing history. */
@@ -624,6 +638,38 @@ export function voidSleep(id: string): Promise<Result<null>> {
     id,
     patch: { voided_at: new Date().toISOString() },
   })
+}
+
+// ------------------------------------------------ running session, re-read
+
+/**
+ * One session row, read fresh by id, for a screen that is about to write
+ * over it.
+ *
+ * No page in this app re-reads on its own (CLAUDE.md §6), so the wall
+ * screen can sit for hours on a session the other parent already stopped
+ * from their phone. Moving `started_at` back on a row that already has an
+ * `ended_at` does not correct anything — it stretches a finished session
+ * (measured: a 10-minute feed became 70) and the screen still says the
+ * start moved. The dashboard reads the row first and refuses.
+ *
+ * `data` is `null` when the row is gone: retracted, or never on the server.
+ * `db` is only for the integration tests, which run the same query as a
+ * signed-in parent (tests/integration/since.test.ts).
+ */
+export async function sessionById(
+  table: 'nursing_sessions' | 'sleep_sessions',
+  id: string,
+  db: Db = data(),
+): Promise<Result<RunningSession | null>> {
+  const { data: rows, error } = await db
+    .from(table)
+    .select('id, started_at, ended_at')
+    .eq('id', id)
+    .is('voided_at', null)
+    .limit(1)
+  if (error) return fail<RunningSession | null>(null, error)
+  return ok(((rows ?? [])[0] as RunningSession | undefined) ?? null)
 }
 
 // --------------------------------------------------------------- pumping
@@ -695,20 +741,11 @@ export function totalPumped(rows: PumpingSession[]): number {
   return rows.reduce((sum, r) => sum + (r.amount_ml ?? 0), 0)
 }
 
-/**
- * Zero out the running total shown on the Milk page without touching
- * any logged session — a parent who just moved the stash into the
- * freezer, or wants to start counting from today, isn't deleting
- * history.
- */
-export function resetPumpingTotal(babyId: string): Promise<Result<null>> {
-  return write('Reset pumping total', {
-    kind: 'update',
-    table: 'babies',
-    id: babyId,
-    patch: { pumping_reset_at: new Date().toISOString() },
-  })
-}
+// `babies.pumping_reset_at` no longer has a writer (23 sep 2026): the
+// "Reset milk total" button is gone from Settings and nothing replaced it.
+// The column stays and /pumping still honours a value already in it, so a
+// reset done before this keeps working — what is gone is making a new one.
+// A plain comment, not a JSDoc: there is no declaration under it to document.
 
 // --------------------------------------------------------------- growth
 

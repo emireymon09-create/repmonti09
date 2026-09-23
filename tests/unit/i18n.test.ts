@@ -25,7 +25,15 @@ const texts = (entry: string | Plural) =>
 
 // Iguales en los dos idiomas a propósito: nombres propios de idioma, y
 // abreviaturas que se dicen igual.
-const SAME_ON_PURPOSE = new Set<MessageKey>(['language.en', 'language.es', 'duration.mins'])
+const SAME_ON_PURPOSE = new Set<MessageKey>([
+  'language.en',
+  'language.es',
+  'duration.mins',
+  // Símbolos de unidad y la abreviatura de minutos: se escriben igual.
+  'unit.oz',
+  'unit.ml',
+  'offset.minutes',
+])
 
 describe('diccionarios', () => {
   it('es tiene exactamente las claves de en', () => {
@@ -80,15 +88,17 @@ describe('translate con una clave armada desde datos que no existe', () => {
 
 describe('translate', () => {
   it('interpola variables', () => {
-    expect(translate('en', 'menu.switchUnit', { unit: 'ml' })).toBe('Switch to ml')
-    expect(translate('es', 'menu.switchUnit', { unit: 'ml' })).toBe('Cambiar a ml')
+    expect(translate('en', 'offset.moved', { minutes: '5' })).toBe('Start moved back 5 min')
+    expect(translate('es', 'offset.moved', { minutes: '5' })).toBe(
+      'Inicio corrido 5 min hacia atrás',
+    )
     expect(translate('es', 'dash.nextFeeding', { time: '19:00', due: 'en 45 min' })).toBe(
       'Próxima toma 19:00 · en 45 min',
     )
   })
 
   it('deja a la vista una variable que falta en vez de borrarla', () => {
-    expect(translate('en', 'menu.switchUnit')).toBe('Switch to {unit}')
+    expect(translate('en', 'offset.moved')).toBe('Start moved back {minutes} min')
   })
 
   it('elige singular o plural por count', () => {

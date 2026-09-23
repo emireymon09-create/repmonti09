@@ -4,6 +4,49 @@ Every version of Amelia, newest first. The current version is the `version`
 field in `package.json`; this file is the history. A test fails if the two
 disagree. Shown in the app under the settings gear → Version history.
 
+## [0.9.0] - 2026-09-23
+
+A Statistics screen joins the bottom bar, "today's" totals become the last
+24 hours, amounts are always shown in ounces, and a session that is running
+can have its start moved back.
+
+- New Statistics screen, reachable from the bottom bar and from the Menu. It
+  has nothing drawn in it yet and says so; the totals stay on each section's
+  page until the charts exist.
+- The phone's bottom bar is four buttons now — Today, Milk, Stats, Menu —
+  and the Menu lists all ten screens in one column.
+- The short totals on Feeding, Diapers and Sleep count the **last 24 hours**
+  instead of since midnight, and say so. A feed at 11 pm still counts at
+  1 am. The 7-day totals and the log below are unchanged: the log is still
+  grouped by the day things happened.
+- Amounts are shown in ounces everywhere. The oz/ml switch left Settings;
+  instead, the bottle field has its own oz/ml toggle for the number you are
+  typing right now, and it goes back to ounces after every entry. Nothing
+  already logged changes.
+- "Reset milk total" is gone from Settings. A reset done earlier still
+  applies to the Milk total.
+- "Solid" is no longer offered when logging a feeding. Solids already logged
+  stay in the log, in History and in the totals, and can still be corrected.
+- While a feeding or a sleep is running, you can type how many minutes
+  earlier it really started and move the start back — as many times as you
+  need. It refuses a start more than 4 hours back at once, or more than
+  12 hours back in total, and it says why.
+- Moving a start back now checks the session is still running first. If the
+  other phone already stopped it, nothing is written and the screen says so
+  instead of quietly stretching a finished session.
+- Today no longer says "The log starts here" while it is still loading. A
+  household with entries never sees that message.
+- The oz/ml toggle is now as tall as the field and the button beside it, so
+  it can be hit as easily one-handed.
+- In Spanish, the bottle row fits on one line on the wall screen again, so
+  the three cards on Today stay the same height as in English.
+- Fixed: on an iPhone the bottom bar used to come loose while scrolling and
+  float over the middle of the list, dropping back to the edge when you let
+  go. It now stays at the bottom edge the whole time, and it no longer jumps
+  when a screen finishes loading.
+- Today shows the age on its own line under the name again, instead of
+  beside it.
+
 ## [0.8.0] - 2026-09-23
 
 Settings gets its own screen, the Menu becomes a plain list, and the two

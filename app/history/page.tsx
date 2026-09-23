@@ -25,7 +25,6 @@ import {
   voidSleep,
 } from '@/lib/db'
 import { useSync } from '@/lib/useSync'
-import { useVolumeUnit } from '@/lib/useVolumeUnit'
 import { useT } from '@/lib/i18n/react'
 import { useReturnFocus } from '@/lib/useReturnFocus'
 import type { Lang } from '@/lib/i18n'
@@ -43,6 +42,7 @@ import type {
 } from '@/lib/types'
 import {
   clockTime,
+  DISPLAY_UNIT,
   fromHouseholdInputValue,
   householdToday,
   longDate,
@@ -99,7 +99,6 @@ function isEditable(kind: ActivityEntry['kind']): kind is EditKind {
 
 export default function HistoryPage() {
   const { baby, loading, unreachable } = useBaby()
-  const [unit] = useVolumeUnit()
   const { t, lang } = useT()
 
   const [days, setDays] = useState<Day[]>([])
@@ -171,12 +170,18 @@ export default function HistoryPage() {
       // above are only looked up by id, so their order doesn't matter.
       // Today lists a running session first; here it goes by time like the
       // rest, so it lands under the day it started.
-      const entries = buildActivity(mFeedings, mNursing, mDiapers, mSleep, 0, unit, lang).sort(
-        (a, b) => new Date(b.at).getTime() - new Date(a.at).getTime(),
-      )
+      const entries = buildActivity(
+        mFeedings,
+        mNursing,
+        mDiapers,
+        mSleep,
+        0,
+        DISPLAY_UNIT,
+        lang,
+      ).sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
       setDays(groupByHouseholdDay(entries, lang))
     },
-    [unit, lang],
+    [lang],
   )
 
   const refresh = useCallback(
@@ -244,7 +249,7 @@ export default function HistoryPage() {
       const row = feedings.find((r) => r.id === entry.id)
       if (!row) return
       setFType(row.feeding_type)
-      setFAmount(row.amount_ml != null ? String(mlToUnit(row.amount_ml, unit)) : '')
+      setFAmount(row.amount_ml != null ? String(mlToUnit(row.amount_ml, DISPLAY_UNIT)) : '')
       setFAt(toHouseholdInputValue(new Date(row.fed_at)))
     } else if (entry.kind === 'diaper') {
       const row = diapers.find((r) => r.id === entry.id)
@@ -277,13 +282,13 @@ export default function HistoryPage() {
     if (editing.kind === 'feeding') {
       const amount = fAmount.trim() === '' ? null : Number(fAmount)
       if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
-        setErr(t('history.amountNotNumber', { unit }))
+        setErr(t('history.amountNotNumber', { unit: t(`unit.${DISPLAY_UNIT}`) }))
         setBusy(false)
         return
       }
       result = await updateFeeding(editing.id, {
         feeding_type: fType,
-        amount_ml: fType === 'bottle' && amount !== null ? unitToMl(amount, unit) : null,
+        amount_ml: fType === 'bottle' && amount !== null ? unitToMl(amount, DISPLAY_UNIT) : null,
         fed_at: fromHouseholdInputValue(fAt),
       })
     } else if (editing.kind === 'diaper') {
@@ -443,8 +448,10 @@ export default function HistoryPage() {
                               value={fAmount}
                               onChange={(e) => setFAmount(e.target.value)}
                               inputMode="decimal"
-                              placeholder={unit}
-                              aria-label={t('history.amountIn', { unit })}
+                              placeholder={t(`unit.${DISPLAY_UNIT}`)}
+                              aria-label={t('history.amountIn', {
+                                unit: t(`unit.${DISPLAY_UNIT}`),
+                              })}
                             />
                           )}
                           <input

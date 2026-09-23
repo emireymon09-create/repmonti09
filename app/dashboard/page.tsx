@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useBaby } from '@/lib/useBaby'
 import { NoBaby } from '@/components/NoBaby'
-import { Banner, Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
+import { Banner, Btn, Card, EmptyState, Grid, Label, Nav, Page } from '@/components/ui'
 import {
   addGrowth,
   endNursing,
@@ -20,15 +20,24 @@ import {
   recentNursing,
   recentSleep,
   recordBirth,
+  sessionById,
   startNursing,
   startSleep,
+  updateNursing,
+  updateSleep,
 } from '@/lib/db'
 import { useSync } from '@/lib/useSync'
 import { SeenNote, SyncBar, SyncErrorBanner } from '@/components/SyncStatus'
 import { lastGood, seenKey, type LastGood, type SeenState } from '@/lib/lastSeen'
-import { useVolumeUnit } from '@/lib/useVolumeUnit'
+import { AmountUnit } from '@/components/AmountUnit'
 import { useT } from '@/lib/i18n/react'
-import { lastFeedingEvent, type LastFeeding } from '@/lib/kpis'
+import {
+  lastFeedingEvent,
+  shiftStart,
+  MAX_SHIFT_BACK_MS,
+  MAX_SHIFT_MINUTES,
+  type LastFeeding,
+} from '@/lib/kpis'
 import type {
   DiaperChange,
   DiaperType,
@@ -36,12 +45,14 @@ import type {
   NursingSession,
   Side,
   SleepSession,
+  VolumeUnit,
   WithPending,
 } from '@/lib/types'
 import { looksOffline, type PendingWrite } from '@/lib/queue'
 import {
   ageFrom,
   clockTime,
+  DISPLAY_UNIT,
   dueRelative,
   durationBetween,
   elapsed,
@@ -85,7 +96,6 @@ function ownRows(rows: ServerRows): ServerRows {
 
 export default function Dashboard() {
   const { baby, userId, loading, refreshBaby, unreachable } = useBaby()
-  const [unit] = useVolumeUnit()
   const { t, lang } = useT()
 
   const [feedings, setFeedings] = useState<WithPending<Feeding>[]>([])
@@ -99,6 +109,14 @@ export default function Dashboard() {
   const [birthIn, setBirthIn] = useState('')
   const [birthBusy, setBirthBusy] = useState(false)
   const [bottleAmount, setBottleAmount] = useState('')
+  // What the number in that field is in, for THIS bottle only: never saved,
+  // back to ounces on every mount (components/AmountUnit.tsx).
+  const [bottleUnit, setBottleUnit] = useState<VolumeUnit>(DISPLAY_UNIT)
+  // "She started five minutes before I hit the button": minutes to move a
+  // running session's start back. One field per card, so a number typed in
+  // one is never applied to the other.
+  const [nursingBack, setNursingBack] = useState('')
+  const [sleepBack, setSleepBack] = useState('')
   const [err, setErr] = useState<string | null>(null)
   const [loadErr, setLoadErr] = useState<string | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
@@ -138,6 +156,12 @@ export default function Dashboard() {
   const serverRows = useRef<LastGood<ServerRows> | null>(null)
   const latestRead = useRef(0)
   const [seen, setSeen] = useState<SeenState>({ kind: 'live' })
+  // Has a first read settled? The four arrays start empty and `seen` starts
+  // 'live', so without this a household with months of data is told "The log
+  // starts here" for the whole read — measured at 1.5 s of it with 1500 ms of
+  // latency, and CLAUDE.md §6 puts a stalled read at ~7 s. Saying nothing was
+  // ever logged when we simply haven't looked is what §5.5 forbids.
+  const [loaded, setLoaded] = useState(false)
 
   // Anything still queued is folded in and marked, so a tap made with
   // no signal is visible rather than apparently lost.
@@ -157,7 +181,10 @@ export default function Dashboard() {
     async (babyId: string) => {
       const read = ++latestRead.current
       const key = seenKey.page('dashboard', babyId)
-      if (serverRows.current?.key !== key) serverRows.current = lastGood(key, NO_ROWS)
+      if (serverRows.current?.key !== key) {
+        serverRows.current = lastGood(key, NO_ROWS)
+        setLoaded(false)
+      }
       const last = serverRows.current
 
       // The queue is local and answers at once: a session just started
@@ -198,6 +225,9 @@ export default function Dashboard() {
       setLoadErr(error && !looksOffline(error) ? t('dash.couldNotLoad', { error }) : null)
 
       show(rows, queued)
+      // Only here, and never in the quick repaint above: what makes the
+      // empty state honest is that a read has answered, one way or another.
+      setLoaded(true)
     },
     [show, t],
   )
@@ -244,6 +274,24 @@ export default function Dashboard() {
   // Offline, with no read yet and nothing saved on this device: "no
   // sessions yet" would be a guess, so the cards say nothing instead.
   const unknown = seen.kind === 'nothing'
+  // Nada registrado TODAVÍA: ni tomas, ni pecho, ni pañales, ni sueño. Las tres
+  // tarjetas quedan cortas y de ahí hasta la barra de abajo no hay nada — 261px
+  // medidos a 390×844. Es el mismo hueco que /growth y /appointments cerraron
+  // el 23 sep 2026 con `.empty-fill`, salvo que Today nunca lo tuvo. Con una
+  // sola fila cargada esto no se monta y el `:has()` no matchea, así que el
+  // layout con datos no cambia en nada.
+  //
+  // `unknown` queda afuera a propósito: sin conexión y sin copia guardada no
+  // sabemos que no hay nada, solo que no lo pudimos leer (§5.5). Y `loaded`
+  // por el mismo motivo un paso antes: mientras la primera lectura no vuelve,
+  // las cuatro listas están vacías porque nadie las llenó todavía.
+  const nothingLogged =
+    loaded &&
+    !unknown &&
+    feedings.length === 0 &&
+    nursing.length === 0 &&
+    diapers.length === 0 &&
+    sleep.length === 0
   const feedingPrediction = predictNextFeeding(feedings, nursing)
   const napPrediction = predictNextNap(sleep)
 
@@ -254,7 +302,7 @@ export default function Dashboard() {
       return `${clockTime(n.started_at, lang)} · ${t('legend.breast', { side: t(`side.${n.side}`) })} · ${durationBetween(n.started_at, n.ended_at, lang)}`
     }
     const f = last.row
-    const amount = f.amount_ml ? ` · ${formatVolume(f.amount_ml, unit)}` : ''
+    const amount = f.amount_ml ? ` · ${formatVolume(f.amount_ml, DISPLAY_UNIT)}` : ''
     return `${clockTime(f.fed_at, lang)} · ${t(`feedingType.${f.feeding_type}`)}${amount}`
   }
 
@@ -292,15 +340,119 @@ export default function Dashboard() {
     const raw = bottleAmount.trim()
     const amount = raw === '' ? null : Number(raw)
     if (amount !== null && (!Number.isFinite(amount) || amount <= 0)) {
-      setErr(t('dash.bottleNotNumber', { unit }))
+      setErr(t('dash.bottleNotNumber', { unit: t(`unit.${bottleUnit}`) }))
       return
     }
-    const ml = amount === null ? null : unitToMl(amount, unit)
+    // The column is ml and always was: the toggle only says what the typed
+    // number means. Nothing is converted to ounces on the way in — a
+    // ml → oz → ml round trip would lose precision and buy nothing, since
+    // every screen already renders ml as ounces (lib/format.ts).
+    const ml = amount === null ? null : unitToMl(amount, bottleUnit)
     run(t('dash.label.bottle'), async () => {
       const res = await logFeeding(baby!.id, userId, 'bottle', ml)
-      if (!res.error) setBottleAmount('')
+      if (!res.error) {
+        setBottleAmount('')
+        // Back to ounces with the field, not just on remount. A unit left
+        // stuck from the last bottle is the expensive failure here: a "4"
+        // typed after a save in ml is logged as 4 ml — 0.1 oz — and looks
+        // like a real entry. One bottle, one unit.
+        setBottleUnit(DISPLAY_UNIT)
+      }
       return res
     })
+  }
+
+  /**
+   * Move a running session's start back by the minutes typed. Writes for
+   * real, through the same updateNursing/updateSleep the log's edit panel
+   * uses, so it goes through the offline queue like everything else — and
+   * it is cumulative: each apply shifts the start the row has NOW.
+   *
+   * "NOW" is the catch, and it is why this re-reads the row first. Nothing
+   * on this screen refreshes by itself (CLAUDE.md §6), so the wall display
+   * can be showing a session the other parent stopped from their phone an
+   * hour ago. Writing `started_at` over a finished row doesn't correct it,
+   * it stretches it: measured, a 10-minute feed ended up recorded as 70
+   * while the screen said "Start moved back 60 min".
+   *
+   * Three cases deliberately skip the re-read, because there is nothing on
+   * the server to read:
+   *   - `pending`: the row is still an insert in the queue. A direct UPDATE
+   *     would match zero rows and PostgREST calls that success, so the
+   *     write goes through the queue instead (`queueOnly`).
+   *   - the browser says it is offline: `write()` queues without asking
+   *     anyone, and making the correction sit through a read that is going
+   *     to fail would cost the ~7 s the reads take to give up (§6).
+   *   - the read is attempted and can't reach the server: same rule, a
+   *     missing answer never blocks a correction that used to work.
+   */
+  async function moveStartBack(
+    kind: 'nursing' | 'sleep',
+    id: string,
+    startedAt: string,
+    pending: boolean,
+    typed: string,
+    clear: () => void,
+  ) {
+    if (!baby || busy) return
+    setErr(null)
+
+    const minutes = typed.trim() === '' ? NaN : Number(typed)
+    const problems = {
+      max: String(MAX_SHIFT_MINUTES),
+      hours: String(MAX_SHIFT_BACK_MS / 3_600_000),
+    }
+    const first = shiftStart(startedAt, minutes, Date.now())
+    if (first.problem) {
+      setErr(t(`offset.${first.problem}`, problems))
+      return
+    }
+
+    setBusy(true)
+    let at = first.at
+
+    const offline = typeof navigator !== 'undefined' && navigator.onLine === false
+    if (!pending && !offline) {
+      const table = kind === 'nursing' ? 'nursing_sessions' : 'sleep_sessions'
+      const { data: fresh, error: readErr } = await sessionById(table, id)
+      if (!readErr) {
+        if (!fresh || fresh.ended_at) {
+          setErr(t(fresh ? 'offset.alreadyEnded' : 'offset.gone'))
+          setBusy(false)
+          return
+        }
+        // The row may also have moved since it was painted (the other tab
+        // applied its own offset). Shift what it actually says, and put the
+        // result back through the same limits.
+        const again = shiftStart(fresh.started_at, minutes, Date.now())
+        if (again.problem) {
+          setErr(t(`offset.${again.problem}`, problems))
+          setBusy(false)
+          return
+        }
+        at = again.at
+      }
+    }
+
+    const opts = pending ? { queueOnly: true } : undefined
+    const { error, queued } =
+      kind === 'nursing'
+        ? await updateNursing(id, { started_at: at! }, opts)
+        : await updateSleep(id, { started_at: at! }, opts)
+
+    if (error) {
+      setErr(t('common.couldNotSave', { error }))
+    } else {
+      clear()
+      confirm(queued ? t('common.queued') : t('offset.moved', { minutes: String(minutes) }))
+      // Same as `run`: a queued write is already on screen after refresh's
+      // quick repaint from the queue, so don't make the card wait for the
+      // slow (offline) server read.
+      if (queued) refresh(baby.id)
+      else await refresh(baby.id)
+      await reloadPending()
+    }
+    setBusy(false)
   }
 
   if (loading)
@@ -399,11 +551,11 @@ export default function Dashboard() {
     <Page>
       <Nav />
 
-      {/* Nombre y edad en la misma línea, y la fecha de hoy arriba a la
-          derecha. Antes iban apilados en tres renglones y la fecha arrancaba
-          la pantalla: en la pared, lo primero que se lee tiene que ser de
-          quién es la pantalla, no qué día es. En el teléfono la fecha baja
-          sola debajo del nombre (flex-wrap), sin romper nada. */}
+      {/* El nombre con la edad DEBAJO, y la fecha de hoy arriba a la derecha.
+          La fecha sigue sin arrancar la pantalla: en la pared, lo primero que
+          se lee tiene que ser de quién es la pantalla, no qué día es. La edad
+          volvió a su renglón el 23 sep 2026 — en la misma línea que el nombre
+          se leía peor. En el teléfono la fecha baja sola (flex-wrap). */}
       <header className="page-head">
         <h1 className="name">
           {baby.name}
@@ -455,6 +607,38 @@ export default function Dashboard() {
                   {t('dash.stopNursing')}
                 </Btn>
               </div>
+              {/* Mientras hay una toma corriendo, el lugar del campo de
+                  cantidad + Biberón lo ocupa esto: la corrección del inicio.
+                  No es un menú de opciones — es un campo abierto, cualquier
+                  número de minutos, porque el atraso real nunca es una de
+                  tres cifras elegidas de antemano. */}
+              <p className="meta">{t('offset.hint')}</p>
+              <div className="row-tight">
+                <input
+                  className="input narrow"
+                  value={nursingBack}
+                  onChange={(e) => setNursingBack(e.target.value)}
+                  inputMode="decimal"
+                  placeholder={t('offset.minutes')}
+                  aria-label={t('offset.ariaNursing')}
+                />
+                <Btn
+                  variant="quiet"
+                  disabled={busy}
+                  onClick={() =>
+                    moveStartBack(
+                      'nursing',
+                      activeNursing.id,
+                      activeNursing.started_at,
+                      !!activeNursing.pending,
+                      nursingBack,
+                      () => setNursingBack(''),
+                    )
+                  }
+                >
+                  {t('offset.apply')}
+                </Btn>
+              </div>
             </>
           )}
           <div className={activeNursing ? 'meta' : 'value'}>
@@ -499,28 +683,27 @@ export default function Dashboard() {
               </div>
             </>
           )}
-          <div className="row-tight">
-            <input
-              className="input narrow"
-              value={bottleAmount}
-              onChange={(e) => setBottleAmount(e.target.value)}
-              inputMode="decimal"
-              placeholder={unit}
-              aria-label={t('dash.bottleAmount', { unit })}
-            />
-            <Btn disabled={busy} onClick={onBottle}>
-              {t('dash.bottle')}
-            </Btn>
-            <Btn
-              variant="quiet"
-              disabled={busy}
-              onClick={() =>
-                run(t('dash.label.solid'), () => logFeeding(baby.id, userId, 'solid', null))
-              }
-            >
-              {t('dash.solid')}
-            </Btn>
-          </div>
+          {/* El biberón se carga cuando NO hay una toma de pecho corriendo:
+              ahí esta fila es la corrección del inicio. `row-wrap` porque a
+              390px el campo, el toggle de unidad y el botón no entran en una
+              sola línea. Sólidos salió de acá el 23 sep 2026: se sigue
+              viendo y corrigiendo lo ya registrado, pero no se crea más. */}
+          {!activeNursing && (
+            <div className="row-tight row-wrap">
+              <input
+                className="input narrow"
+                value={bottleAmount}
+                onChange={(e) => setBottleAmount(e.target.value)}
+                inputMode="decimal"
+                placeholder={t(`unit.${bottleUnit}`)}
+                aria-label={t('dash.bottleAmount', { unit: t(`unit.${bottleUnit}`) })}
+              />
+              <AmountUnit value={bottleUnit} onChange={setBottleUnit} disabled={busy} />
+              <Btn disabled={busy} onClick={onBottle}>
+                {t('dash.bottle')}
+              </Btn>
+            </div>
+          )}
         </Card>
 
         {/* ---------------- Diaper ---------------- */}
@@ -586,6 +769,36 @@ export default function Dashboard() {
                   {t('dash.shesAwake')}
                 </Btn>
               </div>
+              {/* Esta tarjeta no tiene selector de tipo: no había nada que
+                  esconder, así que la corrección del inicio se agrega y ya.
+                  Mismo campo, misma validación, misma escritura real. */}
+              <p className="meta">{t('offset.hint')}</p>
+              <div className="row-tight">
+                <input
+                  className="input narrow"
+                  value={sleepBack}
+                  onChange={(e) => setSleepBack(e.target.value)}
+                  inputMode="decimal"
+                  placeholder={t('offset.minutes')}
+                  aria-label={t('offset.ariaSleep')}
+                />
+                <Btn
+                  variant="quiet"
+                  disabled={busy}
+                  onClick={() =>
+                    moveStartBack(
+                      'sleep',
+                      activeSleep.id,
+                      activeSleep.started_at,
+                      !!activeSleep.pending,
+                      sleepBack,
+                      () => setSleepBack(''),
+                    )
+                  }
+                >
+                  {t('offset.apply')}
+                </Btn>
+              </div>
             </>
           ) : null}
           {/* The last finished sleep: when she woke · how long she slept. */}
@@ -622,6 +835,15 @@ export default function Dashboard() {
           )}
         </Card>
       </Grid>
+
+      {/* Ver `nothingLogged`: la pantalla termina en algo en vez de terminar
+          en blanco. Las tarjetas dicen que no hay nada de LO SUYO; esto dice
+          qué pasa cuando se toque un botón y adónde va a parar. */}
+      {nothingLogged && (
+        <div className="empty-fill">
+          <EmptyState icon="today" title={t('dash.empty')} hint={t('dash.emptyHint')} />
+        </div>
+      )}
     </Page>
   )
 }

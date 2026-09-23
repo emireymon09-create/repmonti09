@@ -423,9 +423,18 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 40vh;
-  min-height: 40dvh;
   margin-top: var(--col-gap);
+}
+/* El piso para un motor SIN `:has()`: ahí la página no es flex, el bloque no
+   recibe el alto sobrante y sin este mínimo la pantalla queda partida al
+   medio. Con `:has()` el piso sobra y encima estorba — cuando arriba hay una
+   tarjeta de formulario, 40dvh de mínimo empujan la página a scrollear por
+   un bloque cuyo trabajo es justamente NO agregar alto. */
+@supports not selector(:has(*)) {
+  .empty-fill {
+    min-height: 40vh;
+    min-height: 40dvh;
+  }
 }
 .empty-state {
   max-width: 30ch;
@@ -492,12 +501,13 @@ body {
   margin: 0 0 var(--s-5);
 }
 
-/* La cabecera de Today: nombre + edad de un lado, fecha del otro.
+/* La cabecera de Today: nombre (con la edad debajo) de un lado, fecha del
+   otro.
 
-   `align-items: baseline` es lo que hace que "Amelia" y "3 semanas" se
-   apoyen en la misma línea de base aunque tengan tamaños muy distintos —
-   alinearlas por caja las dejaba flotando. Con flex-wrap, en un teléfono
-   angosto la fecha baja sola en vez de empujar el nombre. */
+   `align-items: baseline` apoya la fecha en la misma línea de base que el
+   nombre aunque tengan tamaños muy distintos — alinearlas por caja las
+   dejaba flotando. Con flex-wrap, en un teléfono angosto la fecha baja sola
+   en vez de empujar el nombre. */
 .page-head {
   display: flex;
   align-items: baseline;
@@ -507,17 +517,16 @@ body {
   margin-bottom: var(--s-5);
 }
 .page-head .name {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: var(--s-1) var(--s-3);
   margin: 0;
   min-width: 0;
 }
-/* Dentro del h1 la edad es un dato, no un título: pierde el peso y el tamaño
-   del nombre y queda en el gris de los metadatos. */
+/* La edad va EN SU RENGLÓN, debajo del nombre (revertido el 23 sep 2026: el
+   22 se había puesto en la misma línea que el nombre y se lee peor). Sigue
+   dentro del h1, así que pierde el peso y el tamaño del título y queda en el
+   gris de los metadatos — es un dato, no un encabezado. */
 .page-head .age {
-  margin: 0;
+  display: block;
+  margin: var(--s-1) 0 0;
   font-weight: 400;
 }
 .page-head .eyebrow {
@@ -604,8 +613,17 @@ body {
   color: var(--c-muted);
   opacity: 1;
 }
+/* El campo corto: una cantidad de biberón o unos minutos, nunca más de
+   cuatro caracteres. Estaba en 6.5em — 136.5px en la pared para escribir
+   "150" — y ese sobrante era justo el que faltaba al lado: en español y a
+   1440px el botón "Biberón" necesitaba 128.2px y tenía 127.2, **1.1px**, así
+   que bajaba a un segundo renglón y, como el grid iguala las tres tarjetas de
+   Today, las tres crecían 96px. A 5.5em el campo sigue sobrado (5 dígitos
+   entran) y la fila queda con ~21px de aire en la pared, que es margen de
+   verdad y no un empate al pixel. La medida es relativa, así que vale igual
+   en el teléfono y en la pared. */
 .input.narrow {
-  width: 6.5em;
+  width: 5.5em;
   flex: none;
   text-align: center;
 }
@@ -877,6 +895,32 @@ select.input {
   background: var(--c-accent);
   color: var(--c-on-accent);
 }
+/* El mismo segmento, pero adentro de una fila y no debajo de un label: la
+   unidad del campo de cantidad de un biberón (components/AmountUnit.tsx,
+   23 sep 2026). Sin el margen que lo separa de su título en Settings, y sin
+   estirarse — en esa fila el ancho lo mandan el campo y el botón de al lado.
+   Los dos segmentos miden lo mismo entre sí (`min-width`) para que la unidad
+   elegida no cambie de tamaño al tocarla: medido, sin el piso quedaban en
+   27 y 29 px y el pill bailaba al cambiar de unidad. En español, y solo en
+   español, el botón de al lado no entra y baja a un segundo renglón — para
+   eso la fila lleva `row-wrap`: envuelve, no desborda. */
+.seg-inline {
+  margin-top: 0;
+  flex: none;
+  align-items: center;
+}
+.seg-inline .seg-btn {
+  flex: none;
+  min-width: 3em;
+  padding: var(--s-2);
+  /* --tap, no el piso de 44px de `.seg-btn`. Ese piso es el de los controles
+     secundarios (§1 de design.md: tabs, pills, el engranaje) y le alcanza a
+     un segmento de /settings, que se toca una vez por mes. Éste vive en la
+     fila de registro que se usa a una mano a las 3 de la mañana, al lado de
+     un campo y de un botón que sí miden --tap: medido antes, 36×44 px en el
+     teléfono y 51×44 en la pared, visiblemente más bajo que sus vecinos. */
+  min-height: var(--tap);
+}
 /* Nursing alerts: a segment that can't act here (browser without push, a
    switch in progress) reads as unavailable, same as a disabled menu item. */
 .seg-btn:disabled {
@@ -918,32 +962,73 @@ select.input {
   }
 }
 
-/* Teléfono: la barra de abajo son DOS ítems, Today y Menu.
+/* Teléfono: la barra de abajo son CUATRO ítems — Today, Milk, Statistics y el
+ * botón Menu.
  *
- * Hasta el 22 sep 2026 eran seis (cinco pestañas + el engranaje). A 390px cada
- * uno se quedaba con ~65px, las etiquetas largas se cortaban ("Historial",
+ * Hasta el 22 sep 2026 eran seis (cinco pestañas + el engranaje) y a 390px cada
+ * uno se quedaba con ~65px: las etiquetas largas se cortaban ("Historial",
  * "Crecimiento") y el ícono y el texto se apretaban contra el borde del área
- * táctil. Con dos, cada ítem tiene la mitad del ancho de la pantalla: imposible
- * errarle con el pulgar a las 3 de la mañana, que es el caso de uso entero.
+ * táctil. Con dos sobraba lugar; con cuatro cada ítem se queda con ~93px a
+ * 390px, bastante para el ícono, la etiqueta entera y el pulgar.
  *
- * Los otros cuatro .tab siguen en el HTML —la barra ancha y la pantalla de
- * pared los usan tal cual— y acá se apagan con display:none, que también los
- * saca del árbol de accesibilidad: un lector de pantalla en el teléfono
- * anuncia dos ítems, no seis. Los ocho destinos están en el menú ("Go to"). */
+ * Los .tab que no van al teléfono siguen en el HTML —la barra ancha y la
+ * pantalla de pared los usan tal cual— y acá se apagan con display:none, que
+ * también los saca del árbol de accesibilidad: un lector de pantalla en el
+ * teléfono anuncia cuatro ítems, no siete. Quién entra no lo decide el orden
+ * de la lista sino la marca `.tab-phone` (components/ui.tsx). Las diez
+ * pantallas están en el menú. */
 @media (max-width: 599px) {
-  .nav .tab:not(.tab-home) {
+  .nav .tab:not(.tab-phone) {
     display: none;
   }
+  /* La página es una COLUMNA que llega al alto de la ventana, y la barra es
+     su último ítem. Es lo que hace posible que la barra sea `sticky` en vez
+     de `fixed` (ver .nav, abajo): sticky solo puede quedarse abajo si su
+     contenedor llega hasta abajo — con una pantalla corta, `margin-top: auto`
+     la empuja al fondo igual.
+
+     Y ya no se reserva el alto de la barra con padding: una barra fija tapa
+     el final del documento para siempre y por eso había que compensarla con
+     100px; una sticky se corre sola cuando el documento se termina, así que
+     el último renglón nunca queda debajo. */
   .page {
-    padding-bottom: calc(var(--tap) + var(--s-6) * 2 + env(safe-area-inset-bottom, 0px));
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding-bottom: 0;
   }
+  /* La barra de abajo: `sticky`, no `fixed`.
+     -------------------------------------------------------------------
+     Con `position: fixed` Safari de iOS la despega del borde durante el
+     scroll y la deja flotando en medio de la lista, y vuelve sola al soltar
+     (iPhone 16 Pro / iOS 26.6.2, app instalada desde la pantalla de inicio —
+     reportado el 23 sep 2026). No es nuestro CSS: en toda la hoja no hay un
+     solo `transform`, `filter`, `overflow`, `will-change` ni `contain` en
+     ningún ancestro (html > body > .page > nav), así que el containing block
+     está sano. Es el motor: WebKit maneja los elementos fijos como capas
+     atadas al viewport y las reposiciona recién al terminar el gesto. Lo
+     mismo pasaba en cada transición cargando→cargado.
+
+     Una barra `sticky` viaja DENTRO del contenido scrolleado, así que no hay
+     capa fija que reposicionar y el salto desaparece. `order: 1` la pone
+     última en la columna sin moverla del DOM —el orden del HTML lo necesitan
+     la barra ancha y la pared, donde la barra va ARRIBA y todo esto no
+     aplica— y `margin-top: auto` la manda al fondo cuando el contenido no
+     llena la pantalla.
+
+     El `width: 100vw` con los márgenes negativos es lo que la saca del ancho
+     de columna de `.page` (max-width 520px + padding lateral) y la deja de
+     borde a borde, que es lo que hacía `left: 0; right: 0` cuando era fija.
+     El porcentaje se resuelve contra el ancho de contenido de `.page`, así
+     que la cuenta cierra igual a 390px que a 599px. */
   .nav {
-    position: fixed;
-    left: 0;
-    right: 0;
+    position: sticky;
     bottom: 0;
     z-index: 20;
-    margin: 0;
+    order: 1;
+    width: 100vw;
+    margin: auto calc(50% - 50vw) 0;
     gap: 0;
     flex-wrap: nowrap;
     align-items: stretch;

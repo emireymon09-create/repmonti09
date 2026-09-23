@@ -5,6 +5,7 @@ import {
   apptWhen,
   clockTime,
   cmToIn,
+  DISPLAY_UNIT,
   durationBetween,
   dueRelative,
   elapsed,
@@ -22,6 +23,7 @@ import {
   lbOzToKg,
   longDate,
   measuredOn,
+  ML_PER_FL_OZ,
   mlToFlOz,
   mlToUnit,
   resolveGrowthEdit,
@@ -156,6 +158,29 @@ describe(`bajo TZ=${SYSTEM_TZ}`, () => {
     expect(cmToIn(50.8)).toBe('20.0 in')
     expect(mlToFlOz(147.8675)).toBe('5.0 oz')
     expect(flOzToMl(5)).toBeCloseTo(147.8675, 4)
+  })
+
+  it('oz ↔ ml ida y vuelta con cantidades reales de biberón (2–8 oz)', () => {
+    // La base guarda ml; la app muestra oz (DISPLAY_UNIT). Lo que tiene que
+    // aguantar es el viaje completo: se tipea en una unidad, se guarda en ml,
+    // se vuelve a mostrar.
+    for (const oz of [2, 2.5, 3, 4, 4.5, 5, 6, 7, 8]) {
+      const ml = unitToMl(oz, 'oz')
+      expect(mlToUnit(ml, 'oz')).toBe(oz)
+      expect(formatVolume(ml, 'oz')).toBe(`${oz.toFixed(1)} oz`)
+    }
+    // Y al revés: tipeado en ml, guardado tal cual, mostrado en oz.
+    for (const ml of [60, 90, 120, 150, 180, 240]) {
+      expect(unitToMl(ml, 'ml')).toBe(ml)
+      expect(formatVolume(ml, 'oz')).toBe(`${(ml / ML_PER_FL_OZ).toFixed(1)} oz`)
+    }
+    // 4 oz tipeadas y 118 ml tipeados son la misma toma con un decimal.
+    expect(formatVolume(unitToMl(4, 'oz'), 'oz')).toBe('4.0 oz')
+    expect(formatVolume(unitToMl(118, 'ml'), 'oz')).toBe('4.0 oz')
+  })
+
+  it('DISPLAY_UNIT es onzas: la app no pregunta más la unidad', () => {
+    expect(DISPLAY_UNIT).toBe('oz')
   })
 
   it('formatVolume respeta la unidad elegida y guarda en ml', () => {

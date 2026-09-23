@@ -4,25 +4,33 @@
  * Settings — la pantalla de ajustes (22 sep 2026).
  *
  * Todo esto vivía adentro del menú desplegable del engranaje: tema, idioma,
- * avisos de lactancia, la unidad de volumen, el reset del total de leche y
- * cerrar sesión. Un menú que era a la vez navegación y panel de control
- * crecía sin techo y obligaba a mantener abierto un desplegable para cambiar
- * algo. Ahora el menú es solo navegación (components/ui.tsx) y los ajustes
- * son una pantalla, con lugar para explicar qué hace cada uno.
+ * avisos de lactancia y cerrar sesión. Un menú que era a la vez navegación y
+ * panel de control crecía sin techo y obligaba a mantener abierto un
+ * desplegable para cambiar algo. Ahora el menú es solo navegación
+ * (components/ui.tsx) y los ajustes son una pantalla, con lugar para
+ * explicar qué hace cada uno.
  *
  * No hay duplicados: ninguno de estos controles quedó en el menú.
+ *
+ * Dos ajustes se fueron el 23 sep 2026 y no se reemplazaron por nada:
+ *
+ *   · **oz / ml.** Ya no es una preferencia: la app muestra siempre onzas
+ *     (lib/format.ts, DISPLAY_UNIT). La unidad de lo que se TIPEA se elige
+ *     al lado del campo, por entrada (components/AmountUnit.tsx). No hubo
+ *     migración de datos: la base siempre guardó ml y sigue igual.
+ *   · **"Poner en cero la leche".** El total de /pumping ya no se puede
+ *     reiniciar desde la app. La columna `babies.pumping_reset_at` sigue
+ *     existiendo y /pumping la sigue respetando, así que un reset hecho
+ *     antes se mantiene; lo que no hay es forma de hacer uno nuevo.
  */
 
-import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useBaby } from '@/lib/useBaby'
-import { Banner, Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
+import { Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
 import { NursingAlerts } from '@/components/NursingAlerts'
 import { createClient } from '@/lib/supabaseClient'
-import { resetPumpingTotal } from '@/lib/db'
 import { forgetSeen } from '@/lib/lastSeen'
 import { forgetAlertsOnSignOut } from '@/lib/push/client'
-import { useVolumeUnit } from '@/lib/useVolumeUnit'
 import { useTheme, type Theme } from '@/lib/theme'
 import { useLanguageChoice, useT } from '@/lib/i18n/react'
 import type { LangChoice, MessageKey } from '@/lib/i18n'
@@ -45,11 +53,8 @@ export default function Settings() {
   const { baby, loading, unreachable } = useBaby()
   const router = useRouter()
   const { t } = useT()
-  const [unit, setUnit] = useVolumeUnit()
   const [theme, setTheme] = useTheme()
   const [langChoice, setLangChoice] = useLanguageChoice()
-  const [resetting, setResetting] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
 
   async function signOut() {
     // First, and whatever signOut() does offline: this screen is shared,
@@ -63,31 +68,9 @@ export default function Settings() {
     router.push('/login')
   }
 
-  function switchUnit() {
-    setUnit(unit === 'oz' ? 'ml' : 'oz')
-    // Every page that shows an amount reads the unit once on mount —
-    // reloading is the simplest way to make the switch take everywhere
-    // at once, matching how "Reset milk total" already refreshes.
-    window.location.reload()
-  }
-
-  async function resetMilkTotal() {
-    if (!baby || resetting) return
-    if (!window.confirm(t('menu.resetConfirm'))) return
-    setErr(null)
-    setResetting(true)
-    const { error } = await resetPumpingTotal(baby.id)
-    setResetting(false)
-    if (error) {
-      setErr(t('menu.resetFailed', { error }))
-      return
-    }
-    window.location.reload()
-  }
-
-  // Esta pantalla no depende del bebé para casi nada —tema, idioma y unidad
-  // son del dispositivo, y cerrar sesión siempre tiene que poder hacerse—,
-  // así que no rebota a NoBaby: solo el reset de leche se esconde sin bebé.
+  // Esta pantalla no depende del bebé para nada salvo los avisos de
+  // lactancia —tema e idioma son del dispositivo, y cerrar sesión siempre
+  // tiene que poder hacerse—, así que no rebota a NoBaby.
   if (loading)
     return (
       <Page>
@@ -100,7 +83,6 @@ export default function Settings() {
     <Page>
       <Nav />
       <h1 className="title">{t('settings.title')}</h1>
-      {err && <Banner kind="error">{err}</Banner>}
 
       <Grid>
         <Card>
@@ -151,26 +133,6 @@ export default function Settings() {
         </Card>
 
         <Card>
-          <Label>{t('settings.units')}</Label>
-          <p className="setting-note">{t('settings.unitsNote', { unit })}</p>
-          <div className="row-tight">
-            <Btn variant="quiet" onClick={switchUnit}>
-              {t('menu.switchUnit', { unit: unit === 'oz' ? 'ml' : 'oz' })}
-            </Btn>
-          </div>
-
-          {baby && (
-            <>
-              <Label>{t('settings.milk')}</Label>
-              <p className="setting-note">{t('settings.milkNote')}</p>
-              <div className="row-tight">
-                <Btn variant="quiet" onClick={resetMilkTotal} disabled={resetting}>
-                  {resetting ? t('menu.resetting') : t('menu.resetMilk')}
-                </Btn>
-              </div>
-            </>
-          )}
-
           <Label>{t('settings.account')}</Label>
           <p className="setting-note">
             {unreachable ? t('settings.signOutOffline') : t('settings.signOutNote')}

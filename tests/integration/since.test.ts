@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
-import { diapersSince, feedingsSince, nursingSince, sleepSince } from '@/lib/db'
+import { diapersSince, feedingsSince, nursingSince, sessionById, sleepSince } from '@/lib/db'
 import { adminClient, seedTwoFamilies, type SeededFamily } from '../helpers/supabase'
 
 // Las lecturas de los totales de /feeding, /diapers y /sleep (lib/db.ts,
@@ -142,6 +142,42 @@ describe('lecturas …Since', () => {
       expect(error).toBeNull()
       expect(data).toEqual([])
     }
+  })
+
+  // El dashboard relee la fila antes de correrle el inicio: ninguna página
+  // se relee sola, así que la pared puede estar mostrando una sesión que el
+  // otro teléfono ya paró. Escribir `started_at` encima de una fila con
+  // `ended_at` no corrige nada, la estira.
+  describe('sessionById, antes de correr un inicio', () => {
+    it('la sesión en curso viene, y dice que sigue en curso', async () => {
+      const { data, error } = await sessionById('sleep_sessions', ids.runningSleep, db())
+      expect(error).toBeNull()
+      expect(data).toMatchObject({ id: ids.runningSleep, ended_at: null })
+    })
+
+    it('una que ya terminó viene CON su ended_at', async () => {
+      const { data, error } = await sessionById('nursing_sessions', ids.crossNursing, db())
+      expect(error).toBeNull()
+      expect(Date.parse(data!.ended_at!)).toBe(Date.parse(INSIDE))
+    })
+
+    it('una retractada no viene: es null, no una fila fantasma', async () => {
+      const { data, error } = await sessionById('sleep_sessions', ids.voidedSleep, db())
+      expect(error).toBeNull()
+      expect(data).toBeNull()
+    })
+
+    it('un id que no existe es null, no un error', async () => {
+      const { data, error } = await sessionById('sleep_sessions', randomUUID(), db())
+      expect(error).toBeNull()
+      expect(data).toBeNull()
+    })
+
+    it('RLS: la sesión de la otra familia se lee como si no estuviera', async () => {
+      const { data, error } = await sessionById('sleep_sessions', ids.otherSleep, db())
+      expect(error).toBeNull()
+      expect(data).toBeNull()
+    })
   })
 
   it('sin límite: más de 20 filas en la ventana vienen todas', async () => {

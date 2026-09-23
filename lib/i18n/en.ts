@@ -32,6 +32,10 @@ export const en = {
   'common.started': 'Started',
   'common.ended': 'Ended',
 
+  // Símbolos de unidad. Iguales en los dos idiomas a propósito.
+  'unit.oz': 'oz',
+  'unit.ml': 'ml',
+
   // Sides and kinds, lowercase for running text ("12m ago · left").
   'side.left': 'left',
   'side.right': 'right',
@@ -110,6 +114,9 @@ export const en = {
   'nav.feeding': 'Feeding',
   'nav.diapers': 'Diapers',
   'nav.sleep': 'Sleep',
+  // Short on purpose: the phone's bottom bar gives each of its four items
+  // ~93px at 390px, and the page title says the long name.
+  'nav.statistics': 'Stats',
   'nav.version': 'Version history',
   'menu.versionHistory': 'Version {version} — version history',
   'menu.theme': 'Theme',
@@ -121,20 +128,11 @@ export const en = {
   // Each language is named in itself, whatever the interface is in.
   'language.en': 'English',
   'language.es': 'Español',
-  'menu.switchUnit': 'Switch to {unit}',
-  'menu.resetMilk': 'Reset milk total',
-  'menu.resetting': 'Resetting…',
-  'menu.resetConfirm': 'Zero out the "in the stash" total? Past sessions stay in History.',
-  'menu.resetFailed': 'Couldn’t reset — {error}',
   'menu.signOut': 'Sign out',
   // Nursing alerts (push). Per device, like the theme — but it also lives on
   // the server, which is what sends the notification.
   'menu.nursingAlerts': 'Nursing alerts',
   'settings.title': 'Settings',
-  'settings.units': 'Amounts',
-  'settings.unitsNote': 'Bottles and pumping are shown in {unit} on this device.',
-  'settings.milk': 'Milk stash',
-  'settings.milkNote': 'Start the stash total back at zero. Past sessions stay in History.',
   'settings.account': 'Account',
   'settings.signOutNote': 'Signs out on this device and turns its nursing alerts off.',
   'settings.signOutOffline':
@@ -222,7 +220,6 @@ export const en = {
   'dash.queuedLabel': '{label} saved on this device{when} — will sync',
   'dash.forTime': ' for {time}',
   'dash.label.bottle': 'Bottle',
-  'dash.label.solid': 'Solid',
   'dash.label.nursingLeft': 'Nursing (left)',
   'dash.label.nursingRight': 'Nursing (right)',
   'dash.label.nursingEnd': 'Nursing end',
@@ -248,7 +245,6 @@ export const en = {
   'dash.nextFeeding': 'Next feeding {time} · {due}',
   'dash.bottleAmount': 'Bottle amount in {unit}',
   'dash.bottle': 'Bottle',
-  'dash.solid': 'Solid',
   'dash.detected': 'detected',
   'dash.asleep': 'asleep',
   'dash.shesAwake': 'She’s awake',
@@ -258,9 +254,35 @@ export const en = {
 
   'dash.noFeedings': 'No feedings yet',
   'dash.noDiapers': 'No diapers yet',
+  // Nothing at all logged yet: the three cards each say their own part is
+  // empty, so this one says what happens next and where it lands.
+  'dash.empty': 'The log starts here',
+  'dash.emptyHint':
+    'Tap a button above — the first feeding, diaper or sleep shows up on these cards, and the totals start filling in.',
   'dash.detailsFor': '{section}: totals and log',
   'dash.label.sleep': 'Sleep',
   'legend.breast': 'breast ({side})',
+  // El toggle de unidad que va PEGADO al campo de cantidad de un biberón:
+  // vale para esa entrada y nada más, no es una preferencia guardada.
+  'amountUnit.label': 'Unit for this amount',
+  // Corregir el inicio de una sesión que está corriendo, sin pararla.
+  'offset.hint': 'Started before you tapped? Take those minutes off.',
+  'offset.minutes': 'min',
+  'offset.apply': 'Move start back',
+  'offset.ariaNursing': 'Minutes to move the nursing start back',
+  'offset.ariaSleep': 'Minutes to move the sleep start back',
+  'offset.moved': 'Start moved back {minutes} min',
+  'offset.notNumber': 'Minutes has to be a number.',
+  'offset.notPositive': 'Type how many minutes earlier it started — more than zero.',
+  'offset.tooLong':
+    'That is more than {max} minutes at once. Correct the start from the log instead.',
+  'offset.tooFarBack':
+    'That would leave the start more than {hours} hours ago. Correct it from the log instead.',
+  // The row is re-read before writing: this screen never refreshes on its
+  // own, so it can be showing a session the other phone already stopped.
+  'offset.alreadyEnded':
+    'That session already ended somewhere else. Correct its start from the section’s log.',
+  'offset.gone': 'That session isn’t there any more. Reload the page to see what happened to it.',
 
   // ------------------------------------------------------------ sections (/feeding, /diapers, /sleep)
   'section.feeding': 'Feeding',
@@ -270,7 +292,10 @@ export const en = {
   'category.removeConfirm':
     'Remove this entry? It stops counting in the totals; nothing else changes.',
   'category.entries': 'All entries',
-  'kpi.today': 'Today',
+  // La ventana es rodante (lib/kpis.ts): NO es el día de calendario, así que
+  // la etiqueta no puede decir "Today" — a las 00:10 la toma de las 23:50
+  // sigue adentro.
+  'kpi.last24h': 'Last 24 hours',
   'kpi.week': 'Last 7 days',
   'kpi.feedings': 'Feedings',
   'kpi.breast': 'Breast',
@@ -357,6 +382,14 @@ export const en = {
   'doctor.past': 'Past',
   'doctor.markNotDone': 'Mark as not done',
   'doctor.markDone': 'Mark as done',
+
+  // ------------------------------------------------------------ statistics (/statistics)
+  'stats.title': 'Statistics',
+  'stats.empty': 'No charts here yet',
+  // "the last 24 hours", never "today": the section cards count a rolling
+  // window now, and this line points at them (lib/kpis.ts, kpi.last24h).
+  'stats.emptyHint':
+    'This screen is where feedings, diapers and sleep will be drawn across days and weeks. Until it is, the totals for the last 24 hours and the last 7 days are on each section’s own page.',
 
   // ------------------------------------------------------------ history
   'history.title': 'History',

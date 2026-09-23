@@ -20,7 +20,7 @@
  *     ways that look like the app is broken rather than offline.
  */
 
-const VERSION = 'amelia-v5'
+const VERSION = 'amelia-v6'
 const SHELL = `${VERSION}-shell`
 const ASSETS = `${VERSION}-assets`
 
@@ -33,6 +33,7 @@ const PRECACHE = [
   '/growth',
   '/appointments',
   '/pumping',
+  '/statistics',
   '/history',
   '/settings',
   '/login',

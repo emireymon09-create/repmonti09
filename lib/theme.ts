@@ -27,9 +27,9 @@ function apply(theme: Theme) {
 }
 
 /**
- * Light / dark / system. A per-device display preference — like the oz/ml
- * toggle (lib/useVolumeUnit.ts) — so it lives in localStorage, not in the
- * database: the wall screen and a phone can each keep their own.
+ * Light / dark / system. A per-device display preference — like the language
+ * choice (lib/i18n) — so it lives in localStorage, not in the database: the
+ * wall screen and a phone can each keep their own.
  */
 export function useTheme(): [Theme, (theme: Theme) => void] {
   const [theme, setThemeState] = useState<Theme>(DEFAULT_THEME)

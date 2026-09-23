@@ -16,6 +16,7 @@ const PROTECTED = [
   '/diapers',
   '/sleep',
   '/pumping',
+  '/statistics',
   '/growth',
   '/appointments',
   '/history',

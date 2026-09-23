@@ -18,6 +18,7 @@ export const OFFLINE_PAGES = [
   '/history',
   '/growth',
   '/pumping',
+  '/statistics',
   '/appointments',
   '/settings',
 ]

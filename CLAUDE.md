@@ -182,6 +182,13 @@ no hay CLI de Supabase, no hay `~/.supabase/access-token`, y en todo el home la
 
 ```
 lib/db.ts          ÚNICA puerta a la base de datos. Las páginas nunca arman una query.
+                   `sessionById` (23 sep 2026) relee UNA sesión por id: la usa
+                   /dashboard antes de correrle el inicio, porque ninguna página
+                   se relee sola y la pared puede estar mostrando una sesión que
+                   el otro teléfono ya paró. `updateNursing`/`updateSleep` aceptan
+                   `{ queueOnly: true }` para forzar la cola cuando la fila
+                   todavía es un insert encolado (un UPDATE contra un id que el
+                   server no tiene matchea 0 filas y PostgREST lo llama éxito).
 lib/queue.ts       Cola offline en IndexedDB + replay ordenado, lock entre
                    pestañas (navigator.locks), timeout por envío, reintento solo
                    para errores de red y descarte de un rechazo.
@@ -194,11 +201,18 @@ lib/lastSeen.ts    Copia en localStorage (`amelia:seen:*`) de las últimas filas
 lib/offlinePages.ts   Lista de páginas que el service worker precalienta tras
                    iniciar sesión (mensaje 'warm' a public/sw.js).
 lib/format.ts      Fechas/horas en la TZ del hogar + conversión de unidades.
+                   `DISPLAY_UNIT = 'oz'` (23 sep 2026): la app MUESTRA siempre
+                   onzas. La base sigue guardando ml. `lib/useVolumeUnit.ts`
+                   —la preferencia oz↔ml por dispositivo— se borró ese día.
 lib/kpis.ts        Totales de /feeding, /diapers y /sleep: funciones PURAS (sin
-                   reloj ni base). Ventanas "hoy" y "últimos 7 días" en la TZ
-                   del hogar, solapamiento de sesiones, `lastFeedingEvent` (la
-                   leyenda del dashboard) y `checkPastRange` (validación de
-                   "Log a past one"). Una fila en cola cuenta y marca `pending`.
+                   reloj ni base). Ventanas `last24h` (**rodante**: ahora − 24 h,
+                   23 sep 2026; antes era el día de calendario y se llamaba
+                   `today`) y `week` (hoy + los 6 días de calendario anteriores,
+                   sin cambio), solapamiento de sesiones, `lastFeedingEvent` (la
+                   leyenda del dashboard), `checkPastRange` (validación de
+                   "Log a past one") y `shiftStart` (correr el inicio de una
+                   sesión en curso: topes 240 min por aplicación y 12 h sobre el
+                   resultado). Una fila en cola cuenta y marca `pending`.
 lib/types.ts       Tipos de fila (stand-in de los types generados de fase 2).
 lib/tokens.ts      Design tokens en TS, espejo de app/globals.css.
 lib/supabaseClient.ts   anon key — browser. Protegido por RLS.
@@ -233,14 +247,28 @@ components/ui.tsx  Page, Grid, Card, Label, Btn, NavIcon, EmptyState, Nav — y
                    re-exporta Banner. Desde el 23 sep 2026 `Nav` es SOLO
                    navegación: no tiene ningún ajuste adentro ni recibe babyId.
 app/settings/page.tsx   La pantalla Settings (23 sep 2026): tema, idioma,
-                   avisos de lactancia, la unidad oz↔ml, el reset del total de
-                   leche y cerrar sesión. Todo esto vivía en el menú del
-                   engranaje; no quedó ninguna copia allá.
+                   avisos de lactancia y cerrar sesión. Vino del menú del
+                   engranaje; no quedó ninguna copia allá. **La unidad oz↔ml y
+                   "Reset milk total" salieron** ese mismo día (frentes 4 y 5):
+                   el sistema muestra siempre onzas y el total de leche ya no
+                   se puede resetear. La página no tiene `Banner` ni `useState`.
+app/statistics/page.tsx   Pantalla nueva (23 sep 2026). Todavía NO dibuja nada:
+                   título + `EmptyState` dentro de un `.empty-fill`, sin
+                   prometer fecha. No lee nada, así que no tiene estado de
+                   carga. Está en `middleware.ts`, en `lib/offlinePages.ts` y en
+                   el `PRECACHE` de `public/sw.js`.
+components/AmountUnit.tsx   El toggle oz/ml PEGADO a un campo de cantidad
+                   (23 sep 2026). `.seg`/`.seg-inline`, `role="radiogroup"` con
+                   dos `role="radio"`. Es estado del componente, **no** una
+                   preferencia guardada: vale para esa entrada y vuelve a `oz`
+                   al montar y después de cada guardado. Está en la fila del
+                   biberón de /dashboard y en "Log a past one" de /feeding;
+                   **no** en los paneles de edición, ver §6.
 components/Banner.tsx   Banner (.banner error/ok/warn). En archivo propio para
                    que NursingAlerts lo use sin importar ui.tsx de vuelta.
 components/SectionPage.tsx   La pantalla compartida de /feeding, /diapers y
-                   /sleep: KPIs de hoy y de 7 días, log completo con editar y
-                   borrar (un panel a la vez) y "Log a past one".
+                   /sleep: KPIs de las últimas 24 h y de 7 días, log completo
+                   con editar y borrar (un panel a la vez) y "Log a past one".
 components/NursingAlerts.tsx   El control "Nursing alerts", hoy en /settings
                    (antes en el menú). Sus segmentos son `role="radio"` dentro
                    de un `radiogroup`, no `menuitemradio`.
@@ -264,7 +292,14 @@ lib/deviceAuth.ts  Auth de los endpoints de dispositivo: token por hash + scope,
 middleware.ts      Guard de auth server-side. NO reemplaza a RLS: evita que una
                    ruta privada se renderice antes de rebotar al login.
 public/sw.js       Service worker: que la app ABRA sin conexión. Nunca cachea
-                   datos de Supabase ni una respuesta redirigida.
+                   datos de Supabase ni una respuesta redirigida. El cache es
+                   **`amelia-v6`** (23 sep 2026, con /statistics adentro). Ojo:
+                   hasta hoy este mapa decía `amelia-v4` y era falso — ya estaba
+                   en `v5` desde que entró /settings. Corregido, y comprobado
+                   por el auditor de punta a punta (caches
+                   `amelia-v6-shell` / `amelia-v6-assets`, recarga de
+                   /statistics con la red cortada). **Sin verificar:** la
+                   actualización desde un navegador que ya tenía `amelia-v5`.
 tests/             Vitest. unit/ no necesita nada; integration/ necesita el
                    stack local levantado.
 supabase/migrations/0010_push_forbidden_streak.sql  La columna consecutive_403.
@@ -516,7 +551,8 @@ Desde el 21 sep 2026 la app está en inglés y en español (`lib/i18n/`).
 **Construido y funcionando:** auth, dashboard **de tres tarjetas** (Comida /
 Pañal / Dormir — 22 sep 2026; ya **no** tiene el feed de Today, la tarjeta de
 próximo turno ni "Log a missed session"), las **tres páginas de sección**
-`/feeding`, `/diapers` y `/sleep`, Milk (extracción),
+`/feeding`, `/diapers` y `/sleep`, **`/statistics`** (23 sep 2026 — la pantalla
+existe y es destino real, pero **todavía no dibuja nada**), Milk (extracción),
 Growth con editar/borrar (0008), Doctor, History con editar/borrar, PWA instalable, cola offline,
 **RLS en las 13 tablas** (las 11 originales; `device_tokens`, la 12ª, con RLS
 y **sin acceso** para `anon`/`authenticated` — solo `service_role`; y
@@ -527,21 +563,25 @@ endpoints de dispositivo, **tokens por dispositivo** (`device_tokens`,
 opcionalmente a un bebé; reemplazó a los secretos compartidos
 `NUC_DEVICE_SECRET`/`QUICK_TOGGLE_SECRET`), **middleware de auth
 server-side**, **lockfile de pnpm**, **lint y format**, **historial de
-versiones en `/version`** (engranaje → Version history), **tema claro pastel
-seleccionable** (engranaje → Theme: Light / Dark / System, por dispositivo),
-**idioma español / inglés** (engranaje → Language: System / English / Español,
+versiones en `/version`** (al pie del menú), **tema claro pastel
+seleccionable** (Settings → Theme: Light / Dark / System, por dispositivo),
+**idioma español / inglés** (Settings → Language: System / English / Español,
 por dispositivo en `localStorage` `amelia:lang`; "System" sigue a
 `navigator.languages` — gana el primer idioma soportado, si no hay ninguno,
 inglés — 21 sep 2026, `lib/i18n/`), **apertura sin conexión** (copia
 guardada por dispositivo con aviso de cuándo es, páginas precalentadas por el
 service worker tras iniciar sesión — 22 sep 2026), **sync robusta** (replay
 idempotente, lock entre pestañas, reintento solo y descarte de un rechazo — 22
-sep 2026), **aviso push de toma de pecho larga** (engranaje → Nursing alerts,
+sep 2026), **aviso push de toma de pecho larga** (Settings → Nursing alerts,
 por dispositivo; 0009 + `lib/push/` + `web-push`/VAPID — 22 sep 2026, **pero
-nadie llama al check todavía**, ver §7), y **una suite de tests**.
+nadie llama al check todavía**, ver §7), **corrección del inicio de una sesión
+en curso** (23 sep 2026, ver más abajo), **la barra de abajo pegada al borde en
+iPhone** (pasó de `fixed` a `sticky`, 23 sep 2026 — ver más abajo), y **una
+suite de tests**.
 
 **Las tres páginas de sección** (`app/{feeding,diapers,sleep}/page.tsx`, las
-tres montan `components/SectionPage.tsx`): KPIs de **hoy** y de los **últimos
+tres montan `components/SectionPage.tsx`): KPIs de las **últimas 24 horas**
+(ventana **rodante** desde el 23 sep 2026 — ver más abajo) y de los **últimos
 7 días** (hoy + los 6 anteriores, TZ del hogar; `lib/kpis.ts`, puro), el log
 completo debajo con editar y borrar (soft-delete `voided_at`, un panel a la
 vez, el foco vuelve al Edit) y **"Log a past one"** con "Finished / Still
@@ -551,34 +591,116 @@ activa. Las lecturas son `feedingsSince` / `nursingSince` / `diapersSince` /
 más nuevas sería silenciosamente falso) y trayendo las sesiones que cruzan el
 inicio de la ventana. Las tres están en `middleware.ts`, en
 `lib/offlinePages.ts` y en el `PRECACHE` de `public/sw.js` (que pasó a
-`amelia-v4`).
+`amelia-v6` el 23 sep 2026, con `/statistics`).
 
-**Settings, y el menú como lista (23 sep 2026).** Los seis ajustes que vivían
-adentro del desplegable —Theme, Language, Nursing alerts, la unidad oz↔ml,
-"Reset milk total" y cerrar sesión— se mudaron enteros a **`/settings`**
-(`app/settings/page.tsx`), que es la octava entrada del menú. **No quedó
-ninguna copia en el menú** (verificado en el DOM: 0 `.seg`, 0
-`.nav-menu-item`). El menú pasó de una grilla de 2 columnas a **una sola
-columna**, en este orden: Feeding, Diapers, Sleep, Milk, Growth, Doctor,
-History, Settings — medido a 390px: los 8 con el mismo `left` (151) y el mismo
-ancho (226), 52px de alto cada uno. "Version history" salió de la lista: el
-número de versión va **al pie** del menú, chico y alineado a la derecha, y es
+**"Hoy" pasó a ser las últimas 24 horas (23 sep 2026).** La tarjeta corta de
+`/feeding`, `/diapers` y `/sleep` contaba desde la medianoche del hogar: a las
+00:05 los números se ponían en cero y una toma de las 23:50 desaparecía.
+`kpiWindows().today` se renombró a **`last24h`** —el nombre también mentía— y
+la ventana es `{ ahora − 24 h, ahora }`. La etiqueta dice **"Last 24 hours" /
+"Últimas 24 horas"**. Verificado por el auditor con datos a los dos lados del
+borde: 3 tomas y 11,5 oz en 24 h contra 1 toma y 5,1 oz con la ventana vieja.
+Tres cosas que conviven a propósito y hay que tener claras:
+
+- **`week` NO cambió**: sigue siendo hoy + los 6 días de calendario anteriores.
+  Hay una pregunta abierta para Luis (§7.7).
+- **El log de abajo sigue agrupado por día de calendario.** Una fila de ayer
+  puede aparecer bajo el encabezado de ayer y a la vez contar en la tarjeta de
+  24 h. Son dos preguntas distintas y ahora se escriben distinto.
+- **La lectura cubre la ventana**: `SectionPage` lee desde
+  `startOfHouseholdDay(now, 6)`, que siempre es ≤ `now − 24 h`. Está probado
+  (`tests/unit/kpis.test.ts`), porque un total corto saldría corto **en
+  silencio**.
+
+**El sistema muestra siempre onzas (23 sep 2026).** Se borró
+`lib/useVolumeUnit.ts` y con él la preferencia oz↔ml por dispositivo; queda
+`DISPLAY_UNIT = 'oz'` en `lib/format.ts`. **No hubo migración de datos y no
+hacía falta**: la columna es `amount_ml` y siempre guardó ml — la preferencia
+solo afectaba el render y el parseo. Para *entrar* un número en ml está el
+toggle por-campo de `components/AmountUnit.tsx`, al lado del campo de cantidad
+de biberón (dashboard y "Log a past one" de `/feeding`): vale para esa entrada
+sola, no se guarda, y vuelve a `oz` al montar la tarjeta **y después de cada
+guardado exitoso**. Lo tipeado en ml se guarda tal cual (150 → `150`); lo
+tipeado en oz se multiplica (4 → `118.294`). **No se convierte ml → oz → ml al
+guardar**: sería perder precisión sin ganar nada.
+
+**Correr el inicio de una sesión en curso (23 sep 2026).** Mientras hay una
+lactancia corriendo, el lugar del campo de cantidad + Biberón lo ocupa un campo
+numérico abierto ("empezó hace … minutos") y el botón que lo aplica; la tarjeta
+Sleep, que no tiene selector de tipo, lo suma debajo de "She's awake". Es
+**acumulativo** y escribe de verdad, por `updateNursing`/`updateSleep` ⇒ pasa
+por la cola offline y se marca "Not synced yet" como todo lo demás. Validación
+pura en `shiftStart` (`lib/kpis.ts`): número finito, > 0, ≤ 240 min por
+aplicación y el resultado no puede quedar más de 12 h atrás. **Antes de
+escribir se relee la fila** (`sessionById`): si el otro teléfono ya la terminó,
+no se escribe nada y el banner lo dice — sin eso, una toma de 10 minutos
+quedaba registrada como de 70 mientras la pantalla decía "Start moved back
+60 min" (medido por el auditor). La relectura se saltea en dos casos, a
+propósito: con el navegador diciendo `offline` (la escritura se encola igual y
+esperar una lectura condenada costaría ~7 s), y cuando la fila todavía es un
+insert **en la cola** — ahí el UPDATE directo matchearía 0 filas y PostgREST lo
+llamaría éxito, así que se fuerza el camino de la cola (`queueOnly`).
+
+**Settings, y el menú como lista (23 sep 2026).** Los ajustes que vivían
+adentro del desplegable —Theme, Language, Nursing alerts y cerrar sesión— se
+mudaron enteros a **`/settings`** (`app/settings/page.tsx`), la última entrada
+del menú. La unidad oz↔ml y "Reset milk total" se mudaron ese mismo día y
+**después se fueron del todo** (frentes 4 y 5): no están ni en el menú ni en
+Settings. **No quedó ninguna copia en el menú** (verificado en el DOM: 0
+`.seg`, 0 `.nav-menu-item`). El menú pasó de una grilla de 2 columnas a **una
+sola columna** y hoy tiene **diez** entradas: Today, Feeding, Diapers, Sleep,
+Milk, Stats, Growth, Doctor, History, Settings — medido a 390px: las 10 con el
+mismo `left` (151) y el mismo ancho (226), 52px de alto cada una, menú de
+598px en una ventana de 844 (no scrollea). Today y Milk se repiten con la barra
+a propósito: el menú es el índice de la app. "Version history" salió de la
+lista: el número de versión va **al pie** del menú, chico y alineado a la derecha, y es
 el enlace a `/version` — era su única puerta. El ícono del botón **Menu** pasó
 a ser **tres líneas verticales** (`ICONS.menu`, `M7 5v14 / M12 5v14 / M17 5v14`);
 los sliders que tenía ahora nombran a Settings. **No hay librería de íconos en
 este repo** y no se agregó ninguna: siguen siendo SVG de trazo a mano.
 
-**El nav de dos ítems en el teléfono (22 sep 2026).** La barra de abajo pasó de
-seis ítems (cinco pestañas + el engranaje) a **dos: Today y Menu**. Las otras
-ocho pantallas —`/feeding`, `/diapers`, `/sleep`, `/pumping`, `/growth`,
-`/appointments`, `/history` y `/version`— viven en el grupo "Go to" del menú,
-que reusa el patrón de siempre (`aria-haspopup="menu"`, `aria-expanded`,
-Escape con el foco de vuelta al botón, `pointerdown` afuera). Las tres páginas
-de sección no tenían **ninguna** entrada de navegación hasta ahora. En tablet y
-en la pantalla de pared la barra de pestañas queda igual: los `.tab` siguen en
-el HTML y solo se apagan por CSS abajo de 600px. Verificado con CDP: en el
-teléfono se ven exactamente 2 ítems, en la pared 6, y el menú entra en la
-ventana (716px de 844).
+**El nav del teléfono: de seis a dos (22 sep) y de dos a cuatro (23 sep
+2026).** La barra de abajo había bajado de seis ítems (cinco pestañas + el
+engranaje) a **dos: Today y Menu**; el 23 sep 2026 pasó a **cuatro: Today ·
+Milk · Stats · Menu**. Medido a 390×844: los cuatro de 94,5 px de ancho y
+**56,7 px** de alto táctil, ninguno cortado, `horizScroll` 0 en los dos
+idiomas. Las etiquetas se acortaron a **`Stats` / `Datos`** —a 390px entraban
+enteras, pero a 320px "Estadísticas" mide 74,5 de 77 px, el mismo motivo por el
+que "Crecimiento" ya era "Medidas"—; el nombre largo está en el `<h1>` de la
+página. Qué pestañas se ven en el teléfono ya **no** se decide por el orden de
+la lista (`:not(.tab-home)`) sino con un `phone: boolean` explícito por ítem en
+`components/ui.tsx`. En tablet y en la pantalla de pared la barra queda igual
+en naturaleza pero pasó a **7 ítems** (6 pestañas + Menu), sin cortes ni scroll
+horizontal. El resto de las pantallas vive en el menú, que reusa el patrón de
+siempre (`aria-haspopup="menu"`, `aria-expanded`, Escape con el foco de vuelta
+al botón, `pointerdown` afuera).
+
+**Y la barra dejó de ser `fixed`: ahora es `sticky` (23 sep 2026).** En un
+iPhone real (16 Pro, iOS 26.6.2, **app instalada** desde la pantalla de
+inicio) la barra fija se despegaba del borde durante el scroll y quedaba
+flotando sobre el medio de la lista; al soltar volvía sola abajo. Pasaba en
+varias pantallas y en las dos orientaciones, y también en cada transición
+cargando→cargado. **No era nuestro CSS:** en todo el repo no hay un solo
+`transform`, `filter`, `overflow`, `will-change`, `contain` ni
+`backdrop-filter` en ningún ancestro de la barra (la cadena es
+`html > body > .page > nav`, y `I18nProvider` no renderiza ningún elemento),
+así que el containing block estaba sano. Es WebKit, que trata los elementos
+fijos como capas atadas al viewport y las reposiciona recién al terminar el
+gesto; una barra sticky viaja dentro del contenido scrolleado y no tiene esa
+capa. Tres piezas, todas en `@media (max-width: 599px)` de `app/globals.css`:
+`.page` pasa a columna flex con `min-height: 100dvh` (sticky solo se queda
+abajo si su contenedor llega abajo), `.nav` lleva `order: 1` + `margin-top:
+auto` (última en la columna **sin moverse del DOM** — de 600px para arriba la
+barra va arriba y nada de esto aplica) y `width: 100vw` con
+`margin: auto calc(50% - 50vw) 0` para quedar de borde a borde, que es lo que
+hacía `left: 0; right: 0`. `.page` **ya no reserva** el alto de la barra con
+padding: una sticky se corre sola al terminarse el documento. Detalle y
+números en `design.md` §5.11. **Sin verificar acá: que el salto desaparezca en
+un iPhone** — este VPS no tiene WebKit ni iOS y la emulación de Chromium no
+implementa el toolbar dinámico ni las capas fijas de WebKit. Lo que sí está
+medido es que no rompe nada (132 combinaciones, abajo) y que la barra queda
+pegada al borde en cada posición de scroll y en los 241 cuadros de una
+navegación real.
 
 **Estados vacíos que ocupan la pantalla (23 sep 2026).** `/growth` y
 `/appointments` sin una sola fila terminaban en la tarjeta del formulario y
@@ -587,10 +709,30 @@ hermanos —por eso la medición del pase anterior no lo vio— sino **después*
 último. Ahora esas dos páginas, y solo cuando no hay ninguna fila, ponen un
 `.empty-fill` que se queda con el alto sobrante y centra ahí un `EmptyState`
 (ícono de la sección + título + una línea que dice qué va a aparecer).
-Medido a 390×844: el hueco hasta la barra pasó de **412px a 38px** en Growth y
-de **686px a 38px** en Doctor. **Con datos no cambia nada**: `.page` sigue en
-`display: block` y `min-height: 0` (el `:has(.empty-fill)` no matchea), 0
-`.empty-fill` en el DOM, mismo alto de documento.
+**Con datos no cambia nada**: `.page` sigue en `display: block` y
+`min-height: 0` (el `:has(.empty-fill)` no matchea), 0 `.empty-fill` en el DOM,
+mismo alto de documento.
+
+**Y el hallazgo que corrige la medición anterior (23 sep 2026):** los números
+"412 → 38" y "686 → 38" que quedaron escritos eran **de caja, y 38 es una
+constante**. `.empty-fill` es `flex: 1 1 auto` con `align-items: center`, así
+que la caja termina siempre a la misma distancia de la barra pase lo que pase
+adentro: medir la caja era medir el `flex: 1`, no el blanco. La métrica que
+sirve es la **tinta** —el último elemento con texto o `<svg>`—, y por tinta el
+blanco seguía ahí. Medido (390×844, oscuro, inglés, sin una sola fila),
+antes → después: Doctor **306,7 → 92,2**, Today **261,3 → 68,7**, Growth
+**157,7 sin cambio**. Doctor se arregló abriendo su formulario cuando no hay
+ningún turno (lo que `/growth` ya hacía), no tocando el CSS. Today, que nunca
+había tenido `.empty-fill`, ahora lo monta en su estado sin datos.
+
+**Remedido el mismo día, después de pasar la barra a `sticky`:** los tres
+huecos bajaron **19,2 px** exactos, porque `.empty-fill` ya no se centra contra
+los 100 px que reservaba la barra fija sino contra la barra de verdad. Doctor
+**73,0**, Today **46,5** (37,5 en español), Growth **138,5**, Statistics
+**267,5** (258,5 en español). El tema no cambia un píxel, la barra sigue
+arrancando en `top: 782,3` y `docH` sigue en 844 en las 16 combinaciones. Y la
+constante de caja pasó de 38,3 px a **0,0 px**: la caja ahora termina justo
+donde empieza la barra. Las cifras "con datos" no se mueven.
 
 **La transición loading→contenido (23 sep 2026).** El pase anterior sacó el
 pantallazo blanco metiendo el `<Nav>` en el estado de carga; quedaba el salto
@@ -607,9 +749,14 @@ CPU a 1/6 el "Loading…" sigue sin verse y el fundido es igual; con
 queda **afuera** de la animación —React reusa ese nodo— y midió opacidad 1 en
 todos los cuadros, 0 cuadros sin nav.
 
-**Today, la cabecera y las tarjetas (22 sep 2026).** Nombre y edad en la misma
-línea (`baseline`, la edad en gris y sin el peso del título) y la fecha de hoy
-arriba a la derecha con `longDate()`, el formato por idioma de siempre. Las
+**Today, la cabecera y las tarjetas (22 sep 2026).** Nombre con la **edad
+debajo, en su propio renglón** (en gris y sin el peso del título) y la fecha de
+hoy arriba a la derecha con `longDate()`, el formato por idioma de siempre. La
+edad estuvo en la misma línea que el nombre entre el 22 y el 23 sep 2026: se
+**revirtió** por pedido de Luis, se leía peor. A 390px la reversión no cambia
+nada medible —el nombre y la edad ya envolvían a dos renglones en la columna
+angosta—; la línea única solo existía de 768px para arriba (la tinta de Today
+bajó 20 px a 768 y 27 px a 1440). Las
 tres tarjetas llevan un botón-ícono en la esquina que abre su sección, y en la
 pared miden **lo mismo** (455/455/455 medidos): lo iguala el grid con
 `align-items: stretch`, no un alto elegido a ojo, y el pie se apoya abajo con
@@ -644,14 +791,14 @@ que el próximo check reintente.
 
 | Cubierto | Archivo |
 |---|---|
-| `lib/format.ts` — fechas, horas, DST, unidades, edad | `tests/unit/format.test.ts`, bajo cuatro TZ |
+| `lib/format.ts` — fechas, horas, DST, unidades, edad; ida y vuelta oz↔ml con cantidades de biberón reales (2–8 oz y 60–240 ml) y que `DISPLAY_UNIT` es `'oz'` | `tests/unit/format.test.ts`, bajo cuatro TZ |
 | `lib/queue.ts` — orden de replay, descartes, `looksOffline`, `newId`; replay de un alta que ya está en el server, lock entre pestañas (`withFlushLock`, con y sin Web Locks), timeout por envío, `syncOnce` (cuándo relee la página), `retryDelay` (5 s → 15 s → 60 s, nunca ante un rechazo), nudges, y descartar un rechazo con sus ediciones dependientes | `tests/unit/queue.test.ts` |
 | `lib/deviceTokens.ts` — formato del token, hash, scopes | `tests/unit/deviceTokens.test.ts` |
 | `lib/changelog.ts` — parseo del CHANGELOG y que su primera entrada coincida con `version` de `package.json` | `tests/unit/changelog.test.ts` |
 | `buildActivity` de `lib/db.ts` — texto del feed de Today y de History (sin repetir el tipo); sesiones de lactancia y sueño en curso (marcadas, primero en Today aunque empezaran antes de medianoche); valores que ningún diccionario conoce | `tests/unit/activity.test.ts` |
 | `lib/lastSeen.ts` — copia guardada por página y bebé, `forgetSeen`, `seenState`/`lastGood` ("saved" / "nothing"), corte a mitad de sesión con el navegador "online", storage que se niega | `tests/unit/lastSeen.test.ts` |
 | `keepLastGood` y `mergePending` de `lib/db.ts` — qué se ve offline: últimas filas buenas por lectura, cola encima, un alta encolada que el server ya devolvió no se duplica | `tests/unit/pending.test.ts` |
-| `lib/kpis.ts` — ventanas de hoy y de los últimos 7 días (incluidos los dos cambios de horario y que "hace 6 días" son días de calendario, no 6×24 h), solapamiento de una sesión con la ventana; totales de comida, pañal y sueño; una fila en cola cuenta y marca `pending`, un borrado en cola deja de contar y también marca, una fila en cola fuera de la ventana no marca; `lastFeedingEvent` (ignora una sesión en curso); `checkPastRange` (futuro, fin antes del inicio, vacío); `formatDuration` | `tests/unit/kpis.test.ts` |
+| `lib/kpis.ts` — la ventana **rodante de 24 h** (cruce de medianoche: una fila de las 23:50 de ayer cuenta a las 00:10 y **con la ventana vieja no contaba**, así que el test falla si alguien revierte esto; el borde exacto, 24 h sí y 24 h 1 min no; los dos cambios de horario; y que la lectura de la sección cubre la ventana — `startOfHouseholdDay(now,6) <= now−24h`, la red contra un total corto en silencio) y la de los últimos 7 días (días de calendario, no 6×24 h), solapamiento de una sesión con la ventana; totales de comida, pañal y sueño; una fila en cola cuenta y marca `pending`, un borrado en cola deja de contar y también marca, una fila en cola fuera de la ventana no marca; `lastFeedingEvent` (ignora una sesión en curso); `checkPastRange` (futuro, fin antes del inicio, vacío); `shiftStart` (resta simple, acumulativo, decimales, 0 y negativos, campo vacío / letras / `Infinity` / fecha inválida, el tope de 240 y el de 12 h **evaluado sobre el resultado**, que es el que tapa una suma de correcciones chicas); `formatDuration` | `tests/unit/kpis.test.ts` |
 | `lib/push/retry.ts` — la política de 403: suma solo si otra del lote recibió, borra al tercero, "todas en 403" no borra nada ni toca contadores (VAPID del servidor), una sola suscripción en 403 nunca se borra sola, un OK reinicia la racha, un 410 no cuenta como 403 | `tests/unit/push.test.ts` |
 | Los dos caminos del 403 por el camino real (base + servicio de push falso): el selectivo (racha 1→2→3 y se borra SOLO la muerta), el OK que reinicia, "todas a la vez" tres veces seguidas sin borrar nada, y volver a suscribirse desde la ruta | `tests/integration/push.test.ts` |
 | `lib/push/{nursing,endpoint,client}.ts` — umbral de 30 min exacto e inclusivo, con offset horario y sin minutos negativos; una sesión terminada, borrada o ya avisada no califica; el payload en los dos idiomas, con tag y Topic por sesión; un `lang` guardado desconocido cae en inglés; a quién se le manda (un envío por endpoint, la fila más reciente, nadie que ya no sea de la familia); la allowlist de endpoints (nada de http, hosts internos, look-alikes, puertos ni credenciales); el body de suscripción campo por campo; y el estado del control cuando la suscripción del navegador es de otro par de claves VAPID o el server no contesta | `tests/unit/push.test.ts` |
@@ -659,7 +806,7 @@ que el próximo check reintente.
 | Aislamiento entre familias por RLS, por el camino real (PostgREST + JWT) | `tests/integration/rls.test.ts` |
 | Corregir y retractar `growth_measurements` sin cruzar de familia | `tests/integration/rls.test.ts` |
 | Los dos endpoints de dispositivo: auth, validación, rate limit, scoping | `tests/integration/{ingest,quick-nurse}.test.ts` |
-| Las lecturas `*Since` de `lib/db.ts` por el camino real: la sesión que cruza el inicio de la ventana y la que sigue en curso vienen, lo viejo y lo borrado no; tomas y pañales desde el inicio inclusive; sin `limit` (más de 20 filas en la ventana vienen todas); con RLS, pedir el bebé de la otra familia no devuelve nada | `tests/integration/since.test.ts` |
+| Las lecturas `*Since` de `lib/db.ts` por el camino real: la sesión que cruza el inicio de la ventana y la que sigue en curso vienen, lo viejo y lo borrado no; tomas y pañales desde el inicio inclusive; sin `limit` (más de 20 filas en la ventana vienen todas); con RLS, pedir el bebé de la otra familia no devuelve nada. Y `sessionById` (23 sep 2026): la sesión en curso viene con `ended_at: null`, una terminada viene **con** su `ended_at`, una retractada y un id que no existe son `null` (no una fila fantasma ni un error), y la sesión de la otra familia se lee como si no estuviera | `tests/integration/since.test.ts` |
 | Push, contra la base y un servicio de push falso local que **descifra** el payload: RLS de `push_subscriptions` (cada padre solo su fila — ni el otro padre de la misma familia la ve; nadie inserta a nombre de otro ni con la familia de otro; `anon` no lee nada; el CHECK de https); `/api/push/subscription` (401 sin sesión, 400 con body inválido, guarda con la familia del padre y actualiza el idioma sin duplicar, 403 con un bebé de otra familia, DELETE); y `/api/push/nursing-check`: quién entra (sin token 401, revocado 401, sin el scope 403), marca **una sola vez** y manda cifrado y firmado en el idioma de cada dispositivo, dos checks en paralelo → una marca y un envío por endpoint, GET igual que POST, el umbral (29 min no, 31 sí), no cruza de familia ni de bebé, un 410 borra la suscripción, un 500 no la borra y **saca la marca** para reintentar, y sin claves VAPID no marca nada (503) | `tests/integration/push.test.ts` |
 | Replay de la cola por el camino real (`sendOpWith` de `lib/db.ts`): alta repetida y dos "pestañas" a la vez → sin error y una fila (`ON CONFLICT (id) DO NOTHING`); el reenvío no pisa una edición; la escritura online sigue siendo insert común (un id repetido es error); señal abortada = offline y no escribe; con RLS real no cruza de familia (alta contra el bebé de otra familia rechazada; reusar el id de una fila ajena no la toca) | `tests/integration/queue-replay.test.ts` |
 
@@ -668,6 +815,85 @@ y la base.
 
 **No construido:**
 
+- **`/statistics` no dibuja nada.** La ruta existe, es destino de la barra y
+  del menú, está protegida y se abre sin conexión — pero su contenido es un
+  título y un estado vacío. **Y abre un hueco nuevo:** medida a 390×844 sin
+  datos tiene **267,5 px de tinta a la barra** (258,5 en español; eran 286,7 y
+  277,7 antes de que la barra pasara a `sticky`), que es casi
+  el número que Doctor tenía *antes* de arreglarlo (306,7). Se deja así a
+  propósito: no hay nada que poner hasta que existan las gráficas, y rellenar
+  con adorno sería peor. Queda como **hueco conocido abierto por este pase**.
+- **El panel de edición todavía puede convertir una fila a `solid`.** "Solid"
+  salió de todo formulario que *crea* una toma, pero el selector de los paneles
+  de edición (`components/SectionPage.tsx` y `app/history/page.tsx`, los dos
+  `['bottle','solid','nursing']`) lo sigue ofreciendo, y eso es deliberado: una
+  fila `solid` mal cargada tiene que poder *salir* de ahí, y un selector de
+  tres al que le falta la opción actual pinta la fila como si fuera otra cosa.
+  El efecto que hay que tener escrito es que **`solid` sigue siendo alcanzable
+  desde la UI**, reetiquetando una fila que ya existe. Opción intermedia que
+  propuso el revisor y nadie implementó: ofrecer `solid` **solo cuando la fila
+  ya es `solid`**. En la base local hay **0 filas `solid`**; **cuántas hay en
+  producción no se sabe** (no hay credenciales de la nube acá, §2.1).
+- **`/pumping` no tiene el toggle oz/ml.** El toggle quedó solo en los campos
+  de biberón. Quien se saca leche y mide con una jeringa graduada en ml no
+  tiene forma de tipear ml en Milk, que es justamente el envase que viene en
+  ml. Decisión para Luis, no un bug: el plan pedía el toggle "al lado del campo
+  de cantidad de Bottle".
+- **`babies.pumping_reset_at` se sigue respetando y ya no tiene escritor.**
+  `/pumping` filtra por esa columna, pero "Reset milk total" no existe más, así
+  que **una familia que hizo un reset antes de hoy queda con ese corte para
+  siempre**, sin forma de moverlo ni de deshacerlo desde la app. Se dejó así
+  porque sacar el filtro le cambiaría el total sin avisar. Si en producción hay
+  un `pumping_reset_at` cargado, ese total quedó congelado — **no se pudo
+  comprobar desde este VPS**.
+- **Un offset grande puede disparar el aviso push de "toma larga".**
+  `lib/push/nursing.ts` decide con `started_at <= ahora − 30 min`, y el offset
+  **reescribe `started_at`**: correr 25 minutos hacia atrás una toma de 10
+  la convierte, para el job de `pg_cron`, en una de 35, y el aviso sale en el
+  minuto siguiente. No hay spam (`long_alert_sent_at` es de una sola vez por
+  sesión) y se puede argumentar que el aviso es *correcto*. Queda **documentado
+  y sin tocar**: `lib/push/` estaba fuera de alcance del pase. Luis tiene que
+  saberlo antes de que le llegue el primer push raro.
+- **Editar una cantidad tipeada en ml la redondea.** `mlToUnit(ml,'oz')`
+  redondea a 1 decimal y los paneles de edición precargan con eso, así que
+  150 ml guardados exactos, abiertos en el panel y guardados **sin tocar nada**,
+  quedan en 5,1 oz → 150,82 ml. Deriva máxima ±1,48 ml por fila, una sola vez
+  (después es idempotente). Es la consecuencia de que el toggle de unidad **no**
+  vaya en los paneles de edición — decisión correcta: un `4.1` precargado en oz
+  releído como ml destruiría el dato en silencio.
+- **A 320px en español `/pumping` sigue desbordando** (12px de scroll
+  horizontal, medidos). **Es previo a este pase**, verificado barato y sin
+  `git stash`: `app/diapers/page.tsx` no tiene un solo cambio, el diff de
+  `app/pumping/page.tsx` toca únicamente de dónde sale la unidad (no su
+  markup), y el de `components/SectionPage.tsx` no toca la fila del formulario
+  de pañal. 320px está además por debajo de los anchos que pide la checklist
+  §8. A 390 y 1440, en los dos temas y los dos idiomas, las 10 páginas dan
+  **0 desbordes y 0 scroll horizontal** (barrido de 40 combinaciones, 23 sep
+  2026) — incluido `/pumping` a 1440 en español, que antes de este cierre
+  recortaba.
+- **Dos pestañas corriendo el mismo inicio: una corrección se pierde.**
+  El offset es read-modify-write sin `If-Match`. Dos pestañas que apliquen −5
+  cada una leyendo el mismo valor escriben el mismo resultado y el segundo −5
+  desaparece sin error. La relectura previa cierra el caso grave (escribir
+  sobre una sesión ya terminada), no éste. Es coherente con el modelo del repo
+  (ids en cliente, sin optimistic locking) y con lo que ya pasa en los paneles
+  de edición.
+- **Un campo de offset vacío contesta "Minutes has to be a number".** Para un
+  campo en blanco el mensaje útil sería el de `offset.notPositive`. Cambio de
+  una condición; no se hizo en este cierre por alcance.
+- **El parseo de la cantidad acepta notación exponencial y no tiene techo.**
+  `Number('1e2')` → 100, y 100 oz se guardan como 2957 ml sin que nada chille.
+  Con `inputMode="decimal"` el riesgo real es bajo y **es previo a este pase**.
+- **La tarjeta de Comida muestra un `Solid 0` permanente** para cualquier
+  familia sin filas viejas. No es incorrecto —cuenta lo que hay— pero ocupa una
+  línea de KPI para siempre. Sugerencia del revisor: mostrar la fila solo si
+  `k.solid > 0`.
+- **Durante una lactancia no se puede cargar un biberón desde `/dashboard`.**
+  Ese lugar lo ocupa el offset. La salida existe (`/feeding` → "Log a past
+  one", cuyo campo de fecha arranca en **ahora**), pero conviene tenerlo
+  escrito: junto con la predicción "Next feeding" que ya se ocultaba, la
+  tarjeta de Comida durante una toma de pecho se queda **sin ninguna** acción
+  que no sea Stop y el offset.
 - Tests de componentes y de páginas
 - CI
   *(Corregido el 22 sep 2026: acá decía "Deploy, y proyecto Supabase en la
@@ -923,6 +1149,17 @@ y la base.
      ya escritas: **`docs/aplicar-en-la-nube.md`**.
    - Y ojo: el endpoint resuelve la familia **desde el token**, así que es
      **un job de `pg_cron` por familia**. Hoy hay una sola.
+7. **¿La ventana de 7 días también tiene que ser rodante?** (abierta el 23 sep
+   2026.) "Hoy" pasó a ser las últimas 24 horas porque a las 00:01 los números
+   se ponían en cero. `week` quedó como estaba —hoy + los 6 días de calendario
+   anteriores— porque el pedido hablaba solo de "hoy", y cambiarlo sin que
+   nadie lo pida habría sido alcance inventado. Pero si la idea de fondo es
+   "no quiero que a medianoche se me borren los números", la de 7 días tiene
+   exactamente el mismo problema una vez por semana, más chico. Cambiarla es
+   una línea (`start: end - 7 * DAY_MS`) más su etiqueta. **Consecuencia
+   mientras tanto, que conviene tener escrita:** la pantalla de sección mezcla
+   a propósito **tres** unidades de tiempo — 24 h rodantes en la tarjeta corta,
+   7 días de calendario en la larga, y el log agrupado por día de calendario.
 
 ---
 

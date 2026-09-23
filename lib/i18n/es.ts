@@ -29,6 +29,9 @@ export const es: Dictionary = {
   'common.started': 'Empezó',
   'common.ended': 'Terminó',
 
+  'unit.oz': 'oz',
+  'unit.ml': 'ml',
+
   'side.left': 'izquierdo',
   'side.right': 'derecho',
   'side.both': 'ambos',
@@ -107,6 +110,9 @@ export const es: Dictionary = {
   'nav.feeding': 'Comida',
   'nav.diapers': 'Pañales',
   'nav.sleep': 'Sueño',
+  // "Estadísticas" no entra en la barra inferior; el título de la página sí lo
+  // dice completo. Mismo criterio que "Medidas" por "Crecimiento".
+  'nav.statistics': 'Datos',
   'nav.version': 'Historial de versiones',
   'menu.versionHistory': 'Versión {version} — historial de versiones',
   'menu.theme': 'Tema',
@@ -117,20 +123,9 @@ export const es: Dictionary = {
   'language.system': 'Sistema',
   'language.en': 'English',
   'language.es': 'Español',
-  'menu.switchUnit': 'Cambiar a {unit}',
-  'menu.resetMilk': 'Poner en cero la leche',
-  'menu.resetting': 'Poniendo en cero…',
-  'menu.resetConfirm':
-    '¿Poner en cero el total "en reserva"? Las sesiones anteriores quedan en el Historial.',
-  'menu.resetFailed': 'No se pudo poner en cero — {error}',
   'menu.signOut': 'Cerrar sesión',
   'menu.nursingAlerts': 'Avisos de lactancia',
   'settings.title': 'Ajustes',
-  'settings.units': 'Cantidades',
-  'settings.unitsNote': 'Los biberones y la extracción se muestran en {unit} en este dispositivo.',
-  'settings.milk': 'Leche guardada',
-  'settings.milkNote':
-    'Vuelve a cero el total guardado. Las extracciones pasadas quedan en el Historial.',
   'settings.account': 'Cuenta',
   'settings.signOutNote': 'Cierra la sesión en este dispositivo y apaga sus avisos de lactancia.',
   'settings.signOutOffline':
@@ -228,7 +223,6 @@ export const es: Dictionary = {
   'dash.queuedLabel': 'Guardado en este dispositivo: {label}{when} — se sincroniza después',
   'dash.forTime': ' a las {time}',
   'dash.label.bottle': 'biberón',
-  'dash.label.solid': 'sólido',
   'dash.label.nursingLeft': 'pecho izquierdo',
   'dash.label.nursingRight': 'pecho derecho',
   'dash.label.nursingEnd': 'fin de la toma de pecho',
@@ -254,7 +248,6 @@ export const es: Dictionary = {
   'dash.nextFeeding': 'Próxima toma {time} · {due}',
   'dash.bottleAmount': 'Cantidad del biberón en {unit}',
   'dash.bottle': 'Biberón',
-  'dash.solid': 'Sólido',
   'dash.detected': 'Detectado',
   'dash.asleep': 'Dormida',
   'dash.shesAwake': 'Se despertó',
@@ -264,9 +257,27 @@ export const es: Dictionary = {
 
   'dash.noFeedings': 'Todavía no hay tomas',
   'dash.noDiapers': 'Todavía no hay pañales',
+  'dash.empty': 'Acá arranca el registro',
+  'dash.emptyHint':
+    'Tocá un botón de arriba: la primera toma, el primer pañal o el primer sueño aparecen en estas tarjetas y los totales empiezan a llenarse.',
   'dash.detailsFor': '{section}: totales y registro',
   'dash.label.sleep': 'sueño',
   'legend.breast': 'pecho ({side})',
+  'amountUnit.label': 'Unidad de esta cantidad',
+  'offset.hint': '¿Empezó antes de que tocaras el botón? Restale esos minutos.',
+  'offset.minutes': 'min',
+  'offset.apply': 'Correr el inicio',
+  'offset.ariaNursing': 'Minutos para correr el inicio de la toma hacia atrás',
+  'offset.ariaSleep': 'Minutos para correr el inicio del sueño hacia atrás',
+  'offset.moved': 'Inicio corrido {minutes} min hacia atrás',
+  'offset.notNumber': 'Los minutos tienen que ser un número.',
+  'offset.notPositive': 'Poné cuántos minutos antes empezó: más de cero.',
+  'offset.tooLong': 'Eso es más de {max} minutos de una. Corregí el inicio desde el registro.',
+  'offset.tooFarBack':
+    'Eso dejaría el inicio hace más de {hours} horas. Corregilo desde el registro.',
+  'offset.alreadyEnded':
+    'Esa sesión ya terminó en otro lado. Corregí su inicio desde el registro de la sección.',
+  'offset.gone': 'Esa sesión ya no está. Recargá la página para ver qué pasó con ella.',
 
   // ------------------------------------------------------------ secciones (/feeding, /diapers, /sleep)
   'section.feeding': 'Comida',
@@ -276,7 +287,7 @@ export const es: Dictionary = {
   'category.removeConfirm':
     '¿Borrar este registro? Deja de contar en los totales; no cambia nada más.',
   'category.entries': 'Todos los registros',
-  'kpi.today': 'Hoy',
+  'kpi.last24h': 'Últimas 24 horas',
   'kpi.week': 'Últimos 7 días',
   'kpi.feedings': 'Tomas',
   'kpi.breast': 'Pecho',
@@ -364,6 +375,12 @@ export const es: Dictionary = {
   'doctor.past': 'Pasados',
   'doctor.markNotDone': 'Marcar como pendiente',
   'doctor.markDone': 'Marcar como hecho',
+
+  // ------------------------------------------------------------ estadísticas (/statistics)
+  'stats.title': 'Estadísticas',
+  'stats.empty': 'Todavía no hay gráficos acá',
+  'stats.emptyHint':
+    'En esta pantalla se van a dibujar las tomas, los pañales y el sueño a lo largo de los días y las semanas. Hasta que estén, los totales de las últimas 24 horas y de los últimos 7 días están en la página de cada sección.',
 
   // ------------------------------------------------------------ history
   'history.title': 'Historial',

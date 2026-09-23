@@ -59,6 +59,17 @@ export type SleepSession = {
   source: SleepSource
 }
 
+/**
+ * The little that a screen needs to know before it writes over a session it
+ * rendered a while ago: is this still the row I think it is, and is it still
+ * running? Common to nursing and sleep (`sessionById` in lib/db.ts).
+ */
+export type RunningSession = {
+  id: string
+  started_at: string
+  ended_at: string | null
+}
+
 export type PumpingSession = {
   id: string
   pumped_at: string

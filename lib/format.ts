@@ -318,8 +318,18 @@ export function flOzToMl(oz: number): number {
 }
 
 /**
- * Storage is always ml, but display/entry follows the household's
- * chosen unit (lib/useVolumeUnit.ts) — these three keep that
+ * The unit every amount is SHOWN in, app-wide (23 sep 2026). There is no
+ * per-device preference any more: the bottle and the pump are read in
+ * ounces in this house, so the app speaks ounces and stops asking.
+ *
+ * Entry is the exception — a bottle can still be typed in ml, with the
+ * toggle next to the field (components/AmountUnit.tsx). That choice belongs
+ * to one entry, is not remembered, and never changes what is stored.
+ */
+export const DISPLAY_UNIT: VolumeUnit = 'oz'
+
+/**
+ * Storage is always ml, whatever unit is on screen — these three keep that
  * conversion in one place instead of scattered across pages.
  */
 export function formatVolume(ml: number, unit: VolumeUnit): string {

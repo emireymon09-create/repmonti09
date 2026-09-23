@@ -1,9 +1,14 @@
 'use client'
 
 /**
- * /feeding, /diapers and /sleep: one section each — its totals for today and
- * the last 7 days, a form to log one with an earlier time, and its full log
- * with Edit / Delete.
+ * /feeding, /diapers and /sleep: one section each — its totals for the last
+ * 24 hours and the last 7 days, a form to log one with an earlier time, and
+ * its full log with Edit / Delete.
+ *
+ * The first window is ROLLING (lib/kpis.ts, 23 sep 2026) and its card says
+ * "Last 24 hours", not "Today". The log below is still grouped by CALENDAR
+ * day, household time: a list of events is read by the day they happened on,
+ * and that did not change.
  *
  * The three pages are one component because they are the same page over
  * different tables. It follows /history's offline pattern exactly (the last
@@ -55,7 +60,7 @@ import {
   type PastRangeProblem,
 } from '@/lib/kpis'
 import { useSync } from '@/lib/useSync'
-import { useVolumeUnit } from '@/lib/useVolumeUnit'
+import { AmountUnit } from '@/components/AmountUnit'
 import { useT } from '@/lib/i18n/react'
 import { useReturnFocus } from '@/lib/useReturnFocus'
 import type { Lang, MessageKey } from '@/lib/i18n'
@@ -70,10 +75,12 @@ import type {
   Result,
   Side,
   SleepSession,
+  VolumeUnit,
   WithPending,
 } from '@/lib/types'
 import {
   clockTime,
+  DISPLAY_UNIT,
   durationBetween,
   formatDuration,
   formatVolume,
@@ -206,11 +213,17 @@ function minutesAgo(mins: number): string {
   return toHouseholdInputValue(new Date(Date.now() - mins * 60_000))
 }
 
-type PastFeeding = 'breast' | 'bottle' | 'solid'
+/**
+ * What "Log a past one" can create in the Feeding section. `solid` left on
+ * 23 sep 2026: solids stopped being something this app logs. The TYPE still
+ * exists (lib/types.ts), the rows already saved still show in the log and in
+ * the totals, and the edit panel still offers it — what is gone is creating
+ * a new one.
+ */
+type PastFeeding = 'breast' | 'bottle'
 
 export function SectionPage({ section }: { section: Section }) {
   const { baby, userId, loading, unreachable } = useBaby()
-  const [unit] = useVolumeUnit()
   const { t, lang } = useT()
 
   const [shown, setShown] = useState<Shown>(NO_ROWS)
@@ -242,6 +255,9 @@ export function SectionPage({ section }: { section: Section }) {
   const [pKind, setPKind] = useState<PastFeeding>('breast')
   const [pSide, setPSide] = useState<Side>('left')
   const [pAmount, setPAmount] = useState('')
+  // Same as the dashboard's bottle field: what THIS number is in. Not saved,
+  // back to ounces on every mount (components/AmountUnit.tsx).
+  const [pUnit, setPUnit] = useState<VolumeUnit>(DISPLAY_UNIT)
   const [pDiaper, setPDiaper] = useState<DiaperType>('wet')
   const [pAt, setPAt] = useState(() => toHouseholdInputValue())
   const [pStart, setPStart] = useState(() => minutesAgo(section === 'sleep' ? 60 : 15))
@@ -253,6 +269,9 @@ export function SectionPage({ section }: { section: Section }) {
 
   function resetPast() {
     setPAmount('')
+    // With the field. A unit left over from the last entry turns the next
+    // "4" into 4 ml instead of 4 oz, and it looks like a real entry.
+    setPUnit(DISPLAY_UNIT)
     setPAt(toHouseholdInputValue())
     setPStart(minutesAgo(section === 'sleep' ? 60 : 15))
     setPEnd(toHouseholdInputValue())
@@ -312,12 +331,12 @@ export function SectionPage({ section }: { section: Section }) {
         next.diapers,
         next.sleep,
         0,
-        unit,
+        DISPLAY_UNIT,
         lang,
       ).sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
       setDays(groupByHouseholdDay(entries, lang))
     },
-    [section, unit, lang],
+    [section, lang],
   )
 
   const refresh = useCallback(
@@ -378,7 +397,7 @@ export function SectionPage({ section }: { section: Section }) {
       const row = shown.feedings.find((r) => r.id === entry.id)
       if (!row) return
       setFType(row.feeding_type)
-      setFAmount(row.amount_ml != null ? String(mlToUnit(row.amount_ml, unit)) : '')
+      setFAmount(row.amount_ml != null ? String(mlToUnit(row.amount_ml, DISPLAY_UNIT)) : '')
       setFAt(toHouseholdInputValue(new Date(row.fed_at)))
     } else if (entry.kind === 'diaper') {
       const row = shown.diapers.find((r) => r.id === entry.id)
@@ -411,7 +430,7 @@ export function SectionPage({ section }: { section: Section }) {
     if (editing.kind === 'feeding') {
       const amount = fAmount.trim() === '' ? null : Number(fAmount)
       if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
-        setErr(t('history.amountNotNumber', { unit }))
+        setErr(t('history.amountNotNumber', { unit: t(`unit.${DISPLAY_UNIT}`) }))
         return
       }
       const at = instant(fAt)
@@ -420,7 +439,7 @@ export function SectionPage({ section }: { section: Section }) {
       send = () =>
         updateFeeding(id, {
           feeding_type: fType,
-          amount_ml: fType === 'bottle' && amount !== null ? unitToMl(amount, unit) : null,
+          amount_ml: fType === 'bottle' && amount !== null ? unitToMl(amount, DISPLAY_UNIT) : null,
           fed_at: at!,
         })
     } else if (editing.kind === 'diaper') {
@@ -516,20 +535,16 @@ export function SectionPage({ section }: { section: Section }) {
     } else if (section === 'feeding') {
       at = instant(pAt)
       problem = checkPastRange(at, undefined, nowMs)
-      if (pKind === 'bottle') {
-        const raw = pAmount.trim()
-        const amount = raw === '' ? null : Number(raw)
-        if (amount !== null && (!Number.isFinite(amount) || amount <= 0)) {
-          setErr(t('dash.bottleNotNumber', { unit }))
-          return
-        }
-        const ml = amount === null ? null : unitToMl(amount, unit)
-        label = t('dash.label.bottle')
-        send = () => logFeeding(baby.id, userId, 'bottle', ml, at!)
-      } else {
-        label = t('dash.label.solid')
-        send = () => logFeeding(baby.id, userId, 'solid', null, at!)
+      const raw = pAmount.trim()
+      const amount = raw === '' ? null : Number(raw)
+      if (amount !== null && (!Number.isFinite(amount) || amount <= 0)) {
+        setErr(t('dash.bottleNotNumber', { unit: t(`unit.${pUnit}`) }))
+        return
       }
+      // Stored in ml, as always: the toggle only says what was typed.
+      const ml = amount === null ? null : unitToMl(amount, pUnit)
+      label = t('dash.label.bottle')
+      send = () => logFeeding(baby.id, userId, 'bottle', ml, at!)
     } else if (section === 'diapers') {
       at = instant(pAt)
       problem = checkPastRange(at, undefined, nowMs)
@@ -605,7 +620,7 @@ export function SectionPage({ section }: { section: Section }) {
           [t('kpi.breast'), String(k.breast)],
           [t('feedingButton.bottle'), String(k.bottle)],
           [t('feedingButton.solid'), String(k.solid)],
-          [t('kpi.bottleVolume'), formatVolume(k.bottleMl, unit)],
+          [t('kpi.bottleVolume'), formatVolume(k.bottleMl, DISPLAY_UNIT)],
           [t('kpi.breastTime'), formatDuration(k.breastMs, lang)],
         ],
       }
@@ -687,7 +702,7 @@ export function SectionPage({ section }: { section: Section }) {
       {flash && !err && <Banner kind="ok">{flash}</Banner>}
 
       <Grid>
-        {kpiCard(t('kpi.today'), windows.today)}
+        {kpiCard(t('kpi.last24h'), windows.last24h)}
         {kpiCard(t('kpi.week'), windows.week)}
 
         {/* ---------------- Log a past one ---------------- */}
@@ -696,7 +711,7 @@ export function SectionPage({ section }: { section: Section }) {
           <form onSubmit={onPast} className="stack">
             {section === 'feeding' && (
               <div className="row">
-                {(['breast', 'bottle', 'solid'] as PastFeeding[]).map((kind) => (
+                {(['breast', 'bottle'] as PastFeeding[]).map((kind) => (
                   <Btn
                     key={kind}
                     variant={pKind === kind ? 'action' : 'quiet'}
@@ -734,14 +749,17 @@ export function SectionPage({ section }: { section: Section }) {
               </div>
             )}
             {section === 'feeding' && pKind === 'bottle' && (
-              <input
-                className="input narrow"
-                value={pAmount}
-                onChange={(e) => setPAmount(e.target.value)}
-                inputMode="decimal"
-                placeholder={unit}
-                aria-label={t('dash.bottleAmount', { unit })}
-              />
+              <div className="row row-wrap">
+                <input
+                  className="input narrow"
+                  value={pAmount}
+                  onChange={(e) => setPAmount(e.target.value)}
+                  inputMode="decimal"
+                  placeholder={t(`unit.${pUnit}`)}
+                  aria-label={t('dash.bottleAmount', { unit: t(`unit.${pUnit}`) })}
+                />
+                <AmountUnit value={pUnit} onChange={setPUnit} disabled={busy} />
+              </div>
             )}
             {needsRange && (
               <div className="row">
@@ -882,8 +900,10 @@ export function SectionPage({ section }: { section: Section }) {
                               value={fAmount}
                               onChange={(e) => setFAmount(e.target.value)}
                               inputMode="decimal"
-                              placeholder={unit}
-                              aria-label={t('history.amountIn', { unit })}
+                              placeholder={t(`unit.${DISPLAY_UNIT}`)}
+                              aria-label={t('history.amountIn', {
+                                unit: t(`unit.${DISPLAY_UNIT}`),
+                              })}
                             />
                           )}
                           <input
