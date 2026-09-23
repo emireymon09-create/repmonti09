@@ -111,7 +111,7 @@ export const en = {
   'nav.diapers': 'Diapers',
   'nav.sleep': 'Sleep',
   'nav.version': 'Version history',
-  'menu.goTo': 'Go to',
+  'menu.versionHistory': 'Version {version} — version history',
   'menu.theme': 'Theme',
   'theme.light': 'Light',
   'theme.dark': 'Dark',
@@ -130,6 +130,15 @@ export const en = {
   // Nursing alerts (push). Per device, like the theme — but it also lives on
   // the server, which is what sends the notification.
   'menu.nursingAlerts': 'Nursing alerts',
+  'settings.title': 'Settings',
+  'settings.units': 'Amounts',
+  'settings.unitsNote': 'Bottles and pumping are shown in {unit} on this device.',
+  'settings.milk': 'Milk stash',
+  'settings.milkNote': 'Start the stash total back at zero. Past sessions stay in History.',
+  'settings.account': 'Account',
+  'settings.signOutNote': 'Signs out on this device and turns its nursing alerts off.',
+  'settings.signOutOffline':
+    'Signs out on this device. Offline, the alerts stay on until it reconnects.',
   'alerts.off': 'Off',
   'alerts.on': 'On',
   'alerts.about': 'Notifies this device when nursing passes {minutes} min.',
@@ -249,7 +258,6 @@ export const en = {
 
   'dash.noFeedings': 'No feedings yet',
   'dash.noDiapers': 'No diapers yet',
-  'dash.details': 'Totals and log →',
   'dash.detailsFor': '{section}: totals and log',
   'dash.label.sleep': 'Sleep',
   'legend.breast': 'breast ({side})',
@@ -313,7 +321,9 @@ export const en = {
   'growth.new': 'New measurement',
   'growth.dateMeasured': 'Date measured',
   'growth.saveMeasurement': 'Save measurement',
-  'growth.empty': 'No measurements recorded yet.',
+  'growth.empty': 'No measurements yet',
+  'growth.emptyHint':
+    'Save the first one above — weight and length — and every visit after it will line up here, with how much she grew in between.',
   'growth.editing': 'Editing · {date}',
   'growth.saveChanges': 'Save changes',
   'growth.sinceLast': '{change} since last visit',
@@ -342,6 +352,8 @@ export const en = {
   'doctor.storedHere': 'Stored here only. Syncing to the shared calendar is the Hub’s job later.',
   'doctor.upcoming': 'Upcoming',
   'doctor.nothingScheduled': 'Nothing scheduled.',
+  'doctor.empty': 'No appointments yet',
+  'doctor.emptyHint': 'Add the next check-up and it will wait here, with the past ones underneath.',
   'doctor.past': 'Past',
   'doctor.markNotDone': 'Mark as not done',
   'doctor.markDone': 'Mark as done',

@@ -19,6 +19,7 @@ const PROTECTED = [
   '/growth',
   '/appointments',
   '/history',
+  '/settings',
   '/version',
 ]
 

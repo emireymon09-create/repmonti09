@@ -13,17 +13,9 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabaseClient'
-import { resetPumpingTotal } from '@/lib/db'
-import { forgetSeen } from '@/lib/lastSeen'
-import { forgetAlertsOnSignOut } from '@/lib/push/client'
-import { NursingAlerts } from '@/components/NursingAlerts'
-import { useVolumeUnit } from '@/lib/useVolumeUnit'
-import { useTheme, type Theme } from '@/lib/theme'
+import { usePathname } from 'next/navigation'
 import { APP_VERSION } from '@/lib/version'
-import { useLanguageChoice, useT } from '@/lib/i18n/react'
-import type { LangChoice, MessageKey } from '@/lib/i18n'
+import { useT } from '@/lib/i18n/react'
 
 export function Page({ children }: { children: React.ReactNode }) {
   return <div className="page">{children}</div>
@@ -101,24 +93,14 @@ export function Btn({
 
 export { Banner } from '@/components/Banner'
 
-const THEMES: { value: Theme; label: MessageKey }[] = [
-  { value: 'light', label: 'theme.light' },
-  { value: 'dark', label: 'theme.dark' },
-  { value: 'system', label: 'theme.system' },
-]
-
-// Same shape as the theme picker, right under it. "System" first: it is what
-// a device gets until someone chooses, and it follows the phone's language.
-const LANGUAGES: { value: LangChoice; label: MessageKey }[] = [
-  { value: 'system', label: 'language.system' },
-  { value: 'en', label: 'language.en' },
-  { value: 'es', label: 'language.es' },
-]
-
 // Stroke icons for the phone's bottom bar, drawn on a 24-unit grid in
 // currentColor so they follow the tab's state and the theme. The wall and
 // tablet nav hide them on the tabs (app/globals.css) — there the labels have
-// room — and keep only the gear's, which is an icon everywhere.
+// room — and keep only the menu button's, which is an icon everywhere.
+//
+// They are NOT from an icon library: this repo has none installed, and adding
+// one for nine paths would ship a dependency to a kiosk that has to boot
+// offline. Hand-drawn here is the established pattern (design.md §8).
 const ICONS = {
   today: ['M3 10.5 12 3l9 7.5', 'M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5'],
   milk: [
@@ -136,15 +118,23 @@ const ICONS = {
   open: ['M8 16 16 8', 'M10 8h6v6'],
   doctor: ['M9.5 3.5h5v6h6v5h-6v6h-5v-6h-6v-5h6z'],
   history: ['M3.5 12a8.5 8.5 0 1 0 2.5-6', 'M3.5 3.5V8H8', 'M12 7.5V12l3 2'],
+  /** Sliders: desde el 22 sep 2026 nombra a Settings, no al botón del menú. */
   settings: [
     'M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1',
     'M15 6m-2 0a2 2 0 1 0 4 0a2 2 0 1 0-4 0',
     'M9 12m-2 0a2 2 0 1 0 4 0a2 2 0 1 0-4 0',
     'M17 18m-2 0a2 2 0 1 0 4 0a2 2 0 1 0-4 0',
   ],
+  /**
+   * El botón "Menu" de la barra de abajo: tres líneas VERTICALES del mismo
+   * alto. No es el hamburger horizontal —que en una barra inferior se lee como
+   * "más opciones del sistema"— ni los sliders, que ahora nombran a Settings,
+   * que es donde viven los ajustes desde este pase.
+   */
+  menu: ['M7 5v14', 'M12 5v14', 'M17 5v14'],
 } as const
 
-function NavIcon({ name }: { name: keyof typeof ICONS }) {
+export function NavIcon({ name }: { name: keyof typeof ICONS }) {
   return (
     <span className="nav-icon" aria-hidden="true">
       <svg
@@ -164,6 +154,35 @@ function NavIcon({ name }: { name: keyof typeof ICONS }) {
 }
 
 /**
+ * Una pantalla que todavía no tiene nada que mostrar.
+ *
+ * No es solo la frase de antes: es ícono + frase + una línea que dice qué
+ * hacer, en un bloque que ocupa el alto que sobra (`.empty-fill` en la
+ * página). Sin datos, /growth y /appointments dejaban media pantalla en
+ * blanco hasta la barra de abajo — el hueco no estaba ENTRE hermanos, estaba
+ * DESPUÉS del último, que es por lo que una medición de huecos no lo vio.
+ */
+export function EmptyState({
+  icon,
+  title,
+  hint,
+}: {
+  icon: keyof typeof ICONS
+  title: string
+  hint?: string
+}) {
+  return (
+    <div className="empty-state">
+      <span className="empty-art" aria-hidden="true">
+        <NavIcon name={icon} />
+      </span>
+      <p className="empty-title">{title}</p>
+      {hint && <p className="empty-hint">{hint}</p>}
+    </div>
+  )
+}
+
+/**
  * La barra ancha (tablet y pantalla de pared): los destinos que entran en una
  * línea. En el teléfono, app/globals.css deja visible SOLO el primero — ver
  * SECTIONS.
@@ -177,7 +196,8 @@ const TABS = [
 ] as const
 
 /**
- * Las 8 pantallas que NO son Today, adentro del menú.
+ * Las 8 pantallas que NO son Today, adentro del menú: UNA COLUMNA, el ícono a
+ * la izquierda y el texto al lado, todas las filas del mismo alto.
  *
  * En el teléfono la barra inferior es de dos ítems —Today y Menu— porque con
  * seis no entraba: a 320px las etiquetas se cortaban y el área táctil de cada
@@ -187,6 +207,12 @@ const TABS = [
  * Y de paso cierra un hueco viejo: /feeding, /diapers y /sleep existen desde
  * el 22 sep 2026 y no tenían ninguna entrada de navegación — solo se llegaba
  * desde el pie de su tarjeta en Today.
+ *
+ * Desde el 22 sep 2026 el menú es SOLO navegación: los ajustes (tema, idioma,
+ * avisos, unidad, reset de leche, cerrar sesión) se mudaron enteros a
+ * /settings, que es la octava entrada. "Version history" salió de la lista: el
+ * número de versión al pie del menú ES el enlace a esa pantalla, así que sigue
+ * habiendo una sola puerta y ningún control vive en dos lados.
  */
 const SECTIONS = [
   { href: '/feeding', label: 'nav.feeding', icon: 'feeding' },
@@ -196,24 +222,19 @@ const SECTIONS = [
   { href: '/growth', label: 'nav.growth', icon: 'growth' },
   { href: '/appointments', label: 'nav.doctor', icon: 'doctor' },
   { href: '/history', label: 'nav.history', icon: 'history' },
-  { href: '/version', label: 'nav.version', icon: 'version' },
+  { href: '/settings', label: 'nav.settings', icon: 'settings' },
 ] as const
 
-export function Nav({ babyId }: { babyId?: string }) {
+export function Nav() {
   const pathname = usePathname()
-  const router = useRouter()
   const [menuOpen, setMenuOpen] = useState(false)
-  const [resetting, setResetting] = useState(false)
-  const [unit, setUnit] = useVolumeUnit()
-  const [theme, setTheme] = useTheme()
-  const [langChoice, setLangChoice] = useLanguageChoice()
   const { t } = useT()
   const settingsRef = useRef<HTMLDivElement>(null)
-  const gearRef = useRef<HTMLButtonElement>(null)
+  const menuBtnRef = useRef<HTMLButtonElement>(null)
 
   // onBlur alone can't close the menu: Safari on iOS never focuses a tapped
   // button, so a tap elsewhere wouldn't blur anything. Close on any press
-  // outside, and on Escape (focus back to the gear, where it came from).
+  // outside, and on Escape (focus back to the button, where it came from).
   useEffect(() => {
     if (!menuOpen) return
     function onPointerDown(e: PointerEvent) {
@@ -222,7 +243,7 @@ export function Nav({ babyId }: { babyId?: string }) {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key !== 'Escape') return
       setMenuOpen(false)
-      gearRef.current?.focus()
+      menuBtnRef.current?.focus()
     }
     document.addEventListener('pointerdown', onPointerDown)
     document.addEventListener('keydown', onKeyDown)
@@ -231,42 +252,6 @@ export function Nav({ babyId }: { babyId?: string }) {
       document.removeEventListener('keydown', onKeyDown)
     }
   }, [menuOpen])
-
-  async function signOut() {
-    // First, and whatever signOut() does offline: this screen is shared,
-    // and the family's rows saved for offline must not outlive the session.
-    forgetSeen()
-    // Then this device's nursing alerts: the next person on this screen must
-    // not get this family's notifications. Before signOut() — deleting the
-    // server row needs the session — and bounded, so it can't block it.
-    await forgetAlertsOnSignOut()
-    await createClient().auth.signOut()
-    router.push('/login')
-  }
-
-  function switchUnit() {
-    setMenuOpen(false)
-    setUnit(unit === 'oz' ? 'ml' : 'oz')
-    // Every page that shows an amount reads the unit once on mount —
-    // reloading is the simplest way to make the switch take everywhere
-    // at once, matching how "Reset milk total" already refreshes.
-    window.location.reload()
-  }
-
-  async function resetMilkTotal() {
-    if (!babyId || resetting) return
-    // Close the menu first: the confirm must never sit on top of it.
-    setMenuOpen(false)
-    if (!window.confirm(t('menu.resetConfirm'))) return
-    setResetting(true)
-    const { error } = await resetPumpingTotal(babyId)
-    setResetting(false)
-    if (error) {
-      window.alert(t('menu.resetFailed', { error }))
-      return
-    }
-    window.location.reload()
-  }
 
   return (
     <nav className="nav">
@@ -291,108 +276,52 @@ export function Nav({ babyId }: { babyId?: string }) {
         }}
       >
         <button
-          ref={gearRef}
+          ref={menuBtnRef}
           className="gear"
           aria-label={t('nav.menu')}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           onClick={() => setMenuOpen((v) => !v)}
         >
-          <NavIcon name="settings" />
+          <NavIcon name="menu" />
           <span className="gear-label" aria-hidden="true">
             {t('nav.menu')}
           </span>
         </button>
         {menuOpen && (
           <div className="nav-menu" role="menu" aria-label={t('nav.menu')}>
-            {/* Las 8 pantallas que no son Today. En el teléfono es la ÚNICA
-                forma de llegar a ellas; en la pared duplica la barra de
-                arriba, y aun así suma: /feeding, /diapers y /sleep no estaban
-                en ninguna barra. */}
-            <div className="nav-menu-group" role="group" aria-labelledby="goto-label">
-              <div className="label" id="goto-label">
-                {t('menu.goTo')}
-              </div>
-              <div className="nav-menu-links">
-                {SECTIONS.map((s) => (
-                  <Link
-                    key={s.href}
-                    href={s.href}
-                    role="menuitem"
-                    className="nav-menu-link"
-                    aria-current={pathname === s.href ? 'page' : undefined}
-                    onClick={() => setMenuOpen(false)}
-                  >
-                    <NavIcon name={s.icon} />
-                    <span className="nav-menu-link-text">{t(s.label)}</span>
-                    {s.href === '/version' && (
-                      <span className="nav-menu-link-meta">v{APP_VERSION}</span>
-                    )}
-                  </Link>
-                ))}
-              </div>
+            {/* Las 8 pantallas que no son Today, una debajo de la otra. En el
+                teléfono es la ÚNICA forma de llegar a ellas; en la pared
+                duplica la barra de arriba, y aun así suma: /feeding, /diapers
+                y /sleep no están en ninguna barra. */}
+            <div className="nav-menu-links">
+              {SECTIONS.map((s) => (
+                <Link
+                  key={s.href}
+                  href={s.href}
+                  role="menuitem"
+                  className="nav-menu-link"
+                  aria-current={pathname === s.href ? 'page' : undefined}
+                  onClick={() => setMenuOpen(false)}
+                >
+                  <NavIcon name={s.icon} />
+                  <span className="nav-menu-link-text">{t(s.label)}</span>
+                </Link>
+              ))}
             </div>
-            <div className="nav-menu-group" role="group" aria-labelledby="theme-label">
-              <div className="label" id="theme-label">
-                {t('menu.theme')}
-              </div>
-              <div className="seg">
-                {THEMES.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={theme === option.value}
-                    className="seg-btn"
-                    onClick={() => setTheme(option.value)}
-                  >
-                    {t(option.label)}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="nav-menu-group" role="group" aria-labelledby="language-label">
-              <div className="label" id="language-label">
-                {t('menu.language')}
-              </div>
-              <div className="seg">
-                {LANGUAGES.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={langChoice === option.value}
-                    className="seg-btn"
-                    // Each language is named in itself; this tells a screen
-                    // reader to read "Español" with Spanish rules.
-                    lang={option.value === 'system' ? undefined : option.value}
-                    onClick={() => setLangChoice(option.value)}
-                  >
-                    {t(option.label)}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <NursingAlerts babyId={babyId} />
-            <button role="menuitem" className="nav-menu-item" onClick={switchUnit}>
-              {t('menu.switchUnit', { unit: unit === 'oz' ? 'ml' : 'oz' })}
-            </button>
-            {babyId && (
-              <button
-                role="menuitem"
-                className="nav-menu-item"
-                onClick={resetMilkTotal}
-                disabled={resetting}
-              >
-                {resetting ? t('menu.resetting') : t('menu.resetMilk')}
-              </button>
-            )}
-            {/* "Version history" ya no está acá abajo: es una de las 8 de
-                "Go to", con su número de versión al costado. Una sola puerta
-                a la misma pantalla. */}
-            <button role="menuitem" className="nav-menu-item" onClick={signOut}>
-              {t('menu.signOut')}
-            </button>
+            {/* La versión, al pie y chiquita — no una fila más de la lista.
+                Es un enlace porque /version tenía su entrada acá hasta ahora y
+                quitarle la única puerta sería perder una pantalla; el texto
+                dice de qué versión habla, así que no necesita más nombre. */}
+            <Link
+              href="/version"
+              role="menuitem"
+              className="nav-menu-version"
+              aria-label={t('menu.versionHistory', { version: APP_VERSION })}
+              onClick={() => setMenuOpen(false)}
+            >
+              v{APP_VERSION}
+            </Link>
           </div>
         )}
       </div>

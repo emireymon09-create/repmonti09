@@ -15,8 +15,12 @@ import {
 import type { MessageKey } from '@/lib/i18n'
 
 /**
- * "Nursing alerts" in the settings menu, under Language, with the same
+ * "Nursing alerts" on the Settings screen, under Language, with the same
  * segment shape. Per device: it says what THIS browser will do.
+ *
+ * It lived inside the gear menu until 22 sep 2026; it moved with the rest of
+ * the settings, and its segments are now plain radios on a page, not
+ * menuitemradios inside a role="menu".
  *
  * Nothing claims more than is true: "On" only once the browser subscription
  * and the server row both exist (lib/push/client.ts); a browser that can't,
@@ -122,7 +126,7 @@ export function NursingAlerts({ babyId }: { babyId?: string }) {
                   : t('alerts.about', { minutes: LONG_NURSING_MINUTES })
 
   return (
-    <div className="nav-menu-group" role="group" aria-labelledby="alerts-label">
+    <div className="setting-group" role="radiogroup" aria-labelledby="alerts-label">
       <div className="label" id="alerts-label">
         {t('menu.nursingAlerts')}
       </div>
@@ -131,7 +135,7 @@ export function NursingAlerts({ babyId }: { babyId?: string }) {
           <button
             key={value}
             type="button"
-            role="menuitemradio"
+            role="radio"
             aria-checked={state === value || (value === 'off' && state === 'denied')}
             className="seg-btn"
             // Nothing to switch where the browser can't do it; "On" stays
@@ -144,7 +148,7 @@ export function NursingAlerts({ babyId }: { babyId?: string }) {
           </button>
         ))}
       </div>
-      <p className="menu-note" role="status">
+      <p className="setting-note" role="status">
         {note}
       </p>
       {error && <Banner kind="error">{error}</Banner>}

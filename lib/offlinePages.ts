@@ -19,6 +19,7 @@ export const OFFLINE_PAGES = [
   '/growth',
   '/pumping',
   '/appointments',
+  '/settings',
 ]
 
 let warmed = false

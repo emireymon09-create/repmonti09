@@ -1,13 +1,13 @@
 {
   "name": "amelia-app",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "packageManager": "pnpm@11.7.0",
   "scripts": {
     "preinstall": "node scripts/only-pnpm.mjs",
     "dev": "next dev -H 127.0.0.1",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -H 127.0.0.1",
     "typecheck": "tsc --noEmit",
     "lint": "next lint",
     "format": "prettier --write .",

@@ -149,7 +149,9 @@ target, and every write surfaces its error instead of failing silently:
 - Diapers: wet / dirty / both
 - Sleep: start/stop with a live stopwatch; a session the NUC opened via
   `/api/ingest` shows as "detected" and can be closed by hand
-- Each card ends in "Totals and log →", to its section page
+- Each card's corner button opens its section page. The "Totals and log →"
+  foot the cards used to carry was removed on 2026-09-23: the arrow already
+  says it, and the line pushed the buttons down on every card
 
 What **left** the dashboard on 2026-09-22: the Today timeline (it still
 exists — `buildActivity`, now read by `/history` and by the section
@@ -185,8 +187,8 @@ session has been running for 30 minutes and nobody stopped it:
   same migration, scoped by `family_id` directly — the phase-2 shape),
   `nursing_sessions.long_alert_sent_at`, and a `push_check` scope on
   `device_tokens`
-- Turned on per device from the settings gear
-  (`components/NursingAlerts.tsx`); it says "On" only once the browser
+- Turned on per device from **Settings** (`/settings`, since 2026-09-23;
+  it was in the gear menu before) (`components/NursingAlerts.tsx`); it says "On" only once the browser
   subscription and the server row both exist, and explains itself where
   it can't be turned on (no push support, iOS before the app is
   installed, notifications blocked, server without keys)
@@ -212,9 +214,15 @@ growth curve but the row stays in the database.
 
 **`/appointments`:** upcoming and past, add form, tap to mark done.
 
+**`/settings`** (2026-09-23): theme, language, nursing alerts, the oz/ml
+switch, "Reset milk total" and signing out. All six used to live inside the
+Menu's drop-down, which was navigation and control panel at once; none of them
+is left there. The Menu is now a single-column list of the eight other screens,
+with the version number at its foot.
+
 **`/version`:** the current version and the full change history, read from
 `CHANGELOG.md` and `package.json`'s `version` field — reachable from the
-settings gear on every page. `tests/unit/changelog.test.ts` fails if the two
+version number at the foot of the Menu. `tests/unit/changelog.test.ts` fails if the two
 ever disagree.
 
 **Built to the Hub conventions, not around them.** The UI is a Family

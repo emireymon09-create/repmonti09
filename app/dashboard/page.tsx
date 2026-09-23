@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
 import { useBaby } from '@/lib/useBaby'
 import { NoBaby } from '@/components/NoBaby'
 import { Banner, Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
@@ -82,22 +81,6 @@ function ownRows(rows: ServerRows): ServerRows {
     nursing: rows.nursing,
     sleep: rows.sleep,
   }
-}
-
-/** "Totals and log →" under each card, to that section's page. */
-function CardLink({ href, section }: { href: string; section: string }) {
-  const { t } = useT()
-  return (
-    <div className="row-tight">
-      <Link
-        href={href}
-        className="linkish card-link"
-        aria-label={t('dash.detailsFor', { section })}
-      >
-        {t('dash.details')}
-      </Link>
-    </div>
-  )
 }
 
 export default function Dashboard() {
@@ -330,7 +313,7 @@ export default function Dashboard() {
             sin contenido, de 34 ms en este servidor y tanto más cuanto peor
             esté la conexión. */}
         <Nav />
-        <p className="empty">{t('common.loading')}</p>
+        <p className="empty loading-note">{t('common.loading')}</p>
       </Page>
     )
   if (!baby)
@@ -344,7 +327,7 @@ export default function Dashboard() {
   if (!baby.birth_date) {
     return (
       <Page>
-        <Nav babyId={baby.id} />
+        <Nav />
         <p className="eyebrow">{longDate(now, lang)}</p>
         <h1 className="name">{t('dash.expecting', { name: baby.name })}</h1>
         {err && <Banner kind="error">{err}</Banner>}
@@ -414,7 +397,7 @@ export default function Dashboard() {
 
   return (
     <Page>
-      <Nav babyId={baby.id} />
+      <Nav />
 
       {/* Nombre y edad en la misma línea, y la fecha de hoy arriba a la
           derecha. Antes iban apilados en tres renglones y la fecha arrancaba
@@ -538,7 +521,6 @@ export default function Dashboard() {
               {t('dash.solid')}
             </Btn>
           </div>
-          <CardLink href="/feeding" section={t('section.feeding')} />
         </Card>
 
         {/* ---------------- Diaper ---------------- */}
@@ -574,7 +556,6 @@ export default function Dashboard() {
               </Btn>
             ))}
           </div>
-          <CardLink href="/diapers" section={t('section.diaper')} />
         </Card>
 
         {/* ---------------- Sleep ---------------- */}
@@ -639,7 +620,6 @@ export default function Dashboard() {
               </div>
             </>
           )}
-          <CardLink href="/sleep" section={t('section.sleep')} />
         </Card>
       </Grid>
     </Page>

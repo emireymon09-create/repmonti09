@@ -211,13 +211,14 @@ Destinados a mudarse a `packages/ui` cuando llegue el monorepo.
 | `Label` | `.label` | Mayúsculas, `letter-spacing .09em`, color `--c-muted` |
 | `Btn` | `.btn` | Variantes `action` (default), `quiet`, `live`. `flex: 1`, `min-height: var(--tap)` |
 | `Banner` | `.banner` | Tipos `error` / `ok` / `warn`. Lleva `role="status"`. **Desde el 22 sep 2026 vive en `components/Banner.tsx`**, no en `ui.tsx`: lo usa `NursingAlerts`, que `ui.tsx` renderiza, y el import de vuelta era circular. `ui.tsx` lo re-exporta, así que `@/components/ui` sigue funcionando |
-| `Nav` | `.nav` | 5 tabs + menú de engranaje. En teléfono (<600px) es una barra inferior fija, ver §4 "Navegación" |
+| `Nav` | `.nav` | 5 tabs + botón **Menu**. Desde el 23 sep 2026 es **solo navegación**: el desplegable es una lista de una columna con las 8 pantallas y el número de versión al pie, y ya no recibe `babyId`. En teléfono (<600px) es una barra inferior fija, ver §4 "Navegación" |
+| `EmptyState` | `.empty-state` | En `components/ui.tsx` (23 sep 2026). Ícono de la sección + título + una línea que dice qué va a aparecer ahí. Se monta dentro de un `.empty-fill`, que ocupa el alto que sobra — ver §5.14 |
 | `SyncBar` | `.syncbar` | En `components/SyncStatus.tsx`. Estado offline / pendientes. `role="status"`, y `.has-pending` cuando la cola no está vacía |
 | `SyncStatus` | — | En `components/SyncStatus.tsx`. El que cablea `useSync()` con `SyncBar` y `SyncErrorBanner`; lo montan `/appointments` y `/pumping`. `/dashboard`, `/growth` y `/history` usan `useSync()` + `SyncBar` directo, porque necesitan releer al sincronizar y mostrar el error de sincronización |
 | `SeenNote` | `.syncbar` | En `components/SyncStatus.tsx` (22 sep 2026). Offline, avisa que se muestra la copia guardada en el dispositivo y de cuándo es. Informativo, con el mismo aspecto que `SyncBar`, `role="status"`; no renderiza nada si la lectura anduvo |
 | `SyncErrorBanner` | `.banner` (error) | En `components/SyncStatus.tsx` (22 sep 2026). "No se pudo sincronizar": nombra la entrada que el server rechazó (y de cuándo es) y ofrece **Descartar** (`Btn quiet`), siempre tras un `window.confirm` que dice qué se pierde (§5.6). Lo montan `/dashboard`, `/history`, `/growth` y, vía `SyncStatus`, `/appointments` y `/pumping` |
 | `SectionPage` | — | En `components/SectionPage.tsx` (22 sep 2026). La pantalla entera de `/feeding`, `/diapers` y `/sleep`: dos `Card` de totales (`Today`, `Last 7 days`) con `.kpis`, el log completo debajo (`.feed`, con editar y borrar, un panel a la vez) y "Log a past one". Las tres páginas son 7 líneas cada una que le pasan `section`. Queda en ~1000 líneas: el panel de edición está **copiado** de `/history`, no compartido (seguimiento en `CLAUDE.md` §6) |
-| `NursingAlerts` | `.nav-menu-group` | En `components/NursingAlerts.tsx` (22 sep 2026). El control "Nursing alerts" del menú de engranaje, con la misma forma de segmento que Theme y Language. Ver §5.9 |
+| `NursingAlerts` | `.setting-group` | En `components/NursingAlerts.tsx` (22 sep 2026). El control "Nursing alerts", desde el 23 sep 2026 en **`/settings`** y no en el menú; misma forma de segmento que Theme y Language, con `role="radio"` dentro de un `radiogroup`. Ver §5.10 |
 | `NoBaby` | — | En `components/NoBaby.tsx`. Estado vacío cuando no hay perfil de bebé. Variante `offline` (22 sep 2026): sin conexión y sin nada guardado en el dispositivo dice eso, no "no hay perfil de bebé" |
 | `ServiceWorker` | — | En `components/ServiceWorker.tsx`. No renderiza nada: registra `/sw.js`, **solo en producción** |
 
@@ -235,8 +236,11 @@ desde el 22 sep 2026 `Banner` está definido en `components/Banner.tsx` y
 `.meta` `.empty` `.note` `.label` `.side` `.strike`.
 
 **Controles adicionales:** `.input` (con `.narrow`), `.linkish`, `.pill`,
-`.check` (con `.is-done`), `.tab`, `.gear`, `.nav-menu`,
-`.nav-menu-item` (con `.is-danger`).
+`.check` (con `.is-done`), `.tab`, `.gear`, `.nav-menu`, `.nav-menu-links`,
+`.nav-menu-link`, `.nav-menu-version`, `.setting-group`, `.setting-note`.
+`.nav-menu-item` y `.card-link` **se borraron el 23 sep 2026**: el primero
+porque el menú ya no tiene botones (se fueron a `/settings`), el segundo
+porque el pie "Totals and log →" de las tarjetas de Today se sacó.
 
 **Campos de fecha y hora** (`.input[type='date']`,
 `.input[type='datetime-local']`, 21 sep 2026): llevan `appearance: none` y
@@ -272,6 +276,14 @@ tarjeta, alto 52px (84px en la pared). **No verificado en un iPhone real.**
 inicio–fin · duración de una sesión terminada, en su propia línea debajo de
 la entrada).
 
+**Movimiento** (23 sep 2026, los primeros tokens del proyecto — §8 los daba
+por definir): `--motion-enter: 180ms`, `--motion-wait: 120ms` y
+`--ease-out: cubic-bezier(.22,.61,.36,1)`. Un solo `@keyframes enter` (opacidad
+0→1). Lo usa `.page > *:not(.nav):not(.loading-note)` cuando la página termina
+de cargar, y `.loading-note` con `--motion-wait` de retraso, para que una carga
+rápida no llegue a mostrar el "Loading…". El `<nav>` queda afuera a propósito.
+Ver §5.13.
+
 **Totales de sección** (22 sep 2026): `.kpis` es un `<dl>` en grid de dos
 columnas — etiqueta a la izquierda, número a la derecha con
 `font-variant-numeric: tabular-nums` (§5.1) y una línea `--c-line` entre
@@ -281,13 +293,19 @@ vistazo. `.card-link` es el "Totals and log →" al pie de cada tarjeta del
 dashboard: es texto (`.linkish`), pero con `min-height: var(--tap)` para que
 el blanco táctil sea entero (52px en teléfono, 84px en la pared).
 
-**Menú de engranaje** (22 sep 2026): `.menu-note` es la línea bajo un
-segmento que dice qué va a hacer o por qué no puede — `--t-meta`,
+**Ajustes de `/settings`** (23 sep 2026; hasta acá eran el menú de engranaje):
+`.setting-note` es la línea bajo un segmento que dice qué va a hacer o por qué no puede — `--t-meta`,
 `--c-muted`, y `width: 0; min-width: 100%` para que envuelva al ancho del
 menú en vez de estirarlo con una frase larga en español. `.nav-menu-group
 .banner` usa el mismo truco para el banner de error del control de avisos.
 `.seg-btn:disabled` baja a `opacity: .45` y `cursor: default`: un segmento que
 acá no puede hacer nada se lee como deshabilitado, igual que un ítem de menú.
+
+> **Actualizado el 23 sep 2026:** el párrafo que sigue describe el menú
+> *antes* de este pase. Lo que cambió: el desplegable es **solo navegación**
+> (una columna, 8 pantallas, versión al pie) y los seis ajustes que se listan
+> abajo —Theme, Language, Nursing alerts, oz↔ml, "Reset milk total" y cerrar
+> sesión— viven ahora en **`/settings`**. Ver §5.11 y §5.15.
 
 **Navegación (5 tabs fijos):** Today · Milk · Growth · Doctor · History
 (en español: Hoy · Leche · **Medidas** · Médico · Historial — ver §5.9).
@@ -557,6 +575,38 @@ false→true→false, los 8 links con `role="menuitem"`, Escape cierra y el foco
 vuelve al botón, el toque afuera cierra, y el menú mide 716px en una ventana
 de 844.
 
+### 5.15 Settings es una pantalla, el menú es una lista (23 sep 2026)
+
+El desplegable del botón Menu era **las dos cosas a la vez**: la única
+navegación del teléfono y el panel de control de la app. Crecía sin techo —ocho
+destinos más seis ajustes, con scroll propio— y obligaba a sostener abierto un
+menú para tocar un segmento.
+
+- **Los seis ajustes se mudaron enteros a `/settings`**: Theme, Language,
+  Nursing alerts, la unidad oz↔ml, "Reset milk total" y cerrar sesión.
+  **Ninguno quedó duplicado** (verificado en el DOM: 0 `.seg` y 0
+  `.nav-menu-item` dentro de `.nav-menu`).
+- **Los roles cambian con el contenedor.** Adentro de un `role="menu"` los
+  segmentos eran `menuitemradio`; en una página son `role="radio"` dentro de un
+  `role="radiogroup"`. No es cosmético: un lector de pantalla anuncia otra cosa.
+- **El menú es una columna**, ícono + texto, filas de 52px, en el orden de las
+  pantallas tal como se usan: Feeding, Diapers, Sleep, Milk, Growth, Doctor,
+  History, Settings. Dos columnas obligaban a barrer en zigzag.
+- **La versión va al pie**, chiquita y a la derecha, y **es el enlace a
+  `/version`**: esa pantalla salió de la lista y no tenía otra puerta. No es
+  una fila más; el texto ya dice de qué habla, y lleva `aria-label` completo.
+- **La accesibilidad no se tocó**: `aria-haspopup`/`aria-expanded`,
+  `role="menu"`, los 8 links con `role="menuitem"`, Escape cierra y devuelve el
+  foco al botón, un `pointerdown` afuera cierra. Medido: `aria-expanded` va
+  false→true→false, y el foco vuelve al botón.
+
+Verificado a 390px: los 8 links con el mismo `left` (151) y el mismo ancho
+(226), 52px de alto cada uno, menú de 490px en una ventana de 844. En español
+las etiquetas son Comida · Pañales · Sueño · Leche · Medidas · Médico ·
+Historial · Ajustes, ninguna cortada. Barrido de 40 combinaciones (390/1440 ×
+claro/oscuro × inglés/español × 4 pantallas + el menú abierto): 0 scroll
+horizontal, 0 desbordes.
+
 ### 5.12 La cabecera y las tarjetas de Today (22 sep 2026)
 
 **Nombre y edad en la misma línea, fecha arriba a la derecha.** Antes iban en
@@ -568,9 +618,12 @@ dato, no un encabezado. La fecha usa `longDate()`, el mismo formato por idioma
 que ya usaba. En un teléfono angosto la fecha baja sola, por `flex-wrap`.
 
 **Las tres tarjetas miden lo mismo, y cada una tiene su atajo.** El ícono de la
-esquina abre esa sección; va en gris y solo se acentúa al tocarlo o enfocarlo,
-porque el camino principal sigue siendo el pie que lo dice con palabras
-("Totals and log →"). Lleva `aria-label` porque no tiene texto.
+esquina abre esa sección; va en gris y solo se acentúa al tocarlo o enfocarlo.
+Lleva `aria-label` porque no tiene texto. **Desde el 23 sep 2026 es la única
+puerta**: el pie que lo decía con palabras ("Totals and log →") se sacó —
+repetía en las tres tarjetas algo que la flecha ya dice y empujaba los botones
+hacia abajo. El área táctil del ícono sigue siendo `--tap` entera (52px medidos
+en teléfono) y el `aria-label` no cambió ("Feeding: totals and log").
 
 Lo de "medir lo mismo" no es un alto fijo elegido a ojo: el grid las iguala con
 `align-items: stretch` y el pie se apoya abajo con `margin-top: auto`. Las tres
@@ -579,6 +632,34 @@ proporción interna también coincide. Medido en la pared: 455 / 455 / 455 px.
 **En el teléfono no se igualan**, a propósito: apiladas de a una, forzar el
 alto sería agregar 90px de aire a dos tarjetas para que empaten con la que
 tiene el cronómetro abierto.
+
+### 5.14 Una pantalla vacía termina en algo (23 sep 2026)
+
+`/growth` y `/appointments`, sin una sola fila, terminaban en la tarjeta del
+formulario y dejaban el resto en blanco hasta la barra de abajo. **El hueco no
+estaba entre hermanos, estaba después del último** — por eso una medición de
+huecos entre hermanos (el pase anterior) no lo encontró.
+
+`.empty-fill` se queda con el alto que sobra (`.page:has(.empty-fill)` pasa a
+flex column con `min-height: 100dvh`) y centra ahí un `EmptyState`: el ícono de
+la sección en `--c-line`, el título en `--c-text` y una línea en `--c-muted`
+que dice qué va a aparecer. El tono es el de una bitácora, no el de un formulario
+vacío: *"Save the first one above — weight and length — and every visit after it
+will line up here"*.
+
+Tres cosas deliberadas:
+
+- **Solo sin datos.** El `:has()` no matchea con una sola fila cargada, así que
+  con datos `.page` sigue en `display: block` y `min-height: 0`. Verificado.
+- **El ícono no compite con `.card.is-live`** (§2, economía del color): va en
+  `--c-line`, que es el borde, no un color.
+- **Piso sin `:has()`**: `.empty-fill` lleva además `min-height: 40dvh`, así un
+  motor viejo igual no deja la pantalla partida al medio.
+
+Medido a 390×844, hueco entre el último elemento con contenido y la barra:
+Growth **412px → 38px**, Doctor **686px → 38px**. Contraste del texto nuevo
+sobre el fondo: título 13.62:1 (claro) / 13.45:1 (oscuro), línea 7.26:1 /
+9.16:1.
 
 ### 5.13 La app nunca se queda sin marco (22 sep 2026)
 
@@ -592,6 +673,30 @@ vacía, la barra de abajo incluida, y eso es lo que se ve como un parpadeo.
 Regla nueva: **el estado de carga de una página también lleva el nav.** La
 ventana sin contenido sigue existiendo (33 ms en este servidor, tanto más
 cuanto peor esté la conexión) pero el marco no se mueve.
+
+**Y desde el 23 sep 2026 tampoco salta.** Quedaba el corte seco entre
+"Loading…" y el contenido. Dos reglas, con los tokens de movimiento de §4:
+todo lo que la página pinta al cargar entra con un fundido de `--motion-enter`,
+y el `"Loading…"` (`.loading-note`) arranca recién a los `--motion-wait`. Si la
+página resuelve antes de eso —que es lo normal— **el texto no llega a verse**, y
+entonces no hay dos estados sucesivos que comparar: no hay salto. Si tarda,
+aparece fundido igual.
+
+El `<nav>` queda **afuera** de la animación: ya estaba en pantalla, y fundirlo
+sería el parpadeo que §5.13 arregló. React reusa ese nodo entre el estado de
+carga y el cargado, así que la animación no se le dispara.
+
+Medido cuadro por cuadro con `requestAnimationFrame` y un clic real en el
+`<Link>` de Growth, a 390px:
+
+| | Cuadros con "Loading…" visible | Opacidad del contenido |
+|---|---|---|
+| Antes | 3, a opacidad 1 | aparece directo en 1 |
+| Después | **0** | 0 → .25 → .47 → .64 → .76 → .85 → 1 en ~180 ms |
+| Después, CPU a 1/6 | **0** | mismo fundido, corrido 100 ms |
+| Después, `reduced-motion` | 0 | 0 → 1 en un cuadro, sin fundido |
+
+El nav midió opacidad 1 en todos los cuadros, y 0 cuadros sin nav.
 
 ### Verificación de esta sección (20 sep 2026)
 
@@ -671,15 +776,22 @@ exportados. **Por definir.**
 ## 8. Huecos conocidos
 
 - **Íconos:** no hay fuente vectorial versionada — por definir.
-- **Tokens de movimiento / duración:** no existen. Hoy no hay animaciones
-  salvo el guard de `prefers-reduced-motion` — por definir.
-- **Estados de carga:** hoy es texto plano `"Loading…"` con clase
-  `.empty`. No hay skeleton ni spinner — por definir.
+- **Tokens de movimiento / duración:** existen desde el 23 sep 2026 —
+  `--motion-enter`, `--motion-wait`, `--ease-out` y un único `@keyframes
+  enter` (§4). Es el mínimo para la transición de §5.13; una escala completa
+  (salidas, movimiento, no solo opacidad) sigue por definir.
+- **Estados de carga:** sigue siendo texto plano `"Loading…"` (`.empty
+  .loading-note`), sin skeleton ni spinner — pero desde el 23 sep 2026 entra
+  con retraso y fundido (§5.13), así que en una carga normal no se ve. Un
+  skeleton con la forma del contenido sigue **por definir**.
 - **Contraste:** medido en ambos temas (§2). Los cuatro pares del oscuro bajo
   AA se corrigieron el 21 sep 2026; sólo queda `--c-danger` como texto sobre
   elevado (2.78:1), en una clase que hoy no usa nada.
-- **Íconos del nav:** seis SVG dibujados a mano en `components/ui.tsx`; no son
-  una librería. Desde el 21 sep 2026 el engranaje de tablet/pared también es el
+- **Íconos del nav:** **doce** SVG dibujados a mano en `components/ui.tsx`; no
+  son una librería, y este repo no tiene ninguna instalada (se confirmó el 23
+  sep 2026 contra `package.json`). El de `menu` —tres líneas verticales del
+  mismo alto— se dibujó el 23 sep 2026 con la misma regla; el de `settings`
+  (sliders), que era el del botón del menú, pasó a nombrar a Settings. Desde el 21 sep 2026 el engranaje de tablet/pared también es el
   SVG `settings` (el mismo de la barra del teléfono, solo, 1.3em dentro del
   círculo de 44px), no el glifo `⚙`.
 - **`docs/design/preview.html`** es una preview visual standalone (storage

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useBaby } from '@/lib/useBaby'
 import { NoBaby } from '@/components/NoBaby'
-import { Banner, Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
+import { Banner, Btn, Card, EmptyState, Grid, Label, Nav, Page } from '@/components/ui'
 import { SyncStatus } from '@/components/SyncStatus'
 import { addAppointment, listAppointments, setAppointmentCompleted } from '@/lib/db'
 import type { AppointmentType, DoctorAppointment } from '@/lib/types'
@@ -100,7 +100,7 @@ export default function AppointmentsPage() {
             sin contenido, de 34 ms en este servidor y tanto más cuanto peor
             esté la conexión. */}
         <Nav />
-        <p className="empty">{t('common.loading')}</p>
+        <p className="empty loading-note">{t('common.loading')}</p>
       </Page>
     )
   if (!baby)
@@ -114,10 +114,11 @@ export default function AppointmentsPage() {
   const now = Date.now()
   const upcoming = rows.filter((r) => !r.completed && new Date(r.scheduled_at).getTime() >= now)
   const past = rows.filter((r) => r.completed || new Date(r.scheduled_at).getTime() < now).reverse()
+  const noAppointments = upcoming.length === 0 && past.length === 0
 
   return (
     <Page>
-      <Nav babyId={baby.id} />
+      <Nav />
       <div className="between page-head">
         <h1 className="title">{t('doctor.title')}</h1>
         <button
@@ -191,27 +192,39 @@ export default function AppointmentsPage() {
         </Card>
       )}
 
-      <h2 className="label section-label">{t('doctor.upcoming')}</h2>
-      <Grid>
-        {upcoming.length === 0 ? (
-          <Card>
-            <div className="empty">{t('doctor.nothingScheduled')}</div>
-          </Card>
-        ) : (
-          upcoming.map((appt) => (
-            <ApptCard key={appt.id} appt={appt} onToggle={toggleCompleted} busy={busy} />
-          ))
-        )}
-      </Grid>
-
-      {past.length > 0 && (
+      {/* Nada agendado Y nada pasado: la página terminaba en el encabezado y
+          una tarjeta de una línea, y de ahí hasta la barra de abajo quedaba
+          todo en blanco. Con algo abajo (turnos pasados) el hueco no existe,
+          así que ahí se conserva la tarjeta corta de siempre. */}
+      {noAppointments ? (
+        <div className="empty-fill">
+          <EmptyState icon="doctor" title={t('doctor.empty')} hint={t('doctor.emptyHint')} />
+        </div>
+      ) : (
         <>
-          <h2 className="label section-label">{t('doctor.past')}</h2>
+          <h2 className="label section-label">{t('doctor.upcoming')}</h2>
           <Grid>
-            {past.map((appt) => (
-              <ApptCard key={appt.id} appt={appt} onToggle={toggleCompleted} busy={busy} past />
-            ))}
+            {upcoming.length === 0 ? (
+              <Card>
+                <div className="empty">{t('doctor.nothingScheduled')}</div>
+              </Card>
+            ) : (
+              upcoming.map((appt) => (
+                <ApptCard key={appt.id} appt={appt} onToggle={toggleCompleted} busy={busy} />
+              ))
+            )}
           </Grid>
+
+          {past.length > 0 && (
+            <>
+              <h2 className="label section-label">{t('doctor.past')}</h2>
+              <Grid>
+                {past.map((appt) => (
+                  <ApptCard key={appt.id} appt={appt} onToggle={toggleCompleted} busy={busy} past />
+                ))}
+              </Grid>
+            </>
+          )}
         </>
       )}
     </Page>

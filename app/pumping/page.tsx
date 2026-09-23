@@ -174,7 +174,7 @@ export default function PumpingPage() {
             sin contenido, de 34 ms en este servidor y tanto más cuanto peor
             esté la conexión. */}
         <Nav />
-        <p className="empty">{t('common.loading')}</p>
+        <p className="empty loading-note">{t('common.loading')}</p>
       </Page>
     )
   if (!baby)
@@ -194,7 +194,7 @@ export default function PumpingPage() {
 
   return (
     <Page>
-      <Nav babyId={baby.id} />
+      <Nav />
       <h1 className="title">{t('milk.title')}</h1>
       <SyncStatus />
       {err && <Banner kind="error">{err}</Banner>}

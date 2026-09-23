@@ -4,6 +4,32 @@ Every version of Amelia, newest first. The current version is the `version`
 field in `package.json`; this file is the history. A test fails if the two
 disagree. Shown in the app under the settings gear → Version history.
 
+## [0.8.0] - 2026-09-23
+
+Settings gets its own screen, the Menu becomes a plain list, and the two
+screens that start out empty now say what goes in them.
+
+- Everything that used to live inside the Menu's drop-down — the theme, the
+  language, the nursing alerts, the oz/ml switch, "Reset milk total" and
+  signing out — is now a screen of its own, Settings. Nothing is in both
+  places: the Menu is navigation and nothing else.
+- The Menu is a single column now, one screen per row with its icon:
+  Feeding, Diapers, Sleep, Milk, Growth, Doctor, History, Settings. It used
+  to be two columns of eight. The version number sits at the foot of it, and
+  tapping it still opens the version history.
+- The Menu button in the bottom bar has a new icon: three upright bars. The
+  sliders icon it had now marks Settings, which is what it actually means.
+- Growth and Doctor no longer leave half the screen blank before anything is
+  logged. Each one now centres a short note in that space saying what will
+  show up there. With entries logged, the screens are unchanged.
+- Moving between screens fades in instead of snapping. On a quick load the
+  word "Loading…" no longer flashes at all; on a slow one it fades in too.
+  The bottom bar never moves.
+- Today's three cards drop the "Totals and log →" line at the bottom. The
+  arrow in the corner of each card still opens the same page.
+- The preview server now listens only on this machine. It was reachable from
+  the network, which it never should have been.
+
 ## [0.7.0] - 2026-09-22
 
 The bottom bar on a phone is down to two buttons, Today and Menu, and the

@@ -191,6 +191,43 @@ body {
   outline-offset: 2px;
 }
 
+/* --------------------------------------------------------------- movimiento
+
+   Los primeros tokens de movimiento del proyecto (design.md §8 los daba por
+   definir). Un solo par: lo que entra, entra en --motion-enter con una curva
+   que desacelera. --motion-wait es cuánto espera el "Loading…" antes de
+   mostrarse: por debajo de eso la pantalla ya cargó y el texto nunca aparece,
+   que es lo que hacía sentir la carga como un salto. */
+:root {
+  --motion-enter: 180ms;
+  --motion-wait: 120ms;
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Todo lo que la página pinta cuando termina de cargar entra con un fundido
+   corto. El <nav> queda afuera a propósito: ya estaba en pantalla durante la
+   carga (design.md §5.13) y volver a fundirlo sería justo el parpadeo que se
+   arregló. React reusa ese nodo, así que la animación no se le dispara. */
+.page > *:not(.nav):not(.loading-note) {
+  animation: enter var(--motion-enter) var(--ease-out) both;
+}
+
+/* El "Loading…": aparece recién pasado --motion-wait. Si la página resuelve
+   antes (33 ms en este servidor), no llega a verse y no hay dos estados
+   sucesivos que comparar — no hay salto. Si tarda, aparece fundido. */
+.loading-note {
+  animation: enter var(--motion-enter) var(--motion-wait) var(--ease-out) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -231,7 +268,7 @@ body {
 
    Antes cada una medía lo que medía su contenido —la de lactancia con el
    cronómetro abierto sacaba una cabeza a las otras dos— y en la pared las
-   tres filas de "Totals and log →" quedaban escalonadas. No se arregla con
+   tres filas de botones quedaban escalonadas. No se arregla con
    un alto fijo elegido a ojo: `align-items: stretch` deja que el grid las
    iguale a la más alta, y `margin-top: auto` en el pie lo empuja abajo. Los
    mismos tokens de padding (--s-4/--s-5 de .card) en las tres, así que la
@@ -248,10 +285,12 @@ body {
   padding-top: var(--s-3);
 }
 
-/* El ícono de acceso rápido, arriba a la derecha de la tarjeta. Es un atajo,
-   no el camino principal: el pie ("Totals and log →") sigue diciendo con
-   palabras a dónde va. Por eso el ícono va en gris y solo se acentúa al
-   tocarlo o enfocarlo — y por eso lleva aria-label, porque no tiene texto. */
+/* El ícono de acceso rápido, arriba a la derecha de la tarjeta. Desde el 22
+   sep 2026 es la ÚNICA puerta a la sección desde Today: el pie que lo decía
+   con palabras ("Totals and log →") se sacó, porque repetía en cada tarjeta
+   algo que la flecha ya dice y empujaba los botones hacia abajo. Sigue en
+   gris y se acentúa al tocarlo o enfocarlo, su área táctil es --tap entera y
+   lleva aria-label, porque no tiene texto. */
 .card.has-quick {
   position: relative;
 }
@@ -360,6 +399,58 @@ body {
 .empty {
   font-size: var(--t-body);
   color: var(--c-muted);
+}
+
+/* Una pantalla sin datos todavía (/growth, /appointments).
+
+   El problema no era un hueco ENTRE elementos —por eso una medición de huecos
+   entre hermanos no lo encontró— sino todo lo que quedaba DESPUÉS del último:
+   la tarjeta del formulario arriba y media pantalla en blanco hasta la barra
+   de abajo. `.empty-fill` se queda con ese alto sobrante y centra ahí el
+   estado vacío, así la pantalla termina en algo y no en nada.
+
+   Solo aparece cuando no hay una sola fila, así que el layout CON datos no lo
+   ve nunca: `:has()` limita el `min-height` de la página a ese caso, y el
+   `min-height` propio del bloque es el piso para un motor sin `:has()`. */
+.page:has(.empty-fill) {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+.empty-fill {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40vh;
+  min-height: 40dvh;
+  margin-top: var(--col-gap);
+}
+.empty-state {
+  max-width: 30ch;
+  text-align: center;
+  color: var(--c-muted);
+}
+/* El ícono de la sección, grande y apagado: da lugar sin pedir atención — no
+   compite con .card.is-live, que es lo único que se lee desde el otro lado
+   del cuarto (design.md §2). */
+.empty-art {
+  display: inline-flex;
+  color: var(--c-line);
+}
+.empty-art svg {
+  width: var(--t-clock);
+  height: var(--t-clock);
+}
+.empty-title {
+  font-size: var(--t-value);
+  color: var(--c-text);
+  margin: var(--s-4) 0 0;
+}
+.empty-hint {
+  font-size: var(--t-body);
+  margin: var(--s-3) 0 0;
 }
 .title {
   font-size: var(--t-title);
@@ -674,42 +765,19 @@ select.input {
   overflow-y: auto;
   overscroll-behavior: contain;
 }
-.nav-menu-item {
-  text-align: left;
-  background: none;
-  border: none;
-  color: var(--c-text);
-  font-size: var(--t-body);
-  font-family: inherit;
-  cursor: pointer;
-  padding: var(--s-3) var(--s-4);
-  min-height: 44px;
-  border-radius: var(--r-control);
-}
-.nav-menu-item:hover,
-.nav-menu-item:focus-visible {
-  background: var(--c-surface);
-}
-.nav-menu-item.is-danger {
-  color: var(--c-danger);
-}
-.nav-menu-item:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
 
-/* "Go to": las 8 pantallas que no son Today, arriba de todo en el menú.
+/* El menú: las 8 pantallas que no son Today, UNA POR FILA.
 
    En el teléfono la barra de abajo tiene DOS ítems (Today y Menu), así que
-   esta lista es la única forma de llegar al resto. Dos columnas: ocho filas
-   apiladas no entraban sobre el teclado ni en una pantalla de 667px de alto.
-   El menú entero puede scrollear (.nav-menu, más abajo) para que agregar una
-   sección más nunca desborde la ventana. */
+   esta lista es la única forma de llegar al resto. Era de dos columnas; una
+   sola se lee de arriba abajo en un solo barrido —que es como se busca un
+   destino a las 3 de la mañana— y le da a cada fila el ancho entero del menú,
+   así ninguna etiqueta se corta en español. Entran las ocho porque el menú
+   scrollea (.nav-menu, arriba) en vez de desbordar la ventana. */
 .nav-menu-links {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: var(--s-1);
-  margin-top: var(--s-2);
 }
 .nav-menu-link {
   display: flex;
@@ -755,19 +823,33 @@ select.input {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.nav-menu-link-meta {
-  margin-left: auto;
-  flex: none;
-  font-weight: 400;
+/* La versión, al pie del menú: texto chiquito, alineado a la derecha, sin la
+   forma de una fila más de la lista. Es un enlace —/version no tiene otra
+   puerta desde que salió de la lista— pero no compite con los destinos. */
+.nav-menu-version {
+  align-self: flex-end;
+  padding: var(--s-2) var(--s-3);
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--t-meta);
   color: var(--c-muted);
+  text-decoration: none;
   font-variant-numeric: tabular-nums;
 }
+.nav-menu-version:hover,
+.nav-menu-version:focus-visible {
+  color: var(--c-accent);
+}
 
-/* Theme picker inside the settings menu: three segments, one chosen. */
-.nav-menu-group {
-  padding: var(--s-3) var(--s-4) var(--s-2);
-  border-bottom: 1px solid var(--c-line);
-  margin-bottom: var(--s-1);
+/* Un ajuste de la pantalla Settings: etiqueta, segmentos y la línea que
+   explica. Vivían en el menú del engranaje (.nav-menu-group) hasta el 22 sep
+   2026; ahora son bloques adentro de una .card, separados por una línea salvo
+   el último. */
+.setting-group + .setting-group {
+  border-top: 1px solid var(--c-line);
+  padding-top: var(--s-4);
+  margin-top: var(--s-4);
 }
 .seg {
   display: flex;
@@ -801,17 +883,17 @@ select.input {
   opacity: 0.45;
   cursor: default;
 }
-/* The line under a segment that says what it will do, or why it can't.
-   width 0 + min-width 100%: it wraps to the menu's width instead of
-   stretching the menu to the length of a long Spanish sentence. */
-.menu-note {
+/* La línea debajo de un ajuste: qué va a hacer, o por qué acá no puede.
+   width 0 + min-width 100%: envuelve al ancho del contenedor en vez de
+   estirarlo con una frase larga en español. */
+.setting-note {
   width: 0;
   min-width: 100%;
   font-size: var(--t-meta);
   color: var(--c-muted);
   margin: var(--s-2) 0 0;
 }
-.nav-menu-group .banner {
+.setting-group .banner {
   width: 0;
   min-width: 100%;
   box-sizing: border-box;
@@ -1066,14 +1148,6 @@ select.input {
 }
 
 /* --------------------------------------------------------------- dashboard */
-
-/* "Totals and log →" at the foot of each dashboard card: text, but a whole
-   touch target tall (the 44px floor is met at 52px, 84px on the wall). */
-.card-link {
-  min-height: var(--tap);
-  display: inline-flex;
-  align-items: center;
-}
 
 /* --------------------------------------------------------------- section totals
 

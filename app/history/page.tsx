@@ -353,7 +353,7 @@ export default function HistoryPage() {
             sin contenido, de 34 ms en este servidor y tanto más cuanto peor
             esté la conexión. */}
         <Nav />
-        <p className="empty">{t('common.loading')}</p>
+        <p className="empty loading-note">{t('common.loading')}</p>
       </Page>
     )
   if (!baby)
@@ -366,7 +366,7 @@ export default function HistoryPage() {
 
   return (
     <Page>
-      <Nav babyId={baby.id} />
+      <Nav />
       <h1 className="title">{t('history.title')}</h1>
       <SyncBar online={online} pending={pending} syncing={syncing} />
       <SeenNote state={seen} />

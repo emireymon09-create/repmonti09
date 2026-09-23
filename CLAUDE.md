@@ -229,13 +229,21 @@ app/api/push/nursing-check/route.ts  POST/GET, token de dispositivo scope
 scripts/vapid-keys.mjs   Genera un par VAPID (P-256, base64url). Lo llama
                    `pnpm db:env` solo si faltan: nunca pisa una clave existente.
 app/globals.css    TODO el CSS del proyecto.
-components/ui.tsx  Page, Grid, Card, Label, Btn, Nav — y re-exporta Banner.
+components/ui.tsx  Page, Grid, Card, Label, Btn, NavIcon, EmptyState, Nav — y
+                   re-exporta Banner. Desde el 23 sep 2026 `Nav` es SOLO
+                   navegación: no tiene ningún ajuste adentro ni recibe babyId.
+app/settings/page.tsx   La pantalla Settings (23 sep 2026): tema, idioma,
+                   avisos de lactancia, la unidad oz↔ml, el reset del total de
+                   leche y cerrar sesión. Todo esto vivía en el menú del
+                   engranaje; no quedó ninguna copia allá.
 components/Banner.tsx   Banner (.banner error/ok/warn). En archivo propio para
                    que NursingAlerts lo use sin importar ui.tsx de vuelta.
 components/SectionPage.tsx   La pantalla compartida de /feeding, /diapers y
                    /sleep: KPIs de hoy y de 7 días, log completo con editar y
                    borrar (un panel a la vez) y "Log a past one".
-components/NursingAlerts.tsx   El control "Nursing alerts" del engranaje.
+components/NursingAlerts.tsx   El control "Nursing alerts", hoy en /settings
+                   (antes en el menú). Sus segmentos son `role="radio"` dentro
+                   de un `radiogroup`, no `menuitemradio`.
 components/SyncStatus.tsx   SyncBar, SyncStatus, SeenNote (aviso de copia
                    guardada) y SyncErrorBanner (rechazo, con Descartar).
 components/VersionHistory.tsx   Pantalla de /version ('use client'). La página
@@ -297,7 +305,10 @@ pnpm dev                    # http://127.0.0.1:3000 — escucha solo en 127.0.0.
 
 # Build / producción
 pnpm build
-pnpm start
+pnpm start                  # http://127.0.0.1:3000 — como `dev`, escucha SOLO en
+                             # 127.0.0.1. El `-H` es obligatorio: `next start` a
+                             # secas bindea 0.0.0.0 y expone el preview a
+                             # internet (pasó el 23 sep 2026)
 
 # Tests
 pnpm test                   # unit (lib/format.ts, lib/queue.ts, lib/deviceTokens.ts,
@@ -542,6 +553,21 @@ inicio de la ventana. Las tres están en `middleware.ts`, en
 `lib/offlinePages.ts` y en el `PRECACHE` de `public/sw.js` (que pasó a
 `amelia-v4`).
 
+**Settings, y el menú como lista (23 sep 2026).** Los seis ajustes que vivían
+adentro del desplegable —Theme, Language, Nursing alerts, la unidad oz↔ml,
+"Reset milk total" y cerrar sesión— se mudaron enteros a **`/settings`**
+(`app/settings/page.tsx`), que es la octava entrada del menú. **No quedó
+ninguna copia en el menú** (verificado en el DOM: 0 `.seg`, 0
+`.nav-menu-item`). El menú pasó de una grilla de 2 columnas a **una sola
+columna**, en este orden: Feeding, Diapers, Sleep, Milk, Growth, Doctor,
+History, Settings — medido a 390px: los 8 con el mismo `left` (151) y el mismo
+ancho (226), 52px de alto cada uno. "Version history" salió de la lista: el
+número de versión va **al pie** del menú, chico y alineado a la derecha, y es
+el enlace a `/version` — era su única puerta. El ícono del botón **Menu** pasó
+a ser **tres líneas verticales** (`ICONS.menu`, `M7 5v14 / M12 5v14 / M17 5v14`);
+los sliders que tenía ahora nombran a Settings. **No hay librería de íconos en
+este repo** y no se agregó ninguna: siguen siendo SVG de trazo a mano.
+
 **El nav de dos ítems en el teléfono (22 sep 2026).** La barra de abajo pasó de
 seis ítems (cinco pestañas + el engranaje) a **dos: Today y Menu**. Las otras
 ocho pantallas —`/feeding`, `/diapers`, `/sleep`, `/pumping`, `/growth`,
@@ -553,6 +579,33 @@ en la pantalla de pared la barra de pestañas queda igual: los `.tab` siguen en
 el HTML y solo se apagan por CSS abajo de 600px. Verificado con CDP: en el
 teléfono se ven exactamente 2 ítems, en la pared 6, y el menú entra en la
 ventana (716px de 844).
+
+**Estados vacíos que ocupan la pantalla (23 sep 2026).** `/growth` y
+`/appointments` sin una sola fila terminaban en la tarjeta del formulario y
+dejaban todo lo de abajo en blanco hasta la barra. El hueco no estaba **entre**
+hermanos —por eso la medición del pase anterior no lo vio— sino **después** del
+último. Ahora esas dos páginas, y solo cuando no hay ninguna fila, ponen un
+`.empty-fill` que se queda con el alto sobrante y centra ahí un `EmptyState`
+(ícono de la sección + título + una línea que dice qué va a aparecer).
+Medido a 390×844: el hueco hasta la barra pasó de **412px a 38px** en Growth y
+de **686px a 38px** en Doctor. **Con datos no cambia nada**: `.page` sigue en
+`display: block` y `min-height: 0` (el `:has(.empty-fill)` no matchea), 0
+`.empty-fill` en el DOM, mismo alto de documento.
+
+**La transición loading→contenido (23 sep 2026).** El pase anterior sacó el
+pantallazo blanco metiendo el `<Nav>` en el estado de carga; quedaba el salto
+seco entre "Loading…" y el contenido. Primeros **tokens de movimiento** del
+proyecto (`--motion-enter: 180ms`, `--motion-wait: 120ms`, `--ease-out`) y dos
+reglas: todo lo que la página pinta al terminar de cargar entra con un
+`@keyframes enter` de opacidad, y el `"Loading…"` (`.loading-note`) arranca
+recién a los 120ms. Medido cuadro por cuadro con rAF y un clic real en el
+`<Link>` de Growth: **antes** el "Loading…" se veía 3 cuadros a opacidad 1 y el
+contenido aparecía directo en 1; **después** el "Loading…" se ve **0 cuadros**
+y el contenido sube 0 → 0.25 → 0.47 → 0.64 → 0.76 → 0.85 → 1 en ~180ms. Con la
+CPU a 1/6 el "Loading…" sigue sin verse y el fundido es igual; con
+`prefers-reduced-motion: reduce` no hay fundido (0→1 en un cuadro). El `<nav>`
+queda **afuera** de la animación —React reusa ese nodo— y midió opacidad 1 en
+todos los cuadros, 0 cuadros sin nav.
 
 **Today, la cabecera y las tarjetas (22 sep 2026).** Nombre y edad en la misma
 línea (`baseline`, la edad en gris y sin el peso del título) y la fecha de hoy

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useBaby } from '@/lib/useBaby'
 import { NoBaby } from '@/components/NoBaby'
-import { Banner, Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
+import { Banner, Btn, Card, EmptyState, Grid, Label, Nav, Page } from '@/components/ui'
 import { SeenNote, SyncBar, SyncErrorBanner } from '@/components/SyncStatus'
 import { lastGood, seenKey, type LastGood, type SeenState } from '@/lib/lastSeen'
 import { looksOffline, type PendingWrite } from '@/lib/queue'
@@ -223,7 +223,7 @@ export default function GrowthPage() {
             sin contenido, de 34 ms en este servidor y tanto más cuanto peor
             esté la conexión. */}
         <Nav />
-        <p className="empty">{t('common.loading')}</p>
+        <p className="empty loading-note">{t('common.loading')}</p>
       </Page>
     )
   if (!baby)
@@ -236,7 +236,7 @@ export default function GrowthPage() {
 
   return (
     <Page>
-      <Nav babyId={baby.id} />
+      <Nav />
       <h1 className="title">{t('growth.title')}</h1>
       <SyncBar online={online} pending={pending} syncing={syncing} />
       <SeenNote state={seen} />
@@ -279,13 +279,7 @@ export default function GrowthPage() {
           </form>
         </Card>
 
-        {rows.length === 0 ? (
-          <Card>
-            <div className="empty">
-              {seen.kind === 'nothing' ? t('sync.nothingSaved') : t('growth.empty')}
-            </div>
-          </Card>
-        ) : (
+        {rows.length > 0 &&
           rows.map((row, index) => {
             // Newest first, so the next entry is the previous visit.
             const prev = rows[index + 1]
@@ -377,9 +371,23 @@ export default function GrowthPage() {
                 )}
               </Card>
             )
-          })
-        )}
+          })}
       </Grid>
+
+      {/* Sin mediciones, la página terminaba en la tarjeta del formulario y
+          dejaba todo lo de abajo —hasta la barra inferior— en blanco. El hueco
+          no estaba ENTRE hermanos sino DESPUÉS del último, que es por lo que la
+          medición del pase anterior no lo vio. `.empty-fill` ocupa ese alto y
+          centra en él un estado vacío que dice qué va a pasar acá. */}
+      {rows.length === 0 && (
+        <div className="empty-fill">
+          <EmptyState
+            icon="growth"
+            title={seen.kind === 'nothing' ? t('sync.nothingSaved') : t('growth.empty')}
+            hint={seen.kind === 'nothing' ? undefined : t('growth.emptyHint')}
+          />
+        </div>
+      )}
     </Page>
   )
 }
