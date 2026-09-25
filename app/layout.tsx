@@ -4,6 +4,7 @@ import { ServiceWorker } from '@/components/ServiceWorker'
 import { THEME_BOOT_SCRIPT } from '@/lib/themeBoot'
 import { LANG_BOOT_SCRIPT } from '@/lib/i18n/boot'
 import { VIEWPORT_BOOT_SCRIPT } from '@/lib/viewportBoot'
+import { VIEWPORT_DEBUG_SCRIPT } from '@/lib/viewportDebug'
 import { I18nProvider } from '@/lib/i18n/react'
 
 export const metadata: Metadata = {
@@ -42,6 +43,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
         <script dangerouslySetInnerHTML={{ __html: LANG_BOOT_SCRIPT }} />
         <script dangerouslySetInnerHTML={{ __html: VIEWPORT_BOOT_SCRIPT }} />
+        {/* Instrumento temporal de la rama `diagnostico-viewport`: sin la
+            bandera no hace nada (ni listeners, ni timers, ni DOM). Va DESPUÉS
+            del boot para poder leer el `--vh-full` que ese script escribió. */}
+        <script dangerouslySetInnerHTML={{ __html: VIEWPORT_DEBUG_SCRIPT }} />
       </head>
       <body>
         <I18nProvider>{children}</I18nProvider>
