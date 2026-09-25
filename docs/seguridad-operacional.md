@@ -130,6 +130,39 @@ docker ps --format '{{.Names}}\t{{.Ports}}'
 - `0.0.0.0:54322->5432/tcp` → **todas las interfaces**, o sea internet, salvo
   que haya un firewall delante.
 
+### ✅ Blindado el 25 sep 2026 — la app ya no puede bindear fuera de loopback
+
+Las dos exposiciones del puerto 3000 (23 y 24 sep, §9) tuvieron causas
+distintas, y por eso la regla escrita no alcanzaba: la primera fue un `-H` que
+**faltaba** en `package.json`; la segunda, un `-H` que un agente puso **a
+propósito** (`pnpm exec next start -H 172.17.0.1`), por un camino que no pasa
+por `package.json`. Ninguna fue un cron ni una tarea programada: fueron dos
+comandos sueltos, y el patrón horario (00:00 y 06:00) es un espejismo — el
+vigía muestrea cada 15 minutos, así que **toda** alerta cae en un cuarto de
+hora exacto.
+
+`pnpm dev` y `pnpm start` ahora corren **`scripts/next-loopback.mjs`**, que
+inyecta `-H 127.0.0.1` cuando falta y **rechaza** un `-H` no-loopback antes de
+abrir nada. `build`, `lint` y `--version` pasan intactos. El `postinstall`
+(`scripts/blindar-next-bin.mjs`) reescribe el shim de `node_modules/.bin/next`,
+así que también quedan cubiertos `pnpm exec next`, `npx next` y
+`./node_modules/.bin/next`. Regresión: `tests/unit/nextLoopback.test.ts`.
+
+⚠️ **`HOSTNAME=127.0.0.1` no sirve como default.** En Next 14 sólo `--port`
+está atado a una env var; `--hostname` no, y sin él `start-server.js` hace
+`server.listen(port, undefined)` = todas las interfaces. Medido:
+
+```
+$ HOSTNAME=127.0.0.1 node node_modules/next/dist/bin/next start -p 3099
+$ ss -tln | grep 3099
+LISTEN 0 511 *:3099 *:*
+```
+
+Salida de emergencia, explícita y auditable: `AMELIA_BIND_PUBLICO=1`. Si lo que
+hace falta es que un contenedor llegue a la app, el patrón es
+`--add-host=host.docker.internal:host-gateway`, no abrir el puerto en la
+interfaz del bridge.
+
 ### ✅ Resuelto el 21 sep 2026
 
 El stack local ya bindea a `127.0.0.1`: `pnpm db:status` y `ss -tln`
@@ -241,7 +274,8 @@ Formato:
 | Fecha | Qué pasó | Cómo se detectó | Qué se hizo | Qué cambió para que no vuelva |
 | --- | --- | --- | --- | --- |
 | 20 sep 2026 | Postgres, Studio y la API del stack local de Supabase escuchaban en `0.0.0.0` (todas las interfaces) en vez de `127.0.0.1`, en un VPS sin sudo para confirmar si un firewall lo tapaba | `docker ps` mostrando `0.0.0.0:puerto->...` + `curl` a la IP pública de la máquina respondiendo | Se reemplazó el CLI de Supabase por un stack propio (`supabase/docker/docker-compose.yml`), operado con `pnpm db:up`/`db:down`/`db:reset`/`db:env`/`db:psql`/`db:status`, que publica cada puerto como `127.0.0.1:puerto:puerto` | Se sacó el CLI de Supabase como dependencia y se borró `supabase/config.toml`; `next dev` pasó a `-H 127.0.0.1` |
-| 24 sep 2026 | El build de producción quedó escuchando en la **IP del bridge de Docker** (`172.17.0.1:3000` y después `172.20.0.1:3001`), no en `127.0.0.1`. Lo hizo el agente a propósito, para que el contenedor de Postgres pudiera llamar a `/api/push/nursing-check` y así probar el cron de punta a punta. Es una interfaz no-loopback y va contra `CLAUDE.md` §3 | **Monitoreo de puertos del VPS, de Luis** — no lo agarró el agente, que fue quien lo causó. `ss -tln` mostrando `172.20.0.1:3001` | Se mataron los dos procesos y se sacó el job de `pg_cron` de QA (`amelia-qa-check`) que apuntaba ahí. Confirmado después: `ss -tln` sin ningún puerto de la app, y `docker ps` con todo en `127.0.0.1` | **El bind a la IP del bridge no es una solución aceptable y no se repite.** Si hace falta que un contenedor le pegue a la app, la app va en un contenedor de la **misma red de Docker** que la base — el patrón que ya se había resuelto en el pase del 22 sep 2026. La app **nunca** se bindea a otra cosa que `127.0.0.1` |
+| 23 sep 2026 | El preview de producción quedó escuchando en **todas las interfaces** (`*:3000`), o sea en la IP pública del VPS. El script `start` de `package.json` era `next start` **a secas**, y sin `-H` Next bindea `0.0.0.0`; lo levantó el agente auditor con `pnpm start` para medir en el navegador | **Monitoreo de puertos del VPS, de Luis** (00:00 UTC) | Se mató el proceso y se le puso `-H 127.0.0.1` al script `start` (commit `0ca86ae`, 00:30 UTC) | Al principio, sólo el flag en `package.json` — que no cubría `pnpm exec next`. Desde el 25 sep 2026 lo cubre `scripts/next-loopback.mjs` (§6) |
+| 24 sep 2026 | El build de producción quedó escuchando en la **IP del bridge de Docker** (`172.17.0.1:3000` y después `172.20.0.1:3001`), no en `127.0.0.1`. Lo hizo el agente a propósito, para que el contenedor de Postgres pudiera llamar a `/api/push/nursing-check` y así probar el cron de punta a punta. Es una interfaz no-loopback y va contra `CLAUDE.md` §3 | **Monitoreo de puertos del VPS, de Luis** — no lo agarró el agente, que fue quien lo causó. `ss -tln` mostrando `172.20.0.1:3001` | Se mataron los dos procesos y se sacó el job de `pg_cron` de QA (`amelia-qa-check`) que apuntaba ahí. Confirmado después: `ss -tln` sin ningún puerto de la app, y `docker ps` con todo en `127.0.0.1` | **El bind a la IP del bridge no es una solución aceptable y no se repite.** Si hace falta que un contenedor le pegue a la app, la app va en un contenedor de la **misma red de Docker** que la base — el patrón que ya se había resuelto en el pase del 22 sep 2026. La app **nunca** se bindea a otra cosa que `127.0.0.1`. Desde el 25 sep 2026 eso dejó de ser sólo una regla escrita: `scripts/next-loopback.mjs` rechaza el bind no-loopback antes de abrir el puerto (§6) |
 
 Un incidente se anota **aunque no haya tenido consecuencias**. El valor del
 registro está en los que no pasaron a mayores.

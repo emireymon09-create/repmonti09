@@ -4,6 +4,21 @@ Every version of Amelia, newest first. The current version is the `version`
 field in `package.json`; this file is the history. A test fails if the two
 disagree. Shown in the app under the settings gear → Version history.
 
+## [0.10.2] - 2026-09-25
+
+One security fix. Nothing about the app itself changed.
+
+- **The server can no longer be started listening on anything but
+  `127.0.0.1`.** `next dev` and `next start` bind to every interface when no
+  `-H` is given, which on this VPS means the public internet. It happened
+  twice — on 23 September, because the `start` script had no `-H`, and on 24
+  September, because the flag was pointed at the Docker bridge by hand — and
+  both times it was the machine's port watchdog that found it. Both commands
+  now go through `scripts/next-loopback.mjs`, which supplies `-H 127.0.0.1`
+  when it is missing and refuses a `-H` that is not loopback before any port
+  is opened; `pnpm exec next`, `npx next` and `./node_modules/.bin/next` are
+  covered as well.
+
 ## [0.10.0] - 2026-09-24
 
 Today counts down to the next feeding and the next nap on times you choose,

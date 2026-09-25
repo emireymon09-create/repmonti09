@@ -360,9 +360,7 @@ pnpm dev                    # http://127.0.0.1:3000 — escucha solo en 127.0.0.
 # Build / producción
 pnpm build
 pnpm start                  # http://127.0.0.1:3000 — como `dev`, escucha SOLO en
-                             # 127.0.0.1. El `-H` es obligatorio: `next start` a
-                             # secas bindea 0.0.0.0 y expone el preview a
-                             # internet (pasó el 23 sep 2026)
+                             # 127.0.0.1
 
 # Tests
 pnpm test                   # unit (lib/format.ts, lib/queue.ts, lib/deviceTokens.ts,
@@ -384,6 +382,37 @@ pnpm exec tsc --noEmit
 
 `pnpm build` también corre el type-check de Next, pero `pnpm exec tsc
 --noEmit` es más rápido cuando es lo único que querés saber.
+
+**La app escucha SÓLO en `127.0.0.1`, y ya no depende de que alguien se acuerde
+del flag (25 sep 2026).** `next dev` y `next start` sin `-H` bindean a
+`0.0.0.0`, o sea a la IP pública del VPS; pasó el 23 sep 2026 (el script
+`start` era `next start` a secas) y otra vez el 24 sep 2026 (`pnpm exec next
+start -H 172.17.0.1`, a mano, para que un contenedor llegara a la app). Las dos
+veces lo encontró el vigía de puertos de Luis, no el agente.
+
+Ahora los dos caminos pasan por **`scripts/next-loopback.mjs`**, que:
+
+- **inyecta `-H 127.0.0.1`** cuando no se pasó ninguno;
+- **rechaza** cualquier `-H` que no sea loopback, con el motivo y la
+  alternativa en el mensaje (exit 1, sin abrir el puerto);
+- deja intactos `build`, `lint`, `--version` y todo lo que no escucha.
+
+Lo cubre `pnpm dev` / `pnpm start` **y también** `pnpm exec next`, `npx next` y
+`./node_modules/.bin/next`: el `postinstall` (`scripts/blindar-next-bin.mjs`)
+reescribe el shim de `node_modules/.bin/next` para que pase por el envoltorio, y
+`pnpm install` lo vuelve a aplicar. Regresión: `tests/unit/nextLoopback.test.ts`.
+
+⚠️ **`HOSTNAME=127.0.0.1` NO sirve para esto.** En Next 14 sólo `--port` está
+atado a una env var (`.env('PORT')` en `next/dist/bin/next`); `--hostname` no lo
+está, y `start-server.js` termina en `server.listen(port, undefined)`, que es
+todas las interfaces. Medido el 25 sep 2026: con `HOSTNAME=127.0.0.1`,
+`next start -p 3099` dejó `*:3099` en `ss -tln`.
+
+Si de verdad hace falta que algo externo llegue a la app (un contenedor, el
+teléfono), la salida es un túnel SSH, o correr el contenedor con
+`--add-host=host.docker.internal:host-gateway`; **nunca** abrir el puerto en
+otra interfaz. La válvula de escape existe, es explícita y queda en el log:
+`AMELIA_BIND_PUBLICO=1`.
 
 ---
 
