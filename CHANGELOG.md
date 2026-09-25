@@ -4,6 +4,18 @@ Every version of Amelia, newest first. The current version is the `version`
 field in `package.json`; this file is the history. A test fails if the two
 disagree. Shown in the app under the settings gear → Version history.
 
+## [0.10.7] - 2026-09-25
+
+Nothing in the app changed here either. A correction to the notes.
+
+- **The bottom bar on the iPhone is not fixed.** The last release said the third
+  attempt was measured but unconfirmed; it has now been tried on the phone and
+  the bar still starts slightly raised, exactly as before. The notes said
+  "unconfirmed" where they should say "still happening", so they now say it. No
+  fourth attempt was made by guessing: there is a diagnostic build instead, kept
+  apart from the app, that shows on the phone's own screen what it is measuring
+  and when.
+
 ## [0.10.6] - 2026-09-25
 
 Nothing in the app changed. This one is written down for the people who keep it

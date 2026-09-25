@@ -1142,6 +1142,31 @@ ahora es real. **Chromium no reproduce el bug de WebKit: esto dice "no rompí
 nada", NO dice que el síntoma se fue — la confirmación depende del iPhone de
 Luis.** Detalle, tablas y la predicción falsable: `design.md` §5.20.
 
+> **Y la confirmación llegó, y es negativa (25 sep 2026, más tarde el mismo
+> día).** Luis probó v0.10.4 en su iPhone y **el síntoma volvió a aparecer**,
+> idéntico al original: la barra nace elevada y un gesto de scroll la corrige.
+> O sea que **el tercer intento tampoco cerró el caso** y todo lo que este
+> archivo dice de v0.10.4 hay que leerlo como "no rompió nada", nunca como
+> "arreglado". Lo que eso deja en pie es una hipótesis concreta: si medir
+> `window.innerHeight` antes del primer pintado tampoco alcanza, es porque **ese
+> número también llega tarde** —WebKit no lo asienta hasta que la barra de
+> Safari termina de animarse— y ninguno de los cuatro eventos que escucha
+> `lib/viewportBoot.ts` dispara en ese instante. Hipótesis alternativa de Luis,
+> que hay que descartar o confirmar: que lo que corrige el layout no es el
+> scroll sino **un reajuste posterior que simplemente coincide con él**.
+>
+> **No se intentó un cuarto arreglo**, a propósito: tres a ciegas alcanzan. En
+> vez de eso hay un instrumento, en la rama **`diagnostico-viewport`** (no se
+> mergea a `main`): un panel que se prende con `?debug=viewport` y muestra en la
+> pantalla del teléfono, muestra por muestra, `innerHeight`,
+> `visualViewport.height`, `--vh-full`, el `min-height` computado de `.page`, el
+> hueco real debajo de la barra, y **qué evento disparó cada cambio** — con un
+> muestreo `poll` cada 100 ms que delata un cambio ocurrido **sin ningún
+> evento**, que es exactamente lo que separa las dos hipótesis. Sin la bandera
+> el script no engancha un listener ni crea un nodo, y el barrido de 132
+> combinaciones dio **0 diferencias sobre 1848 comparaciones** con y sin él.
+> Cómo prenderlo y qué mirar: `docs/diagnostico-viewport.md`.
+
 **No construido:**
 
 - *(Cerrado el 24 sep 2026: `/statistics` no dibujaba nada. Era el hueco
