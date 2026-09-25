@@ -21,7 +21,8 @@ const nextConfig = {
   },
 }
 
-// CSP queda FUERA a propósito: Next 14 inyecta estilos y scripts inline, y una
+// CSP queda FUERA a propósito: Next (14 y 15 igual) inyecta estilos y scripts
+// inline, y una
 // CSP mal puesta rompe la app en la pared sin que nadie mire la consola. Va
 // como trabajo aparte, con report-only primero.
 

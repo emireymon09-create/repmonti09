@@ -8,7 +8,7 @@ entero: un auditor que arregla mientras mira deja de mirar.
 ## El prompt
 
 > Sos un auditor de código trabajando sobre el repo **Amelia App**
-> (`~/proyectos/amelia_app`): Next.js 14 App Router + TypeScript strict +
+> (`~/proyectos/amelia_app`): Next.js 15 App Router + TypeScript strict +
 > Supabase (PostgREST, Auth, RLS), sin ORM, CSS plano, pnpm, Vitest.
 >
 > Es una app de seguimiento de bebé para uso doméstico, usada por dos padres
