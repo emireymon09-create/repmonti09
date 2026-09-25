@@ -272,13 +272,25 @@ describe('lastFeedingEvent', () => {
     const n = [nursing('n1', iso(MIDNIGHT + 2 * HOUR), iso(MIDNIGHT + 2 * HOUR + 20 * MIN))]
     const last = lastFeedingEvent(f, n)
     expect(last?.kind).toBe('nursing')
-    expect(last?.at).toBe(n[0].started_at)
+    expect(last?.endedAt).toBe(n[0].ended_at)
   })
 
   it('ignora una sesión en curso', () => {
     const f = [feeding('f1', iso(MIDNIGHT + HOUR), 'solid')]
     const n = [nursing('n1', iso(MIDNIGHT + 3 * HOUR), null)]
     expect(lastFeedingEvent(f, n)?.kind).toBe('feeding')
+  })
+
+  // El "hace X" de la tarjeta cuenta desde que la toma TERMINÓ. Con el
+  // criterio viejo —ordenar y contar desde `started_at`— estas dos
+  // expectativas fallan: la toma de pecho empieza ANTES del biberón pero
+  // termina DESPUÉS, así que es la última, y hace 5 minutos, no 45.
+  it('una toma de pecho se ubica en su FIN, no en su inicio', () => {
+    const f = [feeding('f1', iso(MIDNIGHT + 10 * HOUR + 20 * MIN), 'bottle', 100)]
+    const n = [nursing('n1', iso(MIDNIGHT + 10 * HOUR), iso(MIDNIGHT + 10 * HOUR + 45 * MIN))]
+    const last = lastFeedingEvent(f, n)
+    expect(last?.kind).toBe('nursing')
+    expect(last?.endedAt).toBe(iso(MIDNIGHT + 10 * HOUR + 45 * MIN))
   })
 
   it('nada registrado → null', () => {

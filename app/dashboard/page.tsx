@@ -707,7 +707,7 @@ export default function Dashboard() {
             {lastFeed ? feedingLegend(lastFeed) : unknown ? '—' : t('dash.noFeedings')}
           </div>
           {lastFeed && !activeNursing && (
-            <div className="meta">{timeAgo(lastFeed.at, now, lang)}</div>
+            <div className="meta">{timeAgo(lastFeed.endedAt, now, lang)}</div>
           )}
           {lastFeed?.row.pending && <div className="pending-tag">{t('common.notSyncedYet')}</div>}
           {!activeNursing && feedingPrediction && (

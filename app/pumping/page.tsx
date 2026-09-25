@@ -204,7 +204,14 @@ export default function PumpingPage() {
           <form onSubmit={save}>
             <Label>{t('milk.logTitle')}</Label>
             <div className="stack">
-              <div className="row">
+              {/* `row-wrap`: en español los tres lados son "Izquierdo /
+                  Derecho / Ambos", y en la pared, con el tipo grande, no
+                  entran en la columna — medido el 25 sep 2026, la fila se
+                  salía 24 px de su caja a 1440px (no daba scroll horizontal
+                  de página, por eso un chequeo a nivel página no lo veía).
+                  Envuelve, no desborda; es el mismo recurso que ya usa la
+                  fila del biberón en /dashboard. */}
+              <div className="row row-wrap">
                 {SIDES.map((s) => (
                   <Btn
                     key={s.value}
@@ -271,7 +278,8 @@ export default function PumpingPage() {
               {editingId === row.id ? (
                 <div className="stack">
                   <Label>{t('milk.editSession')}</Label>
-                  <div className="row">
+                  {/* Misma fila, mismo motivo que arriba. */}
+                  <div className="row row-wrap">
                     {SIDES.map((s) => (
                       <Btn
                         key={s.value}

@@ -200,6 +200,7 @@ Por encima, `:root` redefine los tokens; ningún componente se reescribe.
 | `--r-card` | 16px | 22px |
 | `--r-control` | 12px | 16px |
 | `--tap` | 52px | 84px |
+| `--tap-min` | 44px | 44px — **no crece**, es el piso, no el tamaño (§5.19) |
 | `--measure` | 520px | 1500px |
 | `--col-gap` | 12px | 20px |
 | `--cols` | 1 | 3 |
@@ -963,10 +964,14 @@ está en §5.7. Lo que corresponde a esta sección es la forma: un `.seg-inline`
 sin estirarse— pegado al campo, con el `placeholder` siguiendo a la unidad
 activa. Los dos segmentos miden lo mismo entre sí (`min-width: 3em`) porque sin
 ese piso quedaban en 27 y 29 px y el pill cambiaba de tamaño al tocarlo, que es
-justo lo que §5.1 no quiere.
+justo lo que §5.1 no quiere. *(Actualizado el 25 sep 2026: `3em` con
+`--t-meta` a 12 px daba **36 px**, por debajo del piso táctil. Ahora es
+`max(3em, var(--tap-min))` — el igualado se conserva y manda el mayor de los
+dos. Ver §5.19.)*
 
-**Y su área táctil es `--tap`, no el piso de 44px.** `.seg-btn` nace con
-`min-height: 44px`, que es el piso de los controles **secundarios** de §1
+**Y su área táctil vertical es `--tap`, no el piso de `--tap-min`.** `.seg-btn`
+nace con `min-height: var(--tap-min)`, que es el piso de los controles
+**secundarios** de §1
 (tabs, pills, el engranaje) y le alcanza a un segmento de `/settings`, que se
 toca una vez por mes. Éste vive en la fila de registro que se usa a una mano a
 las 3 de la mañana, al lado de un campo y de un botón que sí miden `--tap`:
@@ -974,8 +979,8 @@ medía **36×44 px** en el teléfono y **51×44** en la pared, visiblemente más
 bajo que sus vecinos. Con `min-height: var(--tap)` en `.seg-inline .seg-btn`
 mide **52** y **84**. Como `.row-tight` no fija `align-items`, la fila entera
 se empareja a 58 px en el teléfono y 92 en la pared — campo, toggle y botón
-iguales. **El `.seg` de Settings no se tocó**: ahí el piso de 44px es el que
-corresponde.
+iguales. **El `.seg` de Settings no se tocó**: ahí el piso de `--tap-min` es el
+que corresponde.
 
 **Y el idioma no puede cambiar el alto de la pared.** En español y a 1440px el
 botón "Biberón" bajaba a un segundo renglón, y como el grid iguala las tres
@@ -1046,6 +1051,192 @@ mínimo.
 > **falla con exit 3 si la URL medida es `/login`** y registra el `<h1>` de
 > cada página. Un barrido que no puede distinguir "todo bien" de "no había
 > nada" no es una medición.
+
+### 5.18 La barra al cargar de cero, el "hace X", y el aire del selector (25 sep 2026)
+
+Tres arreglos reportados desde el uso real. Los dos primeros son de medición,
+no de gusto.
+
+**a · La barra nacía unos píxeles arriba al abrir la app de cero.** Síntoma
+parecido al de §5.11, **mecanismo distinto**: aquel se despegaba *durante* el
+scroll y volvía sola al soltar; éste nace mal y **un solo scroll lo asienta
+para toda la sesión**, hasta el próximo arranque en frío. iPhone 16 Pro, app
+instalada, standalone.
+
+*Qué se descartó primero.* `grep -rn "100dvh\|100vh" app/globals.css`: hay
+**tres** lugares, y ninguno lo agregó el pase del 24 sep — `.page` en el
+`@media (max-width: 599px)`, `.page:has(.empty-fill)`, y el `max-height` del
+desplegable del menú. O sea que el sospechoso es el de siempre, no Statistics
+ni la tarjeta de cita ni el selector de semana.
+
+*La cadena, medida.* En el primer paint de cualquier pantalla el documento
+mide exactamente el alto de la ventana (`docH` 844 = `innerHeight` 844 a
+390×844): todavía no hay datos, así que **lo único que baja la barra hasta el
+borde es el `min-height` de `.page`**, y ese `min-height` sale del `dvh`. Si
+el `dvh` resuelve corto, la barra queda corta. Demostrado en el navegador
+forzando exactamente eso, a 390×1400 y con la página ya cargada:
+
+| `.page` | `pageH` | `navTop` | `navBottom` | hueco debajo de la barra |
+|---|---|---|---|---|
+| `min-height: 100dvh` (hoy) | 1400 | 1338,3 | 1400 | **0** |
+| `min-height: 1340px` (dvh 60 px corto) | 1340 | 1278,3 | 1340 | **60** |
+| cadena de porcentajes, con el dvh corto puesto | 1400 | 1338,3 | 1400 | **0** |
+
+Es decir: un `dvh` que resuelve N píxeles corto pone la barra exactamente N
+píxeles arriba. Eso **es** el síntoma reportado.
+
+*El arreglo.* `html, body { height: 100% }` y una tercera declaración
+`min-height: 100%` después de las de `vh`/`dvh`. Un porcentaje se resuelve
+contra el bloque contenedor —el viewport de layout, fijado en el primer
+layout— y no contra la unidad dinámica que WebKit recalcula tarde. Se eligió
+sobre las dos alternativas con JavaScript (un listener de
+`visualViewport.resize` al montar, o escribir `visualViewport.height` a una
+custom property) porque **no agrega JavaScript a algo que hoy es CSS puro**:
+las dos con JS dependen de que el valor que lee el JS ya esté asentado, que
+es justamente lo que está en duda. Las líneas de `vh`/`dvh` se quedan de piso.
+Cero cambios de JSX.
+
+*Lo que NO se puede afirmar desde este VPS, y hay que decirlo entero:*
+**Chromium no reproduce el bug de WebKit** — 24 combinaciones (4 viewports ×
+6 pantallas), hueco debajo de la barra **0 en el primer paint, 0 con los datos
+cargados y 0 después de un scroll**, antes y después del cambio. Y tampoco se
+pudo emular `display-mode: standalone`: `Emulation.setEmulatedMedia` con esa
+feature no mueve `matchMedia('(display-mode: standalone)')` en
+chrome-headless-shell, que siguió diciendo `false`. Lo que sí está medido acá
+es que el cambio **no mueve un píxel**: 18 combinaciones (3 anchos × 6
+pantallas) con el mismo `docH`, el mismo `navTop` y el mismo `navBottom`.
+**La confirmación depende del iPhone de Luis.**
+
+**b · El "hace X" contaba desde que la toma EMPEZABA.** La tarjeta de Comida
+de Today mostraba `timeAgo(lastFeed.at)`, y para una toma de pecho ese `at`
+era `started_at`. Una toma de 45 minutos recién terminada decía **"1h 35m
+ago"** cuando lo cierto era **"50m ago"** (medido en el navegador con esos
+datos exactos). Es el mismo criterio que `lastFeedingEnd` (lib/schedule.ts) ya
+aplicaba desde el 24 sep para el countdown: hasta hoy **las dos líneas de la
+misma tarjeta se contradecían** — una fechaba el evento en su inicio y la otra
+en su fin.
+
+El campo se llama ahora `endedAt` y el instante también **ordena**: un biberón
+de las 10:20 no es más reciente que una toma que empezó a las 10:00 y terminó
+a las 10:40. Con el criterio viejo ganaba el biberón y la tarjeta nombraba el
+evento equivocado. Hay test que falla si alguien lo revierte.
+
+*Dónde más se buscó el patrón* (todos los usos de `timeAgo` del repo, no solo
+el primero): `/dashboard` Pañal (`changed_at`) y Dormir (`ended_at`) ya
+contaban bien; `/settings` (rotación y última lectura del feed de calendario)
+y `components/SyncStatus.tsx` (copia guardada, rechazo encolado) son eventos
+puntuales, no tienen fin. **El único sitio con el defecto era la tarjeta de
+Comida.** `/history` y las tres pantallas de sección no muestran tiempo
+relativo: muestran la hora y el rango.
+
+**c · El selector de semana tocaba la primera tarjeta.** En `/statistics` el
+selector vive en una tarjeta suelta **arriba** de la grilla, no adentro (en
+`/feeding`, `/diapers` y `/sleep` está adentro, y ahí el `gap` de `.grid` ya
+lo separa). Fuera de la grilla no recibe ese gap: medido, **0 px** entre el
+borde de abajo del selector y el borde de arriba de la primera tarjeta, a 390
+y a 1440. Ahora `var(--col-gap)` — el mismo separador que usan las tarjetas
+entre sí — deja **12 px** en el teléfono y **20 px** en la pared. No es un
+valor nuevo.
+
+**Barrido de esta vuelta** (chrome-headless-shell, **12 pantallas × 3 anchos ×
+2 temas × 2 idiomas = 144 combinaciones**, antes y después del cambio, con una
+semana de datos sembrada): `horizScroll` **0 de 144**, texto cortado **0**,
+fallas de contraste AA **0** sobre 7 760 elementos de texto en 48 cargas.
+Idéntico antes y después: **0 regresiones**. Cada fila registra el `<h1>` real
+y el `location.pathname`, y el barrido aborta si una pantalla privada
+renderizó `/login` — la trampa de §5.17.
+
+**Lo que el barrido encontró y NO se tocó** está en §8, marcado para decidir:
+los targets táctiles de `.linkish` y del toggle oz/ml, y el desborde de
+`/pumping` a 1440 en español.
+
+### 5.19 El piso táctil, y la fila de lados que no entraba (25 sep 2026)
+
+Los dos hallazgos que el barrido del 25 sep dejó anotados en §8 "para que
+decida Luis". Los aprobó, y acá están con su medición antes/después. Los dos
+son de medición, no de gusto.
+
+**a · `--tap-min`: el piso táctil pasa a ser un token.**
+
+Hasta hoy convivían dos números y un solo nombre. `--tap` (52 px en el
+teléfono, **84 px en la pared**) es el tamaño **cómodo**, el que se toca a una
+mano a las 3 de la mañana o desde parado del otro lado del cuarto. El **piso**
+de la guía —44 px— no es eso: es el mínimo por debajo del cual un control no se
+toca bien, y **no crece con la superficie**. Estaba escrito a mano en seis
+reglas (`.pill`, `.tab`, `.gear`, `.nav-menu-version`, `.seg-btn` y una regla
+suelta de `.feed-actions`) y no estaba en ninguna que lo necesitara.
+
+Ahora es `--tap-min: 44px`, un token del `:root`, **sin** redefinición en el
+`@media` de la pared — a propósito: un piso que crece no es un piso.
+
+Lo que pasó a usarlo, y lo que medía antes (390/768/1440 px, dos temas, dos
+idiomas, con una semana de datos sembrada):
+
+| Control | Dónde | Antes | Después |
+|---|---|---|---|
+| `.linkish` "lb / in" | `/growth` | **47,6 × 18** (66,7 × 24 a 1440) | 47,6 × **44** (66,7 × 44) |
+| `.linkish` del alta | `/login` | **219,5 × 18** (236,2 × 18 en español) | 219,5 × **44** |
+| `.linkish` "Edit" | log de `/feeding`, `/diapers`, `/sleep`, `/pumping`, `/growth`, `/history` | **33,3 × 44** | **44** × 44 |
+| `.seg-inline .seg-btn` oz/ml | `/dashboard` | **36 × 52** | **44** × 52 |
+
+El "Edit" tenía el alto y no el ancho porque el alto se lo daba
+`.feed-actions .linkish { min-height: 44px }` y el ancho no se lo daba nadie.
+Esa regla **se borró**: el piso es de `.linkish`, en las dos dimensiones, y
+`inline-flex` con el texto centrado — el área crece **alrededor** de la
+palabra, no la corre de lugar. El segmento oz/ml no es `.linkish`: su
+`min-width: 3em` es lo que iguala "oz" con "ml" para que el pill no baile al
+cambiar de unidad, y con `--t-meta` a 12 px eso daba 36 px. Se conservó el
+igualado y se le puso el piso: `max(3em, var(--tap-min))`.
+
+*Medición.* Barrido de **144 combinaciones** (12 pantallas × 3 anchos × 2 temas
+× 2 idiomas) antes y después, con el `<h1>` y el `location.pathname` de cada
+fila registrados y la trampa de §5.17 armada (0 filas renderizaron `/login`).
+Controles por debajo de 44 px en cualquiera de sus dos dimensiones:
+**11 distintos → 0**. `horizScroll` 0 de 144 en las dos corridas.
+
+*Y lo que mueve de espaciado, que es lo que hacía a esto una decisión.* Alto de
+documento, 7 pantallas × 3 anchos × 2 idiomas = 42 combinaciones, antes → después:
+
+| Pantalla | 390 | 768 | 1440 |
+|---|---|---|---|
+| `/growth` | +26 px | +26 px | +20 px |
+| `/history` | +35 px (sólo inglés) | 0 | 0 |
+| `/pumping` | 0 | 0 | +96 px (sólo español, ver **b**) |
+| `/dashboard`, `/feeding`, `/diapers`, `/sleep` | 0 | 0 | 0 |
+
+`/growth` sube exactamente lo que crece el toggle (44 − 18 = 26 en el teléfono,
+44 − 24 = 20 en la pared), porque vive en un `.between` junto al título.
+`/history` sube un renglón a 390 en inglés y sólo ahí: "Edit" pasa de 33,3 a
+44 px de ancho y una fila del log envuelve una vez más. **Las otras 39
+combinaciones dan 0 px de diferencia**, con **0 texto cortado** y **0 scroll
+horizontal** antes y después.
+
+**b · La fila de lados de `/pumping` no entraba, y la métrica vieja no lo veía.**
+
+"Izquierdo / Derecho / Ambos" a 1440 px: `scrollWidth` **425** contra
+`clientWidth` **401**. Veinticuatro píxeles que se salen de la caja. En inglés
+("Left / Right / Both") entra; a 390 y 768 entra en los dos idiomas, porque el
+tipo es más chico — el desborde existe **sólo** a 1440 en español, donde
+`--t-body` pasa a 21 px.
+
+Lo importante no es el desborde: es **por qué pasó por bueno el 23 sep**. Aquel
+barrido medía `document.documentElement.scrollWidth - clientWidth`, o sea
+scroll horizontal **de página**. Un hijo que se sale de un contenedor flex no
+produce eso: la página no crece, el contenido se monta sobre el borde de la
+tarjeta. La métrica que sí lo ve es **`scrollWidth - clientWidth` del propio
+contenedor**, y es la que hay que usar de acá en adelante.
+
+*El arreglo, y lo que deliberadamente no se tocó.* `.row` sigue siendo
+`display: flex` **sin** `flex-wrap`. Eso es deliberado y `.row-wrap` existe
+como clase aparte justamente para pedirlo donde hace falta (ya lo usaban la
+fila del biberón de `/dashboard` y una de `SectionPage`). Así que el cambio son
+**dos `className`** en `app/pumping/page.tsx` —el formulario de alta y el panel
+de edición—, de `row` a `row row-wrap`. Cero CSS nuevo, cero token nuevo.
+
+Después: desborde interno **24 → 0** en las 144 combinaciones, `horizScroll` 0
+en todas. Cuesta **+96 px** de alto de documento a 1440 en español: "Ambos"
+baja a un segundo renglón y en la pared un botón mide `--tap` = 84 px más el
+`gap`. Envolver es lo que hace la fila del biberón por el mismo motivo.
 
 ### Verificación de esta sección (20 sep 2026)
 
@@ -1151,6 +1342,22 @@ exportados. **Por definir.**
   `stroke="currentColor"`, `strokeWidth="1.75"`. Desde el 21 sep 2026 el engranaje de tablet/pared también es el
   SVG `settings` (el mismo de la barra del teléfono, solo, 1.3em dentro del
   círculo de 44px), no el glifo `⚙`.
+- *(Cerrado el 25 sep 2026, v0.10.3 — **targets táctiles por debajo de 44 px**.
+  Medido en el barrido de 144 combinaciones, era todo **previo** a aquel pase:
+  `.linkish` era `padding: 0` sin `min-height`, y sólo `.feed-actions .linkish`
+  recibía el alto. Los números de antes: "lb / in" de `/growth` **47,6 × 18**
+  (66,7 × 24 en la pared); "Need an account? Sign up" de `/login`
+  **219,5 × 18**; el "Edit" del log en seis pantallas **33,3 × 44**; el toggle
+  oz/ml de `/dashboard` **36 × 52**. Se dejó abierto porque mover el piso de
+  `.linkish` mueve el espaciado de siete pantallas a la vez — una decisión de
+  diseño, no un arreglo. Luis la tomó y está hecha: ver §5.19.)*
+- *(Cerrado el 25 sep 2026, v0.10.3 — **`/pumping` desbordaba su tarjeta 24 px
+  a 1440 px en español**. La fila "Izquierdo / Derecho / Ambos", `scrollWidth`
+  425 contra `clientWidth` 401. No producía scroll horizontal de página, que
+  es por lo que un chequeo a nivel página no lo veía. `.row` sigue **sin**
+  `flex-wrap` —el no-wrap es deliberado y `.row-wrap` existe aparte— y lo que
+  cambió son las dos filas de `/pumping`, que ahora son `row row-wrap`.
+  Ver §5.19.)*
 - **`docs/design/preview.html`** es una preview visual standalone (storage
   temporal del browser, sin backend). **Puede desincronizarse del dashboard
   real** — no lo trates como fuente de verdad de diseño. Vivía en la raíz

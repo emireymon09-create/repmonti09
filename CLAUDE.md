@@ -961,6 +961,71 @@ saber de cada frente:
   manual nuevo en la nube es aplicar `0012`** — ni Vault, ni cron, ni variables
   nuevas. Detalle en `docs/aplicar-en-la-nube-0012.md`.
 
+**Tres arreglos del 25 sep 2026 (v0.10.1).** (1) La barra de abajo nacía unos
+píxeles arriba al abrir la app **de cero** en un iPhone instalado y se asentaba
+sola al primer scroll — mecanismo distinto al de §5.11, que ya está cerrado.
+`.page` se anclaba con `min-height: 100dvh` y el `dvh` es lo que WebKit
+recalcula tarde; ahora hay `html, body { height: 100% }` y un
+`min-height: 100%` después de las líneas de `vh`/`dvh`, que no dependen de esa
+unidad. **Chromium no reproduce el bug de WebKit y `display-mode: standalone`
+no se pudo emular en chrome-headless-shell** — lo medido acá es que el cambio
+no mueve un píxel (18 combinaciones idénticas) y que un `dvh` corto produce
+exactamente el síntoma; **la confirmación depende del iPhone de Luis**.
+(2) El "hace X" de la tarjeta de Comida de Today contaba desde que la toma
+**empezaba**: una toma de 45 min recién terminada decía "1h 35m ago" en vez de
+"50m ago". `lastFeedingEvent` (`lib/kpis.ts`) pasó de `at` a **`endedAt`**, y
+ese instante también **ordena** — un biberón del medio de una toma larga ya no
+le roba el lugar. Era el **único** lugar del repo con el patrón (se revisaron
+los seis usos de `timeAgo`). (3) `/statistics`: el selector de semana estaba
+pegado borde con borde a la primera tarjeta (**0 px** medidos a 390 y 1440);
+ahora los separa `--col-gap` (12 px / 20 px). Detalle y números: `design.md`
+§5.18.
+
+**Hallazgos del barrido general del 25 sep** (144 combinaciones: 12 pantallas ×
+3 anchos × 2 temas × 2 idiomas; `horizScroll` 0, texto cortado 0, contraste AA
+0 fallas sobre 7 760 elementos): targets táctiles de `.linkish` y del toggle
+oz/ml por debajo de 44 px, y el desborde de 24 px de `/pumping` a 1440 en
+español — que **contradecía lo que este archivo decía más abajo** sobre ese
+recorte. Quedaron sin tocar ese día porque los dos eran decisiones de diseño,
+no arreglos sin ambigüedad. **Luis los aprobó y se cerraron el mismo 25 sep
+2026 (v0.10.3)** — ver el párrafo siguiente.
+
+**Los dos arreglos que faltaban del 25 sep 2026 (v0.10.3).**
+
+- **Todo target táctil llega a 44 × 44 px.** `.linkish` era `padding: 0` sin
+  ningún mínimo, así que su área de toque era la de su texto: medido con datos
+  reales, **47,6 × 18** el toggle "lb / in" de `/growth` (66,7 × 24 en la
+  pared), **219,5 × 18** el enlace de `/login` (236,2 en español), **33,3 × 44**
+  el "Edit" de cada fila del log en `/feeding`, `/diapers`, `/sleep`,
+  `/pumping`, `/growth` e `/history` —el alto se lo daba una regla suelta de
+  `.feed-actions`, el ancho no se lo daba nadie— y **36 × 52** el segmento
+  oz/ml de `/dashboard` (`.seg-inline .seg-btn`, `min-width: 3em` = 36 px con
+  `--t-meta` a 12 px). El piso pasó a ser un **token, `--tap-min: 44px`**, que
+  es otra cosa que `--tap` (52 px en el teléfono, 84 en la pared: el tamaño
+  *cómodo*, no el mínimo). `--tap-min` lo aplica `.linkish` en las **dos**
+  dimensiones, `.seg-inline .seg-btn` como `max(3em, var(--tap-min))`, y
+  reemplaza los **seis 44px sueltos** que ya había en `.pill`, `.tab`, `.gear`,
+  `.nav-menu-version`, `.seg-btn` y la regla de `.feed-actions` (esa última se
+  borró: el piso ahora es de `.linkish`). **Medido antes y después, 144
+  combinaciones cada vez:** targets por debajo de 44 px **11 distintos → 0**.
+  Lo que mueve de espaciado, medido en 42 combinaciones (7 pantallas × 3 anchos
+  × 2 idiomas): sólo tres se mueven — `/growth` **+26 px** a 390/768 y **+20**
+  a 1440 (el toggle pasa de 18/24 a 44 de alto), `/history` **+35 px** sólo a
+  390 en inglés (una fila del log envuelve un renglón más), y `/pumping`
+  **+96 px** a 1440 en español, que es el arreglo de abajo. Las otras 39
+  combinaciones dan **0 px de diferencia**, con 0 texto cortado y 0 scroll
+  horizontal.
+- **`/pumping` ya no desborda su tarjeta a 1440 px en español.** La fila
+  "Izquierdo / Derecho / Ambos" tenía `scrollWidth` 425 contra `clientWidth`
+  401: **24 px** que se salían de la caja sin producir scroll horizontal de
+  página, que es lo único que medía el barrido del 23 sep — por eso había
+  pasado por bueno. `.row` es flex **sin** `flex-wrap` a propósito (existe
+  `.row-wrap` como clase aparte), así que **no se tocó `.row`**: las dos filas
+  de lados de `/pumping` (el formulario y el panel de edición) pasaron a
+  `row row-wrap`, el mismo recurso que ya usaba la fila del biberón de
+  `/dashboard`. Medido después: desborde interno **24 px → 0** en las 144
+  combinaciones, `horizScroll` 0 en todas.
+
 **No construido:**
 
 - *(Cerrado el 24 sep 2026: `/statistics` no dibujaba nada. Era el hueco
@@ -1016,7 +1081,17 @@ saber de cada frente:
   §8. A 390 y 1440, en los dos temas y los dos idiomas, las 10 páginas dan
   **0 desbordes y 0 scroll horizontal** (barrido de 40 combinaciones, 23 sep
   2026) — incluido `/pumping` a 1440 en español, que antes de este cierre
-  recortaba.
+  recortaba. **Corregido el 25 sep 2026: eso último era falso.** En el barrido
+  de 144 combinaciones, `/pumping` a **1440 px en español** seguía desbordando
+  su tarjeta **24 px** (la fila "Izquierdo / Derecho / Ambos"; `.row` es flex
+  sin `flex-wrap` y la columna mide 401 px). No producía scroll horizontal de
+  página, que es lo único que medía el barrido del 23 sep, y por eso pasó por
+  bueno. *(Cerrado ese mismo día en v0.10.3: las dos filas de lados de
+  `/pumping` llevan `row-wrap`. 24 px → 0. Se deja escrita la historia porque
+  la lección no es el desborde, es que **el barrido del 23 sep medía la métrica
+  equivocada**: scroll horizontal de página no ve un hijo que se sale de un
+  contenedor flex. La métrica que sirve es `scrollWidth - clientWidth` del
+  propio contenedor.)*
 - **Dos pestañas corriendo el mismo inicio: una corrección se pierde.**
   El offset es read-modify-write sin `If-Match`. Dos pestañas que apliquen −5
   cada una leyendo el mismo valor escriben el mismo resultado y el segundo −5

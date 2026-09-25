@@ -4,6 +4,21 @@ Every version of Amelia, newest first. The current version is the `version`
 field in `package.json`; this file is the history. A test fails if the two
 disagree. Shown in the app under the settings gear → Version history.
 
+## [0.10.3] - 2026-09-25
+
+Two fixes about things that were hard to hit or spilled off the card.
+
+- **Every button and link is now at least 44 by 44 pixels.** Several of them
+  were text with no padding, so the area that actually responded to a tap was
+  only as big as the word: the "lb / in" switch on Growth was 18 pixels tall,
+  the "Need an account? Sign up" link on the sign-in screen the same, "Edit"
+  on every log row was 33 pixels wide, and the oz/ml switch on Today was 36.
+  They are all comfortably tappable now. Growth and the sign-in screen are a
+  little taller as a result; nothing else moved.
+- **Milk: the Left / Right / Both row no longer spills off its card.** On the
+  wall screen in Spanish the three buttons did not fit the column and ran
+  over the edge of the card. They now wrap onto a second line instead.
+
 ## [0.10.2] - 2026-09-25
 
 One security fix. Nothing about the app itself changed.
@@ -18,6 +33,24 @@ One security fix. Nothing about the app itself changed.
   when it is missing and refuses a `-H` that is not loopback before any port
   is opened; `pnpm exec next`, `npx next` and `./node_modules/.bin/next` are
   covered as well.
+
+## [0.10.1] - 2026-09-25
+
+Three fixes, all reported from real use.
+
+- **The "ago" line on Today's Feeding card now counts from when the feeding
+  ended, not from when it began.** A 45-minute breast feed that had just
+  finished said "1h 35m ago"; it now says "50m ago". The same instant also
+  decides *which* feeding is the latest, so a bottle logged in the middle of
+  a longer breast feed no longer takes its place on the card.
+- **The bottom bar no longer starts up a few pixels above the bottom edge.**
+  On an iPhone with the app installed, opening it from cold left the bar
+  floating just above the edge until the first scroll. The bar is now
+  anchored to the window in a way that does not wait for the browser to
+  settle.
+- **Statistics: the week picker no longer touches the first card.** The two
+  cards sat edge to edge; they are now separated by the same gap the other
+  cards use.
 
 ## [0.10.0] - 2026-09-24
 

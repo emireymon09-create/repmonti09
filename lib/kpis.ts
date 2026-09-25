@@ -197,30 +197,43 @@ export function sleepKpis(
 // --------------------------------------------------------------- dashboard
 
 export type LastFeeding =
-  | { kind: 'feeding'; at: string; row: WithPending<Feeding> }
-  | { kind: 'nursing'; at: string; row: WithPending<NursingSession> & { ended_at: string } }
+  | { kind: 'feeding'; endedAt: string; row: WithPending<Feeding> }
+  | { kind: 'nursing'; endedAt: string; row: WithPending<NursingSession> & { ended_at: string } }
 
 /**
  * The feeding the dashboard's Feeding card names: the most recent of the
  * logged feedings and the FINISHED nursing sessions (a running one has its
- * own stopwatch). A session is placed at its start — when the feeding
- * began, which is also what the next-feeding prediction measures from.
+ * own stopwatch).
+ *
+ * DESDE CUÁNDO SE CUENTA: desde que el evento **terminó**, no desde que
+ * empezó. Hasta el 25 sep 2026 este campo se llamaba `at` y para una toma de
+ * pecho valía `started_at`, así que el "hace X" de la tarjeta de Comida
+ * contaba desde el arranque: una toma de 45 minutos que acababa de terminar
+ * decía "45m ago". Es el mismo criterio que `lastFeedingEnd`
+ * (lib/schedule.ts) ya usa para el countdown desde el 24 sep — acá faltaba.
+ *
+ * El instante también es el que **ordena**: un biberón de las 10:20 no es
+ * más reciente que una toma que empezó a las 10:00 y terminó a las 10:40.
+ * Ordenar por el inicio elegía el biberón y nombraba el evento equivocado.
+ *
+ *   · `feedings` → `fed_at`: evento puntual, no tiene fin separado.
+ *   · `nursing_sessions` terminada → `ended_at`.
  */
 export function lastFeedingEvent(
   feedings: WithPending<Feeding>[],
   nursing: WithPending<NursingSession>[],
 ): LastFeeding | null {
   let best: LastFeeding | null = null
-  const later = (at: string) => !best || new Date(at).getTime() > new Date(best.at).getTime()
+  const later = (at: string) => !best || new Date(at).getTime() > new Date(best.endedAt).getTime()
   for (const f of feedings) {
-    if (later(f.fed_at)) best = { kind: 'feeding', at: f.fed_at, row: f }
+    if (later(f.fed_at)) best = { kind: 'feeding', endedAt: f.fed_at, row: f }
   }
   for (const n of nursing) {
     if (!n.ended_at) continue
-    if (later(n.started_at)) {
+    if (later(n.ended_at)) {
       best = {
         kind: 'nursing',
-        at: n.started_at,
+        endedAt: n.ended_at,
         row: n as WithPending<NursingSession> & { ended_at: string },
       }
     }

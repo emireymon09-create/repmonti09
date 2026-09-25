@@ -63,6 +63,13 @@
   --r-card: 16px;
   --r-control: 12px;
   --tap: 52px; /* >= 44px floor, sized for one-handed use */
+  /* El PISO táctil, que es otra cosa que `--tap`. `--tap` es el tamaño cómodo
+     y crece a 84px en la pared; éste es el mínimo por debajo del cual un
+     control no se toca bien, y no crece con la superficie. Ya era el número
+     de los controles secundarios (tabs, pills, el engranaje, los segmentos),
+     escrito a mano en seis reglas; desde el 25 sep 2026 es un token y lo usa
+     también `.linkish`, que era `padding: 0` sin mínimo. */
+  --tap-min: 44px;
   --measure: 520px; /* the phone column */
   --col-gap: 12px;
   --cols: 1;
@@ -173,6 +180,26 @@
 *::before,
 *::after {
   box-sizing: border-box;
+}
+
+/* `height: 100%` no es decorativo: es lo que ancla la barra de abajo.
+   -------------------------------------------------------------------
+   La barra es `sticky` dentro de `.page`, y `.page` llega al fondo de la
+   pantalla por su `min-height`. Ese `min-height` era `100dvh` a secas, y el
+   dvh es la unidad que WebKit recalcula tarde: en un iPhone con la app
+   instalada, al cargar DE CERO, la barra nacía unos píxeles arriba de su
+   lugar y se asentaba sola al primer scroll (reporte de Luis, 25 sep 2026).
+   Un porcentaje se resuelve contra el bloque contenedor —el viewport de
+   layout, que ya está fijado en el primer layout— en vez de contra la unidad
+   dinámica, así que no depende de ese recálculo. Para que `min-height: 100%`
+   en `.page` tenga contra qué resolverse, html y body necesitan un alto
+   definido; el contenido más alto que la pantalla desborda y scrollea igual
+   (medido: mismo docH, mismo navTop y mismo navBottom en 18 combinaciones).
+   Las líneas de `100vh`/`100dvh` se quedan como piso para un motor que no
+   resuelva la cadena de porcentajes. */
+html,
+body {
+  height: 100%;
 }
 
 html,
@@ -434,6 +461,9 @@ body {
   flex-direction: column;
   min-height: 100vh;
   min-height: 100dvh;
+  /* Última: gana donde la cadena html/body de arriba resuelve. Ver el comentario
+     de `html, body { height: 100% }` — es el ancla que no depende del dvh. */
+  min-height: 100%;
 }
 .empty-fill {
   flex: 1 1 auto;
@@ -684,6 +714,14 @@ select.input {
   text-align: start;
 }
 
+/* Un enlace-botón: parece texto, pero se toca. Hasta el 25 sep 2026 era
+   `padding: 0` sin ningún mínimo, así que su área táctil era la de su texto:
+   medido, 47,6×18 el toggle "lb / in" de /growth, 219,5×18 el enlace de
+   /login, y 33,3×44 el "Edit" de cada fila del log (el alto se lo daba una
+   regla suelta de `.feed-actions`, el ancho no se lo daba nadie). Ahora el
+   piso de `--tap-min` va en las DOS dimensiones y para todos: `inline-flex`
+   con el texto centrado, para que el área crezca alrededor de la palabra y
+   no la corra de lugar. */
 .linkish {
   background: none;
   border: none;
@@ -694,6 +732,11 @@ select.input {
   font-family: inherit;
   cursor: pointer;
   text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tap-min);
+  min-width: var(--tap-min);
 }
 
 .pill {
@@ -702,7 +745,7 @@ select.input {
   color: var(--c-accent);
   border-radius: 999px;
   padding: var(--s-3) var(--s-4);
-  min-height: 44px;
+  min-height: var(--tap-min);
   font-size: var(--t-body);
   font-weight: 600;
   font-family: inherit;
@@ -737,7 +780,7 @@ select.input {
 }
 .tab {
   padding: var(--s-3) var(--s-4);
-  min-height: 44px;
+  min-height: var(--tap-min);
   border-radius: 999px;
   font-size: var(--t-body);
   font-weight: 600;
@@ -761,8 +804,8 @@ select.input {
   margin-left: auto;
 }
 .gear {
-  width: 44px;
-  height: 44px;
+  width: var(--tap-min);
+  height: var(--tap-min);
   border-radius: 999px;
   background: none;
   border: 1px solid var(--c-line);
@@ -864,7 +907,7 @@ select.input {
 .nav-menu-version {
   align-self: flex-end;
   padding: var(--s-2) var(--s-3);
-  min-height: 44px;
+  min-height: var(--tap-min);
   display: inline-flex;
   align-items: center;
   font-size: var(--t-meta);
@@ -897,7 +940,7 @@ select.input {
 }
 .seg-btn {
   flex: 1;
-  min-height: 44px;
+  min-height: var(--tap-min);
   padding: var(--s-2) var(--s-3);
   border: none;
   border-radius: var(--r-control);
@@ -928,9 +971,13 @@ select.input {
 }
 .seg-inline .seg-btn {
   flex: none;
-  min-width: 3em;
+  /* 3em es lo que iguala "oz" con "ml"; con `--t-meta` a 12px eso daba 36px
+     de ancho y el segmento quedaba en 36×52 — alto de sobra, ancho por
+     debajo del piso (medido el 25 sep 2026). El `max` conserva el igualado
+     y le pone el piso: manda el que sea mayor en cada superficie. */
+  min-width: max(3em, var(--tap-min));
   padding: var(--s-2);
-  /* --tap, no el piso de 44px de `.seg-btn`. Ese piso es el de los controles
+  /* --tap, no el piso de --tap-min de `.seg-btn`. Ese piso es el de los controles
      secundarios (§1 de design.md: tabs, pills, el engranaje) y le alcanza a
      un segmento de /settings, que se toca una vez por mes. Éste vive en la
      fila de registro que se usa a una mano a las 3 de la mañana, al lado de
@@ -1013,6 +1060,10 @@ select.input {
     flex-direction: column;
     min-height: 100vh;
     min-height: 100dvh;
+    /* Última a propósito: ver `html, body { height: 100% }` arriba. El dvh
+       queda de piso; el porcentaje es el que ancla la barra al cargar de
+       cero, que es cuando el dvh todavía no está asentado en WebKit. */
+    min-height: 100%;
     padding-bottom: 0;
   }
   /* La barra de abajo: `sticky`, no `fixed`.
@@ -1180,12 +1231,9 @@ select.input {
   display: flex;
   gap: var(--s-4);
 }
-/* Edit / Delete are text, but still get the 44px touch floor. */
-.feed-actions .linkish {
-  min-height: 44px;
-  display: inline-flex;
-  align-items: center;
-}
+/* Edit / Delete llevaban acá su piso de alto — y sólo de alto, por eso "Edit"
+   medía 33,3×44. Desde el 25 sep 2026 el piso es de `.linkish`, en las dos
+   dimensiones, así que esta regla dejó de hacer falta. */
 .linkish:disabled {
   opacity: 0.45;
   cursor: default;
@@ -1405,6 +1453,16 @@ select.input {
 .weekpick-btn:disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+/* En /statistics el selector vive en una tarjeta suelta ARRIBA de la grilla,
+   no adentro (en las tres pantallas de sección sí está adentro, y ahí el
+   `gap` de .grid ya lo separa). Fuera de la grilla no recibe ese gap y la
+   tarjeta del selector quedaba pegada borde con borde a la primera tarjeta
+   de datos: **0 px medidos** a 390 y a 1440 el 25 sep 2026. El separador es
+   el mismo --col-gap que separa las tarjetas entre sí, no un valor nuevo. */
+.page > .card:has(.weekpick) {
+  margin-bottom: var(--col-gap);
 }
 
 /* ------------------------------------------------------ next appointment card */
