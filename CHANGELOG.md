@@ -4,6 +4,19 @@ Every version of Amelia, newest first. The current version is the `version`
 field in `package.json`; this file is the history. A test fails if the two
 disagree. Shown in the app under the settings gear → Version history.
 
+## [0.10.6] - 2026-09-25
+
+Nothing in the app changed. This one is written down for the people who keep it
+running.
+
+- **The first backup of the real database now exists, and it is written down how
+  to make the next one.** Until today there was no copy of Amelia's data
+  anywhere. There is one now — made by hand, kept off this server — and the
+  steps to repeat it are recorded, along with what is still missing: nothing
+  makes the next copy on its own, and the plan the database runs on does not
+  make them either. The two ways out are laid out with their trade-offs; neither
+  is chosen here.
+
 ## [0.10.5] - 2026-09-25
 
 Housekeeping you cannot see, on the machinery underneath.

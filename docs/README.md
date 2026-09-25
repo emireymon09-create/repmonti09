@@ -41,7 +41,7 @@ hueco con una suposición presentada como hecho.
 | [`manual-buenas-practicas.md`](manual-buenas-practicas.md) | Cómo se escribe código en este repo y por qué. Lectura de una vez, consulta después. |
 | [`checklist-cada-cambio.md`](checklist-cada-cambio.md) | La lista que se recorre **en cada cambio**, antes y después de escribir. |
 | [`prompt-auditoria-codigo.md`](prompt-auditoria-codigo.md) | El prompt pegable para auditar el repo entero. Reporta, no corrige. |
-| [`seguridad-operacional.md`](seguridad-operacional.md) | Reglas del servidor, los secretos y las llaves. |
+| [`seguridad-operacional.md`](seguridad-operacional.md) | Reglas del servidor, los secretos y las llaves. Incluye §10, el procedimiento de backup de la base de producción. |
 | [`aplicar-en-la-nube.md`](aplicar-en-la-nube.md) | **Para Luis, a mano, una sola vez.** Aplicar 0009/0010/0011 en el proyecto Supabase de la nube y prender el cron del aviso de toma larga. El agente no puede: este VPS no tiene credenciales de producción. |
 | [`aplicar-en-la-nube-0012.md`](aplicar-en-la-nube-0012.md) | **Para Luis, a mano, una sola vez, DESPUÉS del anterior.** Aplicar 0012 (umbrales de familia, recordatorio de cita, feed de calendario). Es un solo paso: no hay secretos de Vault ni cron nuevo. |
 | [`handoff-metodologia.md`](handoff-metodologia.md) | El **proceso** con el que se construyó esto: dos sesiones con roles separados, dos mensajes por tarea, el flujo de 4 roles, las reglas de honestidad. No describe el producto. |

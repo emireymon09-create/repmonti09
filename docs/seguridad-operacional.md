@@ -298,3 +298,107 @@ registro está en los que no pasaron a mayores.
 > `.claude/CLAUDE.md` lo hace empezar vacío en cada sesión, así que cada pase
 > borra el registro del anterior. Lo que valga para la próxima vez no puede
 > vivir ahí — va en `docs/`.
+
+---
+
+## 10. Backups de la base de producción
+
+> **Estado al 25 sep 2026: existe UN backup manual y ninguna automatización.**
+> Antes de ese día no existía ninguno — ver `docs/handoff-2026-09-25.md` §6.1 y
+> la entrada #1 de su lista maestra.
+
+### 10.1 Qué se hizo, y por qué así
+
+El 25 sep 2026 Luis sacó el primer `pg_dump` de la base de producción. Los
+cuatro detalles que hacen que esto sea un procedimiento y no una anécdota:
+
+| Decisión | Qué se hizo | Por qué |
+|---|---|---|
+| **Dónde se corre** | En la **computadora Windows de Luis**. **No** en este VPS | Correrlo acá obliga a escribir la contraseña de la base de **producción** en una máquina que comparte espacio con otros proyectos y con sesiones de agente. §3 de este documento dice que un secreto no va donde no hace falta; la base de producción no hace falta desde acá, y `.env.local` de este VPS apunta a `127.0.0.1` justamente por eso (`CLAUDE.md` §2.1) |
+| **Qué conexión** | La **directa** del proyecto Supabase, **no el pooler** | El pooler de Supabase es de transacciones y no sostiene lo que `pg_dump` necesita (sesión larga, `SET`s de sesión, snapshot consistente). Con el pooler el dump falla o sale incompleto |
+| **Qué formato** | `pg_dump` en **formato custom** (`-Fc`) | Es el que `pg_restore` puede restaurar **selectivamente** (una tabla, sin los índices, sin los owners) y el que viene comprimido. Un `.sql` plano sólo se puede volcar entero |
+| **La contraseña** | Hubo que **resetearla** desde el panel de Supabase | La contraseña de la base se muestra **una sola vez**, cuando se crea el proyecto. No es recuperable: si no se guardó, la única salida es resetearla. **Ojo: resetearla invalida cualquier cadena de conexión guardada** que la lleve adentro |
+| **Dónde quedó** | `C:\Proyectos\Backups\Amelia App\` | Fuera del VPS y fuera de Supabase: un backup que vive en la misma máquina que lo que respalda no es un backup |
+
+### 10.2 Cómo repetirlo
+
+En la máquina de Luis, con `pg_dump` instalado (viene con PostgreSQL; **tiene
+que ser de una versión igual o más nueva que la del servidor**, si no se planta
+con `server version mismatch`):
+
+1. En el panel de Supabase → **Project Settings → Database**, copiar la cadena
+   de **Connection string → URI**, la de la **conexión directa** (`db.<ref>.
+   supabase.co`, puerto **5432**) — **no** la de *Connection pooling*
+   (puerto 6543).
+2. Si no se tiene la contraseña, **Reset database password** en esa misma
+   pantalla, y guardarla en el gestor de contraseñas **antes** de cerrarla.
+3. Correr el dump con la fecha en el nombre, para que dos backups no se pisen:
+
+   ```
+   pg_dump -Fc -d "postgresql://postgres:<PASS>@db.<ref>.supabase.co:5432/postgres" ^
+           -f "C:\Proyectos\Backups\Amelia App\amelia-prod-AAAA-MM-DD.dump"
+   ```
+
+4. **Verificar que el archivo sirve, que es lo único que lo convierte en un
+   backup.** Listar su contenido no requiere restaurar nada:
+
+   ```
+   pg_restore -l "C:\Proyectos\Backups\Amelia App\amelia-prod-AAAA-MM-DD.dump"
+   ```
+
+   Tienen que aparecer las 15 tablas del proyecto. Si sale vacío o corto, el
+   dump está mal y hay que repetirlo.
+
+**Dos cosas que conviene decidir explícitamente y anotar al lado del archivo:**
+
+- **Si el dump incluye el schema `auth`** (los usuarios y sus contraseñas) o
+  sólo `public`. Un dump de `public` restaura todos los datos de la bebé pero
+  **no los dos logins**: habría que volver a crear los usuarios y reconectar
+  `family_members.user_id`. Del backup del 25 sep **no se sabe** cuál de los dos
+  es — el agente no vio el comando.
+- **Que el archivo lleva datos personales de una menor.** Vale lo mismo que para
+  cualquier secreto de §3: no se sube a un repo, no se manda por chat y no se
+  deja en una carpeta compartida sin cifrar.
+
+### 10.3 Lo que falta para que esto sea sostenible — dos caminos, sin recomendación
+
+Hoy hay **una foto de un día** y nada que saque la siguiente. El plan de
+Supabase del proyecto es **Free**, que **no incluye backups automáticos**
+(*dicho por Luis; no verificado desde este VPS, donde no hay credenciales de la
+nube*). Las dos salidas, con sus contras, **para que decida el dueño**:
+
+**Opción A — automatizar el `pg_dump`.**
+
+- Un cron (o una tarea programada de Windows, o una GitHub Action) que corra el
+  dump cada N días y lo deje **fuera** de la máquina que respalda.
+- **A favor:** no cuesta plata; el formato y el destino los elegís vos; sirve
+  igual si algún día la base se muda fuera de Supabase.
+- **En contra:** la contraseña de producción tiene que vivir en algún lado donde
+  el proceso la lea, y elegir *dónde* es exactamente el problema que el
+  procedimiento manual evitó a propósito (§10.1). Si es la PC de Luis, sólo
+  corre cuando está prendida. Si es este VPS, contradice §10.1 y `CLAUDE.md`
+  §2.1. Si es una GitHub Action, el secreto se muda a GitHub y hay que confiar
+  en eso. Además hay que rotar los archivos viejos y **probar una restauración
+  de vez en cuando**, o se termina con 200 dumps que nadie sabe si sirven.
+
+**Opción B — subir a un plan de Supabase que incluya backups automáticos.**
+
+- **A favor:** backups diarios administrados, retención y restauración desde el
+  panel; no hay ninguna contraseña nueva en ninguna máquina; nadie se tiene que
+  acordar de nada.
+- **En contra:** es un gasto mensual recurrente; el backup queda **dentro del
+  mismo proveedor** que estás respaldando (no protege contra perder la cuenta,
+  que es el escenario donde una copia local sí salva); y la retención la define
+  el plan, no vos.
+
+**No son excluyentes** — la combinación habitual es B para el día a día y una
+corrida manual de A antes de cada cambio grande de schema. **La decisión es de
+Luis y este documento no la toma.**
+
+### 10.4 Lo que sigue sin resolverse
+
+- **No hay automatización de ninguna clase.** El único cron del usuario en este
+  VPS sigue siendo el vigía de puertos, cada 15 minutos.
+- **El backup del 25 sep no se probó restaurándolo.**
+- **La base local no necesita backup** y no lo tiene: son datos de prueba y
+  `pnpm db:reset` la reconstruye desde `supabase/migrations/`.
