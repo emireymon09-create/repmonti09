@@ -305,6 +305,17 @@ lib/i18n/react.tsx I18nProvider (montado en app/layout.tsx), useT(),
 lib/i18n/boot.ts   Script inline del <head>: fija <html lang> y `data-lang-pending`
                    antes del primer pintado. Tiene que decidir igual que
                    resolveLang() — el test lo verifica.
+lib/viewportBoot.ts   Script inline del <head> (25 sep 2026): MIDE
+                   `window.innerHeight` y lo escribe en píxeles en `--vh-full`,
+                   que es de dónde sale el `min-height` de `.page` y por lo tanto
+                   dónde termina la barra de abajo. Existe porque `100dvh` y
+                   `100%` fallaron los dos en el iPhone: las dos unidades
+                   preguntan cuánto mide la ventana cuando WebKit todavía no lo
+                   tiene asentado, y un valor N px corto sube la barra N px.
+                   Remide en `resize`/`orientationchange`/`pageshow`/
+                   `visualViewport.resize`. **No actualiza mientras hay un campo
+                   con foco**: en Android Chrome el teclado achica `innerHeight`
+                   y la barra treparía mientras se tipea. Ver design.md §5.20.
 lib/deviceAuth.ts  Auth de los endpoints de dispositivo: token por hash + scope,
                    resolución del bebé dentro de la familia del token, techo de
                    intentos, validación de payload.
@@ -630,10 +641,15 @@ próximo turno ni "Log a missed session"), las **tres páginas de sección**
 `/feeding`, `/diapers` y `/sleep`, **`/statistics`** (23 sep 2026 — la pantalla
 existe y es destino real, pero **todavía no dibuja nada**), Milk (extracción),
 Growth con editar/borrar (0008), Doctor, History con editar/borrar, PWA instalable, cola offline,
-**RLS en las 13 tablas** (las 11 originales; `device_tokens`, la 12ª, con RLS
-y **sin acceso** para `anon`/`authenticated` — solo `service_role`; y
-`push_subscriptions`, la 13ª desde 0009, con RLS por `family_id` **directo**,
-`revoke all` a `anon` y las cuatro operaciones a `authenticated`), los dos
+**RLS en las 15 tablas** (recontado el 25 sep 2026: acá decía 13 y era falso —
+`family_settings` y `calendar_feeds`, las dos de 0012, no se habían sumado.
+Son las 11 originales; `device_tokens`, la 12ª, con RLS y **sin acceso** para
+`anon`/`authenticated` — solo `service_role`; `push_subscriptions`, la 13ª
+desde 0009, con RLS por `family_id` **directo**, `revoke all` a `anon` y las
+cuatro operaciones a `authenticated`; y `family_settings` y `calendar_feeds`
+desde 0012. **15 tablas creadas, 15 con RLS**, verificado contra las
+migraciones y contra la base local: `pg_class` dice 15 de 15 con
+`relrowsecurity`), los dos
 endpoints de dispositivo, **tokens por dispositivo** (`device_tokens`,
 0007 — cada dispositivo tiene el suyo, revocable, clavado a una familia y
 opcionalmente a un bebé; reemplazó a los secretos compartidos
@@ -878,6 +894,7 @@ que el próximo check reintente.
 | `lib/push/retry.ts` — la política de 403: suma solo si otra del lote recibió, borra al tercero, "todas en 403" no borra nada ni toca contadores (VAPID del servidor), una sola suscripción en 403 nunca se borra sola, un OK reinicia la racha, un 410 no cuenta como 403 | `tests/unit/push.test.ts` |
 | Los dos caminos del 403 por el camino real (base + servicio de push falso): el selectivo (racha 1→2→3 y se borra SOLO la muerta), el OK que reinicia, "todas a la vez" tres veces seguidas sin borrar nada, y volver a suscribirse desde la ruta | `tests/integration/push.test.ts` |
 | `lib/push/{nursing,endpoint,client}.ts` — umbral de 30 min exacto e inclusivo, con offset horario y sin minutos negativos; una sesión terminada, borrada o ya avisada no califica; el payload en los dos idiomas, con tag y Topic por sesión; un `lang` guardado desconocido cae en inglés; a quién se le manda (un envío por endpoint, la fila más reciente, nadie que ya no sea de la familia); la allowlist de endpoints (nada de http, hosts internos, look-alikes, puertos ni credenciales); el body de suscripción campo por campo; y el estado del control cuando la suscripción del navegador es de otro par de claves VAPID o el server no contesta | `tests/unit/push.test.ts` |
+| `lib/viewportBoot.ts` — el script del `<head>` contra un navegador falso (`runInNewContext`, igual que el de i18n): escribe `--vh-full` en píxeles antes de cualquier evento, remide en `resize` y en `visualViewport.resize`, engancha los cuatro eventos de ventana, sobrevive sin `visualViewport`; y el guard del teclado — no actualiza con foco en `INPUT`/`TEXTAREA`/`SELECT`/`contenteditable`, un `DIV` común sí actualiza, la medición pendiente se aplica al salir del campo, y **saltar de un campo al siguiente no cuenta como salir** | `tests/unit/viewportBoot.test.ts` |
 | `lib/i18n` — `es` con exactamente las claves de `en`, sin vacías ni sin traducir y con las mismas variables; `translate` (interpolación, variable faltante visible, plurales); detección de idioma y elección guardada; que el script de `lib/i18n/boot.ts` decida igual que `resolveLang()`; `lib/format.ts` y `buildActivity` en español; `translate` con una clave armada desde datos que no existe; `describeWrite` | `tests/unit/i18n.test.ts` |
 | Aislamiento entre familias por RLS, por el camino real (PostgREST + JWT) | `tests/integration/rls.test.ts` |
 | Corregir y retractar `growth_measurements` sin cruzar de familia | `tests/integration/rls.test.ts` |
@@ -1025,6 +1042,50 @@ no arreglos sin ambigüedad. **Luis los aprobó y se cerraron el mismo 25 sep
   `row row-wrap`, el mismo recurso que ya usaba la fila del biberón de
   `/dashboard`. Medido después: desborde interno **24 px → 0** en las 144
   combinaciones, `horizScroll` 0 en todas.
+
+**La barra elevada en pantallas cortas — tercer intento, y el primero que no
+adivina el alto (25 sep 2026, v0.10.4).** Luis volvió a ver la barra levemente
+elevada en el iPhone después de v0.10.1, con un dato nuevo y más preciso:
+**solo donde el contenido no llena el alto de la pantalla** (`/dashboard`,
+`/growth`, `/appointments` vacías o con poco contenido). Eso identifica al
+culpable sin ambigüedad: en una pantalla corta, el `min-height` de `.page` es
+**lo único** que baja la barra al borde, y un `min-height` N px corto la sube N
+px — **sensibilidad medida 1:1** en las tres pantallas (contenedor 60 px corto →
+hueco 60 px exacto). Con contenido abundante el alto lo fija el contenido y el
+`min-height` no participa (`/feeding` a 390px: `pageH` 1241,7 contra
+`innerHeight` 844).
+
+Por qué los dos intentos anteriores no podían cerrarlo, y esto es lo que hay que
+no repetir: `100dvh` (v0.10.0) y después `100%` sobre `html, body { height: 100% }`
+(v0.10.1) **son la misma dependencia con otra ortografía** — el bloque
+contenedor de `html` *es* el viewport, así que el porcentaje pregunta lo mismo
+que el `dvh`, en el mismo instante en que WebKit todavía no lo tiene asentado.
+Y el segundo traía un defecto propio, reproducible en **cualquier** motor: el
+comentario decía que las líneas de `100vh`/`100dvh` quedaban "como piso" y
+**no quedaban** — `min-height: 100%` es la última declaración y gana la cascada,
+así que si el porcentaje no resuelve el `min-height` se vuelve `auto` en
+silencio (medido: 111 px de página contra 844 de ventana, y 146–251 px de barra
+trepada en las tres pantallas reales). Un piso que no existe es peor que no
+tener piso.
+
+El arreglo deja de predecir el alto y lo **mide**: `--vh-full` es ahora el único
+lugar que define "cuánto mide la ventana" (`100vh`, y `100dvh` bajo `@supports`),
+y `lib/viewportBoot.ts` le escribe **píxeles** medidos de `window.innerHeight`
+antes del primer pintado, remidiendo en `resize`, `orientationchange`,
+`pageshow` y `visualViewport.resize` — si WebKit asienta el viewport tarde, se
+corrige solo en vez de quedar mal toda la sesión. `.page` (teléfono) y
+`.page:has(.empty-fill)` pasaron de **tres declaraciones de `min-height` cada
+una a una sola**. Se lee `innerHeight` y no `visualViewport.height` porque en
+iOS el teclado achica el visual y la barra tiene que quedar en el borde de la
+**pantalla**; y no se actualiza con un campo enfocado porque en Android Chrome
+el teclado **sí** achica `innerHeight`. Barrido de **132 combinaciones** antes y
+después: hueco debajo de la barra **0 de 44** a 390px las dos veces,
+`horizScroll` 0, desborde 0, texto cortado 0, trampa de `/login` 0; lo único que
+cambió es el mecanismo (`min-height` computado **`100%` → `844px`**). Sin
+JavaScript el `min-height` resuelve a `844px` por el `100dvh`, o sea el piso
+ahora es real. **Chromium no reproduce el bug de WebKit: esto dice "no rompí
+nada", NO dice que el síntoma se fue — la confirmación depende del iPhone de
+Luis.** Detalle, tablas y la predicción falsable: `design.md` §5.20.
 
 **No construido:**
 
@@ -1179,7 +1240,9 @@ no arreglos sin ambigüedad. **Luis los aprobó y se cerraron el mismo 25 sep
   curso** (`app/dashboard/page.tsx`: la línea va dentro de `!activeNursing`).
   Es consecuencia de juntar lactancia y biberón en una sola tarjeta; no fue
   una decisión explícita.
-- **`components/SectionPage.tsx` quedó en ~1000 líneas** (995 el 22 sep 2026).
+- **`components/SectionPage.tsx` quedó en 1084 líneas** (`wc -l`, 25 sep 2026;
+  acá decía "~1000 (995 el 22 sep)" y venía quedando viejo a cada pase — el
+  selector de semana de vida del 24 sep le sumó el resto).
   Seguimiento propuesto: extraer el panel de edición, que hoy está **copiado**
   entre `SectionPage` y `/history`, no compartido.
 - *(Cerrado el 21 sep 2026: honestidad offline en `/growth`. Ahora usa

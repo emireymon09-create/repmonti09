@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from 'next'
 import { ServiceWorker } from '@/components/ServiceWorker'
 import { THEME_BOOT_SCRIPT } from '@/lib/themeBoot'
 import { LANG_BOOT_SCRIPT } from '@/lib/i18n/boot'
+import { VIEWPORT_BOOT_SCRIPT } from '@/lib/viewportBoot'
 import { I18nProvider } from '@/lib/i18n/react'
 
 export const metadata: Metadata = {
@@ -40,6 +41,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
         <script dangerouslySetInnerHTML={{ __html: LANG_BOOT_SCRIPT }} />
+        <script dangerouslySetInnerHTML={{ __html: VIEWPORT_BOOT_SCRIPT }} />
       </head>
       <body>
         <I18nProvider>{children}</I18nProvider>

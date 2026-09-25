@@ -182,21 +182,50 @@
   box-sizing: border-box;
 }
 
-/* `height: 100%` no es decorativo: es lo que ancla la barra de abajo.
+/* `--vh-full`: UN solo lugar define "cuánto mide la ventana".
    -------------------------------------------------------------------
-   La barra es `sticky` dentro de `.page`, y `.page` llega al fondo de la
-   pantalla por su `min-height`. Ese `min-height` era `100dvh` a secas, y el
-   dvh es la unidad que WebKit recalcula tarde: en un iPhone con la app
-   instalada, al cargar DE CERO, la barra nacía unos píxeles arriba de su
-   lugar y se asentaba sola al primer scroll (reporte de Luis, 25 sep 2026).
-   Un porcentaje se resuelve contra el bloque contenedor —el viewport de
-   layout, que ya está fijado en el primer layout— en vez de contra la unidad
-   dinámica, así que no depende de ese recálculo. Para que `min-height: 100%`
-   en `.page` tenga contra qué resolverse, html y body necesitan un alto
-   definido; el contenido más alto que la pantalla desborda y scrollea igual
-   (medido: mismo docH, mismo navTop y mismo navBottom en 18 combinaciones).
-   Las líneas de `100vh`/`100dvh` se quedan como piso para un motor que no
-   resuelva la cadena de porcentajes. */
+   La barra de abajo es `sticky` dentro de `.page`, y llega al borde de la
+   pantalla porque `.page` llega al borde: su `min-height` es el alto de la
+   ventana. En pantallas con poco contenido ese `min-height` es lo ÚNICO que
+   la baja, así que un valor N píxeles corto pone la barra N píxeles arriba
+   (medido en /dashboard, /growth y /appointments: sensibilidad exacta 1:1).
+
+   Se intentó dos veces con CSS puro y las dos veces la barra siguió naciendo
+   elevada en el iPhone de Luis:
+
+     1. `min-height: 100dvh` — el dvh es la unidad que WebKit recalcula tarde.
+     2. `min-height: 100%` con `html, body { height: 100% }` — pero un
+        porcentaje sobre html se resuelve contra el bloque contenedor inicial,
+        que es EL MISMO viewport que lee el dvh. Cambió la unidad, no la
+        dependencia: las dos preguntan cuánto mide la ventana en el momento en
+        que WebKit todavía no lo tiene asentado.
+
+   Y el intento 2 además tenía un defecto propio, medido y reproducible en
+   cualquier motor: `min-height: 100%` gana la cascada SIEMPRE, así que las
+   líneas de `100vh`/`100dvh` que estaban antes NO eran un piso. Si el
+   porcentaje no resuelve —bloque contenedor de alto indefinido— el
+   `min-height` se vuelve `auto` en silencio y la barra sube hasta donde
+   termine el contenido: 146 a 251 px según la pantalla, sin ningún piso.
+
+   Así que el alto ya no se PREDICE con una unidad: lib/viewportBoot.ts lo
+   MIDE (`window.innerHeight`) antes del primer pintado y lo vuelve a medir
+   cuando la ventana cambia, escribiendo píxeles en esta variable. Acá queda
+   el valor para cuando ese JavaScript no llegue, y como `--vh-full` es
+   siempre una longitud válida, el piso ahora es de verdad. */
+:root {
+  --vh-full: 100vh;
+}
+@supports (height: 100dvh) {
+  :root {
+    --vh-full: 100dvh;
+  }
+}
+
+/* `height: 100%` acá ya no es lo que ancla la barra —`--vh-full` lo es— pero
+   se queda: es lo que hace que un `body` sin contenido cubra la pantalla, y
+   sacarlo sería un cambio de layout más que no se puede verificar en WebKit
+   desde este VPS. El contenido más alto que la pantalla desborda y scrollea
+   igual (medido: mismo docH, mismo navTop y mismo navBottom). */
 html,
 body {
   height: 100%;
@@ -459,11 +488,11 @@ body {
 .page:has(.empty-fill) {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
-  min-height: 100dvh;
-  /* Última: gana donde la cadena html/body de arriba resuelve. Ver el comentario
-     de `html, body { height: 100% }` — es el ancla que no depende del dvh. */
-  min-height: 100%;
+  /* El mismo alto medido que usa `.page` en el teléfono. Antes eran tres
+     declaraciones de `min-height` acá y otras tres allá, y había que confiar
+     en que las dos cadenas resolvieran igual; ahora es una sola variable.
+     Ver `--vh-full` arriba. */
+  min-height: var(--vh-full);
 }
 .empty-fill {
   flex: 1 1 auto;
@@ -1058,12 +1087,9 @@ select.input {
   .page {
     display: flex;
     flex-direction: column;
-    min-height: 100vh;
-    min-height: 100dvh;
-    /* Última a propósito: ver `html, body { height: 100% }` arriba. El dvh
-       queda de piso; el porcentaje es el que ancla la barra al cargar de
-       cero, que es cuando el dvh todavía no está asentado en WebKit. */
-    min-height: 100%;
+    /* El alto MEDIDO de la ventana, no una unidad que el motor resuelva
+       cuando le quede cómodo. Ver `--vh-full` arriba. */
+    min-height: var(--vh-full);
     padding-bottom: 0;
   }
   /* La barra de abajo: `sticky`, no `fixed`.

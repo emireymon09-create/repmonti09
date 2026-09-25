@@ -1085,6 +1085,15 @@ forzando exactamente eso, a 390×1400 y con la página ya cargada:
 Es decir: un `dvh` que resuelve N píxeles corto pone la barra exactamente N
 píxeles arriba. Eso **es** el síntoma reportado.
 
+> **SUPERADO el mismo día — ver §5.20.** Este arreglo **no cerró el síntoma**:
+> Luis lo volvió a ver en el iPhone, en pantallas con poco contenido. El motivo
+> está en §5.20 y vale leerlo antes de creerle al párrafo siguiente: un `100%`
+> encadenado a `html` se resuelve contra el **mismo viewport** que lee el `dvh`,
+> así que esto cambió la unidad y no la dependencia. Y la frase de más abajo
+> sobre que las líneas de `vh`/`dvh` "se quedan de piso" es **falsa** —
+> `min-height: 100%` gana la cascada y las descarta. Se deja el texto como
+> estaba porque la lección del pase es justamente ésa.
+
 *El arreglo.* `html, body { height: 100% }` y una tercera declaración
 `min-height: 100%` después de las de `vh`/`dvh`. Un porcentaje se resuelve
 contra el bloque contenedor —el viewport de layout, fijado en el primer
@@ -1255,6 +1264,144 @@ Cada patrón de §5 afirma algo sobre el código. Se comprobó uno por uno:
 
 Nada de §5 quedó sin verificar en aquella pasada. **§5.11, §5.12, §5.14,
 §5.15 y §5.16 son posteriores** y traen sus mediciones adentro.
+
+---
+
+### 5.20 La barra elevada en pantallas cortas: el tercer intento, y por qué los dos primeros no podían funcionar (25 sep 2026)
+
+**El reporte.** Después del arreglo de §5.18a, Luis volvió a ver la barra
+**levemente elevada** en su iPhone — pero con un dato nuevo y mucho más
+preciso: **solo en pantallas donde el contenido no llena el alto de la
+pantalla.** `/dashboard` (Today), `/growth` y `/appointments` vacías o con poco
+contenido. En pantallas con contenido abundante, no pasa.
+
+Ese "solo en pantallas cortas" es lo que resuelve el caso, porque dice
+exactamente **quién** decide dónde termina la página en cada caso:
+
+| | qué fija el alto de `.page` | la barra depende de… |
+|---|---|---|
+| Contenido más alto que la pantalla | el contenido | nada más — medido: `/feeding` a 390px, `pageH` 1241,7 con `innerHeight` 844 |
+| Contenido más corto | **el `min-height`** | **solo del `min-height`** |
+
+O sea: en una pantalla corta el `min-height` es lo único que baja la barra
+hasta el borde, y **un `min-height` N píxeles corto pone la barra N píxeles
+arriba**. Medido en las tres pantallas del reporte, forzando el alto del bloque
+contenedor 60 px corto (390×844, familia vacía):
+
+| pantalla | `pageH` | `navBottom` | hueco debajo de la barra |
+|---|---|---|---|
+| `/dashboard` normal | 844 | 844 | **0** |
+| `/dashboard` con el contenedor 60 px corto | 784 | 784 | **60** |
+| `/growth` normal → 60 px corto | 844 → 784 | 844 → 784 | 0 → **60** |
+| `/appointments` normal → 60 px corto | 844 → 784 | 844 → 784 | 0 → **60** |
+
+**Sensibilidad exacta 1:1.** El síntoma reportado *es* esto.
+
+**Por qué el arreglo de §5.18a no podía cerrarlo.** Ese pase cambió
+`min-height: 100dvh` por `min-height: 100%` + `html, body { height: 100% }`,
+con el argumento de que "un porcentaje se resuelve contra el bloque contenedor
+—el viewport de layout, que ya está fijado— en vez de contra la unidad
+dinámica". El problema es que **el bloque contenedor de `html` ES el viewport**:
+un `100%` encadenado a `html` pregunta lo mismo que `100dvh`, con otra
+ortografía. Cambió la **unidad**, no la **dependencia**. Las dos preguntan
+"¿cuánto mide la ventana?" en el instante en que WebKit todavía no lo tiene
+asentado, y las dos se comen el mismo error.
+
+**Y el intento 2 traía un defecto propio, este sí reproducible en cualquier
+motor.** El comentario decía que las líneas de `100vh`/`100dvh` quedaban "como
+piso". **No quedaban.** `min-height: 100%` es la última declaración: gana la
+cascada siempre. Si el porcentaje no resuelve —bloque contenedor de alto
+indefinido— el `min-height` se vuelve `auto` **en silencio**, y las líneas
+anteriores ya fueron descartadas por la cascada. No hay piso. Medido, mismo
+CSS, cambiando solo si el contenedor tiene alto definido:
+
+| variante | `min-height` computado | `pageH` | hueco |
+|---|---|---|---|
+| contenedor con alto definido | `100%` | 844 | **0** |
+| contenedor de alto indefinido | `100%` | 111 | **733** |
+| lo mismo, pero con `100dvh` declarado último | `844px` | 844 | **0** |
+
+En las tres pantallas reales, ese caso da **146 a 251 px** de barra trepada
+(`/dashboard` 242,3 · `/growth` 251,1 · `/appointments` 146,1). Un "piso" que
+no existe es peor que no tener piso: hace creer que el peor caso está acotado.
+
+**Las dos pistas que la medición descartó.** No se descartaron por
+razonamiento, se midieron:
+
+- **`.page` (media de teléfono) vs `.page:has(.empty-fill)` resuelven lo
+  mismo.** Los dos selectores daban `min-height` computado `100%`,
+  `display: flex` y `navBottom` 844 en las 11 pantallas. No eran dos alturas
+  distintas. (Sí era real que fueran **dos cadenas de tres declaraciones cada
+  una** que había que mantener sincronizadas a mano; eso se arregló de paso.)
+- **No hay wrapper intermedio.** `app/layout.tsx` renderiza
+  `body > I18nProvider{children}`, y `I18nProvider` no emite ningún elemento:
+  la cadena es `html > body > .page`, como decía §5.11. La pista del wrapper de
+  Next no aplica.
+
+**El arreglo: medir, no predecir.** Dos intentos con CSS puro fallaron sobre el
+mismo eje, y los dos por la misma razón de fondo — *derivar la posición de la
+barra de una longitud CSS que el motor resuelve cuando le queda cómodo*. El
+tercero deja de preguntarle al motor:
+
+- **`--vh-full`** es ahora el único lugar donde se define "cuánto mide la
+  ventana". En `app/globals.css` vale `100vh`, y `100dvh` bajo
+  `@supports (height: 100dvh)`.
+- **`lib/viewportBoot.ts`** —script inline en el `<head>`, mismo patrón que
+  `lib/themeBoot.ts` y `lib/i18n/boot.ts`— **mide** `window.innerHeight` antes
+  del primer pintado y escribe **píxeles** en `--vh-full`. Y lo vuelve a medir
+  en `resize`, `orientationchange`, `pageshow` y `visualViewport.resize`: si
+  WebKit asienta el viewport tarde, la medición se corrige sola en vez de
+  quedar mal para toda la sesión.
+- **`.page` (teléfono) y `.page:has(.empty-fill)`** pasaron de tres
+  declaraciones de `min-height` cada una a **una sola**:
+  `min-height: var(--vh-full)`. Seis declaraciones → dos. Y el piso ahora es
+  real: `--vh-full` es siempre una longitud válida, así que sin JavaScript
+  queda el `100dvh`/`100vh` de antes y nunca `auto`.
+
+**Se lee `innerHeight`, no `visualViewport.height`, y es a propósito.** En iOS
+el teclado achica el visual viewport pero no el de layout, y la barra tiene que
+quedar en el borde de la **pantalla**, no arriba del teclado.
+
+**Y no se actualiza mientras hay un campo con foco.** En Android Chrome el
+teclado **sí** achica el viewport de layout, o sea `innerHeight`: sin ese
+guard, abrir el teclado para cargar una toma achicaría `--vh-full` y la barra
+treparía por encima del contenido mientras se tipea. El guard cubre `INPUT`,
+`TEXTAREA`, `SELECT` y `contenteditable`; la medición pendiente se aplica al
+salir del campo (`focusout`, en un tick diferido, para que saltar de un campo
+al siguiente no cuente como "ya no estoy tipeando"). Doce casos en
+`tests/unit/viewportBoot.test.ts`, incluido ese salto entre campos.
+
+**Lo medido acá, y lo que NO se puede afirmar.** Barrido de **132
+combinaciones** (11 pantallas × 3 anchos × 2 temas × 2 idiomas), antes y
+después, con el servidor de producción (`pnpm build` + `pnpm start`) contra el
+Supabase local y una familia **vacía**, que es la condición del reporte:
+
+- hueco debajo de la barra a 390px (44 combinaciones, donde la barra es la de
+  abajo y es `sticky`): **0 de 44** antes y **0 de 44** después;
+- `horizScroll` **0**, desborde interno **0**, texto cortado **0**, en las 132,
+  antes y después;
+- `--vh-full` a 390px: **`844px`** — o sea el valor medido por JS, no la unidad;
+  y `min-height` computado de `.page` pasó de **`100%`** a **`844px`**;
+- las dos ramas quedaron ejercitadas: `/dashboard` midió sin `.empty-fill` y
+  `/growth` y `/appointments` con él; las tres dan `min-height: 844px` y hueco 0;
+- la trampa de §5.17 (una pantalla privada que renderiza `/login`) disparó
+  **0 veces de 132**.
+
+> **Sin verificar, y hay que decirlo entero: Chromium no reproduce el bug de
+> WebKit.** Este VPS no tiene WebKit ni iOS, y `display-mode: standalone` no se
+> puede emular en chrome-headless-shell (§5.18a). Todo lo medido acá dice **"no
+> rompí nada"** y que la cadena ahora resuelve a píxeles medidos; **no** dice
+> que el síntoma desapareció. **La confirmación tiene que salir del iPhone de
+> Luis.** Es el tercer intento sobre este síntoma: si vuelve a aparecer, el
+> dato que falta ya no es CSS sino cuánto mide `innerHeight` en ese momento en
+> ese teléfono, y eso se puede leer en pantalla.
+
+**Una predicción que conviene tener escrita, porque es falsable.** Si el
+mecanismo es el de arriba, el síntoma **no** es exclusivo de esas tres
+pantallas: afecta a cualquiera cuyo contenido no llene el alto. `/history`
+vacía midió `pageH` 844 con `innerHeight` 844 y sin `.empty-fill` — o sea
+también es corta, y también debería haber estado elevada. Que Luis lo haya
+notado en tres es coherente con que sean las tres que abre con poco contenido.
 
 ---
 

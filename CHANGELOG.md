@@ -4,6 +4,28 @@ Every version of Amelia, newest first. The current version is the `version`
 field in `package.json`; this file is the history. A test fails if the two
 disagree. Shown in the app under the settings gear → Version history.
 
+## [0.10.4] - 2026-09-25
+
+One fix, on the third attempt at the same thing.
+
+- **The bottom bar sits on the edge of the screen on short screens.** On an
+  iPhone with the app installed, the bar was born a few pixels above the
+  bottom edge and settled on its own at the first scroll. Two earlier attempts
+  today did not fix it, and the report that finally explained why was more
+  specific: it only happened where the page content does not fill the height
+  of the screen — Today, Growth and Doctor when they are empty or nearly so.
+  On a short page, one number decides where the bar lands, and both earlier
+  attempts asked the browser for that number at the one moment it does not
+  know it yet. The app now measures the window itself, and measures it again
+  whenever the window changes, so a bar that starts in the wrong place
+  corrects itself instead of staying wrong for the rest of the session. It
+  does not re-measure while you are typing in a field, so the keyboard never
+  drags the bar up over what you are writing.
+
+  Worth saying plainly: this could not be confirmed on the machine that built
+  it. The bug only shows in Safari on a real iPhone, and no browser available
+  there reproduces it. What was verified is that nothing else moved.
+
 ## [0.10.3] - 2026-09-25
 
 Two fixes about things that were hard to hit or spilled off the card.
