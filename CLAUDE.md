@@ -120,8 +120,8 @@ viole esto se rechaza sin discusión.
 | Capa | Qué se usa |
 |---|---|
 | Lenguaje | TypeScript 5.5, `strict: true` |
-| Framework | Next.js 14 — **App Router** (`app/`) |
-| Frontend | React 18 |
+| Framework | Next.js **15** — **App Router** (`app/`). Subido de 14.2.35 el 25 sep 2026 por los avisos críticos de `pnpm audit`; ver §2.2 |
+| Frontend | React **19** (lo pide el App Router de Next 15) |
 | Backend | Route Handlers del mismo Next (`app/api/*/route.ts`). **No hay backend separado.** |
 | Base de datos | PostgreSQL vía **Supabase** |
 | Acceso a datos | Cliente Supabase (PostgREST) directo. **No hay ORM.** |
@@ -177,6 +177,61 @@ hace falta correr SQL allá, y desde este VPS no hay con qué: no hay `.vercel/`
 no hay CLI de Supabase, no hay `~/.supabase/access-token`, y en todo el home la
 única mención a un `*.supabase.co` es el placeholder de `.env.local.example`.
 **No lo inventes.**
+
+### 2.2 Next 15 y React 19 — por qué se subió, y hasta dónde (25 sep 2026)
+
+Hasta el 25 sep 2026 esto era **Next 14.2.35 + React 18**. Se subió a **Next
+15.5.26 + React 19.3.0** por seguridad, no por ganas: `pnpm audit` devolvía
+**35 avisos — 3 críticos, 12 altos, 18 moderados, 2 bajos**, y la versión
+parcheada de casi todos era Next 15.x. Después del salto: **2 avisos, los dos
+moderados** (`vitest` / `@vitest/mocker`, que piden vitest 4 y son de
+herramienta de test, no llegan ni al teléfono ni a la pared). **0 críticos,
+0 altos.**
+
+**Qué se subió, exactamente:** `next` 14.2.35 → 15.5.26, `react` y `react-dom`
+18.3.1 → 19.3.0, sus `@types` a 19, `eslint-config-next` a 15.5.26, `vitest`
+2.1.9 → 3.2.7. Y dos **overrides** en `pnpm-workspace.yaml`, porque son
+transitivos y subir los directos no los movía: `postcss >=8.5.18` (lo
+arrastraba next en 8.4.31) y `vite >=6.4.3` (vitest 3 acepta vite 5 y se
+quedaba en 5.4.21).
+
+**Lo que NO se hizo, y es una decisión.** `pnpm dlx @next/codemod@canary upgrade
+latest` —el camino "oficial"— **se fue a Next 16.3.6**, que es OTRO salto mayor:
+borró `middleware.ts` y lo reemplazó por `proxy.ts`, cambió ESLint a la 10 con
+config plana y tocó `pnpm-workspace.yaml`. El requisito de seguridad es
+`next >= 15.5.24`. Se revirtió el codemod entero y se subió a mano a 15.5.26:
+el diff es chico y auditable, y **`middleware.ts` —que es el guard de auth— no
+se toca**. Subir a 16 es un trabajo aparte, con su propio pase.
+
+**El único cambio de código que pidió el salto** fue `params`, que en Next 15 es
+una `Promise`: `app/api/calendar/[token]/route.ts` es el **único** archivo del
+repo con un segmento dinámico. No hay `searchParams` en ninguna página, y
+`cookies()`/`headers()` de `next/headers` **no se usan en ningún lado** (las
+cookies salen de `req.cookies`, que no cambió), así que el resto de los
+"breaking changes" de request APIs no aplica acá. Tampoco hay `fetch` con
+`cache`/`revalidate`, así que los defaults de caché nuevos no cambian nada.
+
+**Los tres críticos, con honestidad sobre el alcance:**
+
+| Crítico | Alcance real en este repo |
+|---|---|
+| `vitest <3.2.6` — lectura/ejecución de archivo arbitraria con la UI de Vitest escuchando | Solo desarrollo; la UI de Vitest no se usa. Subido igual |
+| `next` — RCE sin autenticar en servidores **Windows** | Producción es Vercel/Linux: **no era alcanzable**. Parcheado igual |
+| `next` — RCE en la Image Optimization API con **AVIF** | **No hay `next/image` ni clave `images` en `next.config.mjs` en todo el repo** (verificado con grep): no era alcanzable. Parcheado igual |
+
+**Qué se verificó de verdad, no leyendo:** los **6 route handlers** por HTTP
+contra el build de producción (el feed `.ics` con token válido → 200 y
+VCALENDAR con la cita, token inexistente y token mal formado → los dos 404,
+`/api/ingest` y `/api/quick/nurse` con token de dispositivo → escriben,
+`/api/push/nursing-check` POST y GET → 200, `/api/push/subscription` y
+`/api/calendar/feed` sin sesión → 401); el **middleware** (las 11 rutas
+privadas → 307 a `/login`, `/login` → 200); las **11 pantallas** en el
+navegador con **0 errores de consola y 0 de hidratación** bajo React 19;
+escrituras reales por la UI (un pañal desde Today y una medición en Growth,
+las dos visibles después de recargar y en la base); el **envoltorio de
+loopback** (rechaza un `-H` público, la app escucha solo en 127.0.0.1, 10/10
+tests); y el barrido de layout de 132 combinaciones, idéntico al de Next 14.
+
 
 ### Mapa de archivos que importan
 
@@ -413,7 +468,7 @@ Lo cubre `pnpm dev` / `pnpm start` **y también** `pnpm exec next`, `npx next` y
 reescribe el shim de `node_modules/.bin/next` para que pase por el envoltorio, y
 `pnpm install` lo vuelve a aplicar. Regresión: `tests/unit/nextLoopback.test.ts`.
 
-⚠️ **`HOSTNAME=127.0.0.1` NO sirve para esto.** En Next 14 sólo `--port` está
+⚠️ **`HOSTNAME=127.0.0.1` NO sirve para esto.** En Next 14 sólo `--port` estaba
 atado a una env var (`.env('PORT')` en `next/dist/bin/next`); `--hostname` no lo
 está, y `start-server.js` termina en `server.listen(port, undefined)`, que es
 todas las interfaces. Medido el 25 sep 2026: con `HOSTNAME=127.0.0.1`,

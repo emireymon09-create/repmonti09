@@ -26,8 +26,11 @@ import { calendarFeedFor, tokenFromSegment } from '@/lib/calendar/server'
 // resuelve la familia DESDE el token y filtra las citas por los bebés de esa
 // familia. Esta ruta no arma ninguna query (CLAUDE.md §5.3).
 
-export async function GET(_req: NextRequest, { params }: { params: { token: string } }) {
-  const token = tokenFromSegment(params.token)
+// `params` es una Promise desde Next 15 (antes era el objeto pelado). Es el
+// ÚNICO lugar del repo con un segmento dinámico, así que es el único que el
+// salto de 14 a 15 tocó.
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  const token = tokenFromSegment((await params).token)
   // Un token mal formado y uno que no existe contestan lo mismo: distinguirlos
   // le diría a quien prueba tokens cuáles tienen la forma correcta.
   if (!token) return notFound()

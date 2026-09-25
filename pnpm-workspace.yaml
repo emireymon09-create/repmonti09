@@ -10,3 +10,20 @@
 allowBuilds:
   esbuild: true
   unrs-resolver: true
+
+# Overrides de seguridad (25 sep 2026, v0.10.5). Los dos son TRANSITIVOS: no
+# están en package.json, los arrastran next y vitest, así que subir los directos
+# no los mueve. Se fijan acá al mínimo parcheado del aviso, no a una versión
+# exacta, para que un parche futuro entre solo.
+#
+#   postcss — >=8.5.18: lectura de archivo arbitraria y path traversal por el
+#             auto-cargado de source maps (GHSA de severidad alta, x2). next
+#             arrastraba 8.4.31.
+#   vite    — >=6.4.3: bypass de `server.fs.deny` con rutas alternativas de
+#             Windows (alta). vitest 3 acepta vite 5 o 6 y se quedaba en 5.4.21.
+#
+# Si alguno de los dos deja de ser necesario porque el paquete padre ya pide una
+# versión parcheada, se borra la línea — no se deja un override inerte.
+overrides:
+  postcss: '>=8.5.18'
+  vite: '>=6.4.3'

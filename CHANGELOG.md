@@ -4,6 +4,22 @@ Every version of Amelia, newest first. The current version is the `version`
 field in `package.json`; this file is the history. A test fails if the two
 disagree. Shown in the app under the settings gear → Version history.
 
+## [0.10.5] - 2026-09-25
+
+Housekeeping you cannot see, on the machinery underneath.
+
+- **Security update of the framework the app is built on.** A scan reported 35
+  known problems in the libraries Amelia depends on, three of them rated
+  critical. Almost all of them were fixed in a newer version of that framework,
+  so the app moved up to it: 2 remain, both rated moderate, both in a testing
+  tool that never ships to the phone or the wall screen.
+
+  Nothing about the app changed on purpose — same screens, same data, same
+  behaviour. Two of the three critical ones could not have been reached here at
+  all (one only affects servers running Windows; the other needs an image
+  feature this app does not use), but they are patched anyway rather than
+  argued with.
+
 ## [0.10.4] - 2026-09-25
 
 One fix, on the third attempt at the same thing.
