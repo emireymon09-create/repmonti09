@@ -399,4 +399,92 @@ export const es: Dictionary = {
   'version.title': 'Historial de versiones',
   'version.current': 'Versión actual',
   'version.notesLanguage': 'Las notas de cada versión están en inglés.',
+
+  // ------------------------------------------------------------ tarjeta de próximo turno (/dashboard)
+  'appt.next': 'Próximo turno',
+  'appt.with': 'con {doctor}',
+  'appt.open': 'Abrir Médico',
+  'appt.inHours': { one: 'en {count} hora', other: 'en {count} horas' },
+  'appt.inMinutes': { one: 'en {count} minuto', other: 'en {count} minutos' },
+
+  // ------------------------------------------------------------ umbrales (/settings)
+  'settings.schedule': 'Avisos de comida y siesta',
+  'settings.scheduleNote':
+    'Es de toda la familia, no de este dispositivo. La cuenta regresiva de Hoy usa estos valores, y sale un aviso cuando alguno se pasa.',
+  'settings.feedEvery': 'Comer cada',
+  'settings.napAfter': 'Siesta después de estar despierta',
+  'settings.minutes': 'min',
+  'settings.thresholdRange': 'Entre {min} y {max} minutos.',
+  'settings.thresholdNotNumber': 'Tiene que ser un número entero de minutos.',
+  'settings.thresholdOutOfRange': 'Tiene que estar entre {min} y {max} minutos.',
+  'settings.thresholdSaved': 'Guardado para toda la familia.',
+  'settings.thresholdCouldNotSave': 'No se pudo guardar — {error}',
+  'settings.thresholdCouldNotLoad': 'No se pudieron cargar los avisos — {error}',
+  'settings.thresholdOffline':
+    'Sin conexión: como los comparte el otro padre, solo se pueden cambiar con conexión.',
+
+  // ------------------------------------------------------------ feed de calendario (/settings)
+  'calendar.feedName': 'Amelia — turnos',
+  'calendar.title': 'Calendario sincronizado',
+  'calendar.note':
+    'Suscribí el calendario del teléfono o de la compu a los turnos médicos. El link es lo único que lo protege, así que tratalo como una contraseña: quien lo tenga ve los turnos (y nada más).',
+  'calendar.none': 'Todavía no hay link.',
+  'calendar.create': 'Crear el link',
+  'calendar.rotate': 'Reemplazar el link',
+  'calendar.rotateConfirm':
+    '¿Reemplazar el link del calendario? El anterior deja de funcionar en el acto, y hay que apuntar al nuevo cada calendario que esté suscrito.',
+  'calendar.showOnce':
+    'Copialo ahora: se muestra una sola vez. Si lo perdés, reemplazalo por uno nuevo.',
+  'calendar.copy': 'Copiar',
+  'calendar.copied': 'Copiado',
+  'calendar.createdOn': 'Link creado {when}.',
+  'calendar.lastRead': 'Un calendario lo leyó {when}.',
+  'calendar.neverRead': 'Todavía no lo leyó ningún calendario.',
+  'calendar.couldNotCreate': 'No se pudo crear el link — {error}',
+  'calendar.couldNotLoad': 'No se pudo consultar el link del calendario — {error}',
+  'calendar.offline': 'Sin conexión: el link del calendario necesita conexión.',
+  'calendar.howTo': 'En la app de calendario, agregá un calendario suscrito y pegá esta dirección.',
+
+  // ------------------------------------------------------------ semana de vida
+  'week.label': 'Semana de vida',
+  'week.number': 'Semana {week}',
+  'week.thisWeek': 'Semana {week} · esta',
+  'week.range': '{start} – {end}',
+  'week.previous': 'Semana anterior',
+  'week.next': 'Semana siguiente',
+  'week.noBirthDate': 'Todavía no está guardada su fecha de nacimiento',
+  'week.noBirthDateHint':
+    'Las semanas de vida se cuentan desde que nació, así que hace falta cargarla. Se carga en Hoy y esto se completa solo.',
+
+  // ------------------------------------------------------------ estadísticas (/statistics)
+  'stats.feeding': 'Comida',
+  'stats.diapers': 'Pañales',
+  'stats.sleep': 'Sueño',
+  'stats.growth': 'Crecimiento',
+  'stats.perDay': 'Por día',
+  'stats.chartFeedings': 'Tomas por día, esta semana',
+  'stats.chartBottle': 'Biberón por día, esta semana',
+  'stats.chartDiapers': 'Pañales por día, esta semana',
+  'stats.chartSleep': 'Horas de sueño por día, esta semana',
+  'stats.chartWeight': 'Peso, todas las mediciones',
+  'stats.noRows': 'Esta semana no se registró nada',
+  'stats.noGrowth': 'Todavía no hay mediciones',
+  'stats.dailyAverage': 'Promedio por día',
+  'stats.weekTotal': 'Total de la semana',
+  'stats.latestWeight': 'Último peso',
+  'stats.latestHeight': 'Última talla',
+  'stats.since': 'Desde la anterior',
+  'stats.couldNotLoad': 'No se pudieron cargar las estadísticas — {error}',
+  'stats.chartSummary': '{title}. {values}',
+  'stats.chartDayValue': '{day}: {value}',
+
+  // ------------------------------------------------------------ los tres avisos programados
+  'push.feedingOverdue.title': 'Hora de comer',
+  'push.feedingOverdue.body':
+    'Hace {minutes} min que {name} no come — se pasó de lo que configuraste. Registralo en Hoy cuando coma.',
+  'push.napOverdue.title': 'Hora de la siesta',
+  'push.napOverdue.body':
+    '{name} lleva {minutes} min despierta — se pasó de lo que configuraste. Empezá la siesta desde Hoy.',
+  'push.appointment.title': 'Turno mañana',
+  'push.appointment.body': '{title} · en unas {hours} horas.',
 }

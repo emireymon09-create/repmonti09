@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { useBaby } from '@/lib/useBaby'
 import { NoBaby } from '@/components/NoBaby'
 import { Banner, Btn, Card, EmptyState, Grid, Label, Nav, Page } from '@/components/ui'
@@ -13,8 +14,8 @@ import {
   keepLastGood,
   mergePending,
   pendingWrites,
-  predictNextFeeding,
-  predictNextNap,
+  familySettings,
+  listAppointments,
   recentDiapers,
   recentFeedings,
   recentNursing,
@@ -38,9 +39,19 @@ import {
   MAX_SHIFT_MINUTES,
   type LastFeeding,
 } from '@/lib/kpis'
+import {
+  DEFAULT_FAMILY_SETTINGS,
+  dueFrom,
+  lastFeedingEnd,
+  lastNapEnd,
+  minutesUntil,
+  nextAppointment,
+  type FamilySettings,
+} from '@/lib/schedule'
 import type {
   DiaperChange,
   DiaperType,
+  DoctorAppointment,
   Feeding,
   NursingSession,
   Side,
@@ -51,6 +62,7 @@ import type {
 import { looksOffline, type PendingWrite } from '@/lib/queue'
 import {
   ageFrom,
+  apptWhen,
   clockTime,
   DISPLAY_UNIT,
   dueRelative,
@@ -77,13 +89,19 @@ type ServerRows = {
   diapers: DiaperChange[]
   nursing: NursingSession[]
   sleep: SleepSession[]
+  /**
+   * Los turnos médicos VUELVEN al dashboard el 24 sep 2026, en una tarjeta
+   * propia debajo de las tres, y solo si hay uno dentro de las próximas 36
+   * horas. Habían salido el 22 sep, cuando Today se redujo a tres tarjetas.
+   */
+  appt: DoctorAppointment[]
 }
-const NO_ROWS: ServerRows = { feedings: [], diapers: [], nursing: [], sleep: [] }
+const NO_ROWS: ServerRows = { feedings: [], diapers: [], nursing: [], sleep: [], appt: [] }
 
 /**
- * Only the keys this page reads. A copy saved on this device before the
- * appointment card left the dashboard still carries `appt`; it is
- * read as usual and the extra key is dropped here, so it is not saved again.
+ * Only the keys this page reads. A copy saved on this device by an older
+ * version can carry keys this one doesn't know: they are read as usual and
+ * dropped here, so they are not saved again.
  */
 function ownRows(rows: ServerRows): ServerRows {
   return {
@@ -91,6 +109,7 @@ function ownRows(rows: ServerRows): ServerRows {
     diapers: rows.diapers,
     nursing: rows.nursing,
     sleep: rows.sleep,
+    appt: rows.appt ?? [],
   }
 }
 
@@ -102,6 +121,11 @@ export default function Dashboard() {
   const [diapers, setDiapers] = useState<WithPending<DiaperChange>[]>([])
   const [nursing, setNursing] = useState<WithPending<NursingSession>[]>([])
   const [sleep, setSleep] = useState<WithPending<SleepSession>[]>([])
+  const [appointments, setAppointments] = useState<DoctorAppointment[]>([])
+  // Los umbrales de la familia (0012). Hasta que la lectura vuelva valen los
+  // defaults, que son los mismos números que el DEFAULT de la columna: así la
+  // cuenta regresiva funciona antes de que nadie entre a Settings.
+  const [settings, setSettings] = useState<FamilySettings>(DEFAULT_FAMILY_SETTINGS)
 
   const [birthDate, setBirthDate] = useState(() => householdToday())
   const [birthLb, setBirthLb] = useState('')
@@ -175,6 +199,9 @@ export default function Dashboard() {
     setDiapers(sortDesc(mDiapers, 'changed_at'))
     setNursing(sortDesc(mNursing, 'started_at'))
     setSleep(sortDesc(mSleep, 'started_at'))
+    // Los turnos no se editan desde acá, así que no pasan por mergePending:
+    // la tarjeta solo los lee.
+    setAppointments(rows.appt ?? [])
   }, [])
 
   const refresh = useCallback(
@@ -201,11 +228,12 @@ export default function Dashboard() {
         setSeen(last.state(offline))
       }
 
-      const [f, d, n, s, queued] = await Promise.all([
+      const [f, d, n, s, a, queued] = await Promise.all([
         recentFeedings(babyId),
         recentDiapers(babyId),
         recentNursing(babyId),
         recentSleep(babyId),
+        listAppointments(babyId),
         pendingWrites(),
       ])
       if (read !== latestRead.current) return
@@ -215,6 +243,7 @@ export default function Dashboard() {
         diapers: d,
         nursing: n,
         sleep: s,
+        appt: a,
       })
       setSeen(last.settle(rows, error))
 
@@ -241,6 +270,23 @@ export default function Dashboard() {
   useEffect(() => {
     if (baby) refresh(baby.id)
   }, [baby, refresh])
+
+  // Los umbrales de la familia (0012). Lectura aparte de las cuatro de arriba
+  // a propósito: no son filas de la bebé, no se editan desde acá y no pasan
+  // por la cola offline (lib/db.ts lo explica). Si falla, quedan los defaults
+  // y la cuenta regresiva sigue funcionando — no hay nada que mentir: el
+  // número por defecto es el mismo que tiene la columna.
+  useEffect(() => {
+    const familyId = baby?.family_id
+    if (!familyId) return
+    let cancelled = false
+    familySettings(familyId).then((res) => {
+      if (!cancelled && res.data) setSettings(res.data)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [baby?.family_id])
 
   // Every write reports its failure. A log entry that looks saved and
   // isn't is the worst thing this app can do.
@@ -292,8 +338,24 @@ export default function Dashboard() {
     nursing.length === 0 &&
     diapers.length === 0 &&
     sleep.length === 0
-  const feedingPrediction = predictNextFeeding(feedings, nursing)
-  const napPrediction = predictNextNap(sleep)
+  // La cuenta regresiva real (24 sep 2026). Reemplaza a predictNextFeeding /
+  // predictNextNap, que promediaban los últimos seis intervalos: un promedio
+  // se autocorregía solo tras un estirón, pero no se puede configurar ni
+  // notificar sobre él ("llegó al promedio" es una estadística, no una
+  // condición de aviso). Ahora el número lo pone el padre, es de la familia
+  // entera (0012) y es el mismo que usa el aviso push.
+  //
+  // Y se mide desde el FIN del último evento, no desde su inicio: una toma de
+  // 40 minutos no vence tres horas después de EMPEZAR. Ver lib/schedule.ts.
+  const feedingPrediction = dueFrom(
+    lastFeedingEnd(feedings, nursing),
+    settings.feed_threshold_minutes,
+    now,
+  )
+  const napPrediction = dueFrom(lastNapEnd(sleep), settings.nap_threshold_minutes, now)
+  // Solo si cae dentro de las próximas 36 horas: más lejos no es información
+  // de hoy, y Doctor ya la lista.
+  const upcoming = nextAppointment(appointments, now)
 
   /** The Feeding card's line: time · kind (breast with its side) · amount or length. */
   function feedingLegend(last: LastFeeding): string {
@@ -648,7 +710,7 @@ export default function Dashboard() {
             <div className="meta">{timeAgo(lastFeed.at, now, lang)}</div>
           )}
           {lastFeed?.row.pending && <div className="pending-tag">{t('common.notSyncedYet')}</div>}
-          {!activeNursing && feedingPrediction.dueAt && (
+          {!activeNursing && feedingPrediction && (
             <div className="meta">
               {t('dash.nextFeeding', {
                 time: clockTime(feedingPrediction.dueAt, lang),
@@ -815,7 +877,7 @@ export default function Dashboard() {
           {lastSleep?.pending && <div className="pending-tag">{t('common.notSyncedYet')}</div>}
           {!activeSleep && (
             <>
-              {napPrediction.dueAt && (
+              {napPrediction && (
                 <div className="meta">
                   {t('dash.nextNap', {
                     time: clockTime(napPrediction.dueAt, lang),
@@ -836,6 +898,32 @@ export default function Dashboard() {
         </Card>
       </Grid>
 
+      {/* La próxima cita médica, DEBAJO de las tres tarjetas y solo dentro de
+          las 36 horas previas. Se agrega, no reemplaza nada.
+
+          Sin borde de color a propósito (design.md §2, economía del color): el
+          borde de color se gasta en un solo lugar, la sesión en curso
+          (.card.is-live). Una cita de mañana no puede competir por la atención
+          con una toma que está pasando ahora. */}
+      {upcoming && (
+        <Card spanAll>
+          <Label>{t('appt.next')}</Label>
+          <div className="appt-next">
+            <span className="value">{upcoming.title}</span>
+            <span className="meta appt-when">{apptWhen(upcoming.scheduled_at, lang)}</span>
+          </div>
+          <div className="meta">{untilText(upcoming, now, t)}</div>
+          {upcoming.doctor_name && (
+            <div className="meta">{t('appt.with', { doctor: upcoming.doctor_name })}</div>
+          )}
+          <div className="row-tight">
+            <Link className="btn quiet" href="/appointments">
+              {t('appt.open')}
+            </Link>
+          </div>
+        </Card>
+      )}
+
       {/* Ver `nothingLogged`: la pantalla termina en algo en vez de terminar
           en blanco. Las tarjetas dicen que no hay nada de LO SUYO; esto dice
           qué pasa cuando se toque un botón y adónde va a parar. */}
@@ -846,4 +934,15 @@ export default function Dashboard() {
       )}
     </Page>
   )
+}
+
+/**
+ * "en 3 horas" / "en 40 minutos". Por debajo de una hora se cuenta en minutos:
+ * "en 0 horas" no es una respuesta, y a esa altura los minutos son justamente
+ * lo que se quiere saber.
+ */
+function untilText(appt: DoctorAppointment, now: number, t: ReturnType<typeof useT>['t']): string {
+  const minutes = minutesUntil(appt.scheduled_at, now)
+  if (minutes < 60) return t('appt.inMinutes', { count: minutes })
+  return t('appt.inHours', { count: Math.round(minutes / 60) })
 }

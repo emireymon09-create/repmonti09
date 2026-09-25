@@ -67,6 +67,16 @@
   --col-gap: 12px;
   --cols: 1;
 
+  /* La altura de una gráfica de /statistics, como RELACIÓN y no como px: así
+     escala sola de la columna del teléfono a la pared sin un segundo valor.
+     16/9 es lo bastante ancha para siete barras y lo bastante baja para que
+     la tarjeta entera entre en una pantalla de teléfono. */
+  --chart-ratio: 16 / 9;
+  /* El grosor del trazo de la línea de peso y del eje, en coordenadas del
+     viewBox (100x60), no en px: el SVG lleva preserveAspectRatio="none". */
+  --chart-stroke: 1.4;
+  --chart-axis-stroke: 0.6;
+
   color-scheme: dark;
 }
 
@@ -136,6 +146,13 @@
     --t-title: 40px;
     --t-name: 54px;
     --t-clock: 68px;
+
+    /* En la pared la gráfica se lee desde el otro lado del cuarto: más baja
+       en proporción (es mucho más ancha) y con el trazo más fino, porque el
+       viewBox se estira y un 1.4 ahí adentro se vería grueso. */
+    --chart-ratio: 21 / 9;
+    --chart-stroke: 1;
+    --chart-axis-stroke: 0.45;
 
     --s-1: 3px;
     --s-2: 8px;
@@ -1276,4 +1293,151 @@ select.input {
 /* Version history: the release summary, then its list of changes. */
 .meta + .feed {
   margin-top: var(--s-3);
+}
+
+/* ------------------------------------------------------------- statistics */
+
+/* La gráfica ocupa el ancho de la tarjeta y su alto sale de la relación, no
+   de un número de píxeles: el mismo componente sirve al teléfono y a la
+   pared (design.md §1, no se bifurca nada). */
+.chart-figure {
+  margin: var(--s-3) 0 0;
+}
+.chart {
+  display: block;
+  width: 100%;
+  aspect-ratio: var(--chart-ratio);
+  overflow: visible;
+}
+
+/* El eje es un borde de la página, no un <line> adentro del viewBox: el SVG
+   va con preserveAspectRatio="none" y todo lo que vive ahí adentro se estira
+   distinto en X y en Y. */
+.chart-axis-line {
+  border-top: 1px solid var(--c-line);
+}
+
+/* Y las etiquetas del eje son HTML por la misma razón — con <text> adentro
+   del SVG salían 1,40x más anchas que altas en la pared, y a 14,3px, MÁS
+   CHICAS que en el teléfono. Acá usan --t-meta, que se re-apunta de 12px a
+   17px arriba de 1180px, que es lo que esa pantalla necesita. */
+.chart-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: var(--s-1);
+  font-size: var(--t-meta);
+  color: var(--c-muted);
+  font-variant-numeric: tabular-nums;
+}
+.chart-labels span {
+  flex: 1;
+  text-align: center;
+  min-width: 0;
+}
+/* La de peso solo rotula los dos extremos: van pegadas a su borde. */
+.chart-labels-ends span:first-child {
+  text-align: start;
+}
+.chart-labels-ends span:last-child {
+  text-align: end;
+}
+.chart-bar {
+  fill: var(--c-accent);
+}
+.chart-line {
+  fill: none;
+  stroke: var(--c-accent);
+  stroke-width: var(--chart-stroke);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  /* El viewBox se estira con preserveAspectRatio="none"; sin esto el trazo se
+     estiraría con él y la línea quedaría más gruesa en horizontal. */
+  vector-effect: non-scaling-stroke;
+}
+.chart-dot {
+  fill: var(--c-accent);
+}
+
+/* El encabezado de una tarjeta de sección en /statistics: el nombre a la
+   izquierda y el total corto a la derecha, en la misma línea de base. */
+.stat-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+
+/* ------------------------------------------------------- week of life picker */
+
+/* Flecha anterior · nombre de la semana · flecha siguiente. Las dos flechas
+   miden --tap entero: se tocan a una mano y a las 3 de la mañana. */
+.weekpick {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  margin-top: var(--s-2);
+}
+.weekpick-name {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+}
+.weekpick-when {
+  display: block;
+  font-size: var(--t-meta);
+  color: var(--c-muted);
+  font-variant-numeric: tabular-nums;
+}
+.weekpick-btn {
+  flex: none;
+  min-width: var(--tap);
+  min-height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-control);
+  border: 1px solid var(--c-line);
+  background: var(--c-surface-raised);
+  color: var(--c-text);
+  cursor: pointer;
+}
+.weekpick-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ------------------------------------------------------ next appointment card */
+
+/* Va DEBAJO de las tres tarjetas y ocupa la fila entera. No lleva borde de
+   color: design.md §2 gasta el borde de color en un solo lugar, la sesión en
+   curso (.card.is-live), y una cita de mañana no puede competir con una toma
+   que está pasando ahora. */
+.appt-next {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-2) var(--s-4);
+}
+.appt-when {
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------------------------------------- calendar feed link */
+
+/* El token en claro se muestra UNA vez. Se rompe por donde sea: es una cadena
+   sin espacios y sin esto desborda la tarjeta en el teléfono. */
+.feed-url {
+  display: block;
+  margin-top: var(--s-3);
+  padding: var(--s-3);
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-control);
+  background: var(--c-field);
+  color: var(--c-text);
+  font-size: var(--t-meta);
+  font-family: ui-monospace, monospace;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  user-select: all;
 }

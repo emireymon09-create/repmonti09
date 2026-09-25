@@ -133,8 +133,14 @@ whenever that sync gets built.
 - `push_subscriptions` (`0009`) — one row per browser that asked for
   nursing alerts, scoped by `family_id` directly, visible only to the
   parent who created it
-- **Row Level Security enabled on every table** — 13 of them as of
-  `0009` — a user can only see/edit data for babies belonging to a
+- `family_settings` (`0012`) — the two countdown thresholds, shared by the
+  whole family, plus the "already alerted" marks. Scoped by `family_id`
+  directly; every member reads and writes it, because it belongs to the family
+  and not to one parent
+- `calendar_feeds` (`0012`) — the opaque token for a family's `.ics` feed,
+  stored as a sha-256 hash. Scoped by `family_id` directly
+- **Row Level Security enabled on every table** — 15 of them as of
+  `0012` — a user can only see/edit data for babies belonging to a
   family they're a member of
 
 **Auth:** Supabase Auth, email/password, via `/login`
@@ -225,12 +231,47 @@ growth curve but the row stays in the database.
 appointment at all the form starts open (which is what `/growth` already did);
 that is how the empty screen stopped ending in blank space.
 
-**`/statistics`** (2026-09-23): a real destination — in the bottom bar, in the
-Menu, in `middleware.ts`, in `lib/offlinePages.ts` and in the precache — that
-**draws nothing yet**. It carries a title and an empty state that says so,
-with no date promised. Measured empty it leaves 286.7 px of ink-to-bar gap,
-which is a known gap this pass opened: there is nothing honest to put there
-until the charts exist.
+**`/statistics`** (2026-09-23, **filled in on 2026-09-24**): four cards —
+feeding, diapers, sleep, growth — each with that week's totals on top and a
+chart under them. The week is a **week of Amelia's life** (1, 2, 3… counted
+from `birth_date`), not a calendar week and not `kpiWindows().week`:
+`lib/lifeWeek.ts`. Bars for the three discrete counts, a line for weight,
+whose Y axis deliberately does not start at zero. **No charting library was
+added** — the SVG is hand-drawn, like the nav icons. With no `birth_date`
+saved the screen is an empty state again, because without it there is no week
+of life to show. *(Until 2026-09-24 this screen drew nothing and this section
+said so; that was the known gap the previous pass opened, and it is closed.)*
+
+**The countdown, the appointment card and the calendar feed** (2026-09-24):
+
+- **Today's "next feeding" and "next nap" stopped being an average.** They came
+  from `predictNextFeeding` / `predictNextNap`, which averaged the last six
+  gaps. They now come from two thresholds the family sets, and they count from
+  when the last one **ended**, not when it started. Pure logic in
+  `lib/schedule.ts`; the two old functions are gone.
+- **The thresholds are family data, not device data** (`family_settings`,
+  `0012`, scoped by `family_id` directly). Unlike theme, language and nursing
+  alerts, both parents must see the same number — and the server reads them to
+  decide whether to send the alert, where `localStorage` does not exist. They
+  deliberately do **not** go through the offline queue.
+- **A push when either one runs over**, repeating every ~30 minutes until
+  something is logged, and a new event restarts the cycle. The mark is claimed
+  atomically **before** sending and released if nothing was delivered.
+- **The next doctor appointment is back on Today**, in its own card under the
+  three, only inside the 36 hours before it, with no coloured border — that is
+  spent on `.card.is-live` alone. A reminder goes out 24 hours before, once
+  (`doctor_appointments.reminder_sent_at`).
+- **The appointments can be subscribed to as an `.ics` feed**,
+  `/api/calendar/<token>.ics`, read-only and **with no login — a written
+  product decision, not an omission** (`CLAUDE.md` §5.8). The token is a
+  dedicated opaque one (`acal_…`, `calendar_feeds`, `0012`), never the
+  `family_id`, stored as sha-256 only, and rotated by generating another one,
+  which kills the old link immediately.
+- **The three new checks live inside `/api/push/nursing-check`**, not in new
+  endpoints: the rate ceiling in `lib/deviceAuth.ts` is **per IP, not per
+  endpoint**, and `0011` is already written and on its way to the cloud with
+  that job name. So the only new manual step in the cloud is applying `0012` —
+  no Vault secret, no new cron, no new environment variable.
 
 **`/settings`** (2026-09-23): theme, language, nursing alerts and signing out.
 They used to live inside the Menu's drop-down, which was navigation and control

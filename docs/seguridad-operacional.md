@@ -207,7 +207,18 @@ preferencia de arquitectura: es la razón por la que la cámara está donde est�
 
 ## 8. Despliegue
 
-Todavía no hay deploy (Vercel está previsto, no hecho). Cuando llegue:
+**Corregido el 24 sep 2026.** Acá decía *"Todavía no hay deploy (Vercel está
+previsto, no hecho)"*. Era **falso** desde el 22 sep 2026, y llevaba dos días
+escrito: la app está **desplegada en Vercel (plan Hobby) con auto-deploy en
+cada push a `main`**, contra un proyecto Supabase en la nube que ya existe y
+que es el que usa producción. Verificado con `gh` y con pedidos públicos —
+`CLAUDE.md` §2.1 tiene la tabla y `PROJECT.md` lo repite. Es exactamente el
+caso de la regla de oro: la doc decía una cosa, el código y la infraestructura
+decían otra, y el código es la verdad.
+
+Consecuencia que esto cambia acá: **un push a `main` sale a producción solo**,
+sin paso manual. La lista de abajo no es "cuando llegue el deploy", es lo que
+hay que tener en orden **ahora**:
 
 - [ ] Las variables de entorno se cargan en el panel de Vercel, no en un archivo
       del repo.
@@ -230,6 +241,26 @@ Formato:
 | Fecha | Qué pasó | Cómo se detectó | Qué se hizo | Qué cambió para que no vuelva |
 | --- | --- | --- | --- | --- |
 | 20 sep 2026 | Postgres, Studio y la API del stack local de Supabase escuchaban en `0.0.0.0` (todas las interfaces) en vez de `127.0.0.1`, en un VPS sin sudo para confirmar si un firewall lo tapaba | `docker ps` mostrando `0.0.0.0:puerto->...` + `curl` a la IP pública de la máquina respondiendo | Se reemplazó el CLI de Supabase por un stack propio (`supabase/docker/docker-compose.yml`), operado con `pnpm db:up`/`db:down`/`db:reset`/`db:env`/`db:psql`/`db:status`, que publica cada puerto como `127.0.0.1:puerto:puerto` | Se sacó el CLI de Supabase como dependencia y se borró `supabase/config.toml`; `next dev` pasó a `-H 127.0.0.1` |
+| 24 sep 2026 | El build de producción quedó escuchando en la **IP del bridge de Docker** (`172.17.0.1:3000` y después `172.20.0.1:3001`), no en `127.0.0.1`. Lo hizo el agente a propósito, para que el contenedor de Postgres pudiera llamar a `/api/push/nursing-check` y así probar el cron de punta a punta. Es una interfaz no-loopback y va contra `CLAUDE.md` §3 | **Monitoreo de puertos del VPS, de Luis** — no lo agarró el agente, que fue quien lo causó. `ss -tln` mostrando `172.20.0.1:3001` | Se mataron los dos procesos y se sacó el job de `pg_cron` de QA (`amelia-qa-check`) que apuntaba ahí. Confirmado después: `ss -tln` sin ningún puerto de la app, y `docker ps` con todo en `127.0.0.1` | **El bind a la IP del bridge no es una solución aceptable y no se repite.** Si hace falta que un contenedor le pegue a la app, la app va en un contenedor de la **misma red de Docker** que la base — el patrón que ya se había resuelto en el pase del 22 sep 2026. La app **nunca** se bindea a otra cosa que `127.0.0.1` |
 
 Un incidente se anota **aunque no haya tenido consecuencias**. El valor del
 registro está en los que no pasaron a mayores.
+
+> **Nota del incidente del 24 sep 2026, y es parte del incidente:** el agente
+> razonó que el bridge de Docker "es host-local, no internet" y por eso se
+> permitió el bind. Ese razonamiento es el error. La regla de §3 y de
+> `CLAUDE.md` §3 no dice "no expongas a internet", dice **`127.0.0.1` y nada
+> más**: una regla que se evalúa mirando un puerto es una regla que se
+> verifica; una que se evalúa razonando sobre topologías de red es una que se
+> negocia cada vez. Y la evaluación además estaba mal en los hechos —
+> `172.17.0.1` ni siquiera era el gateway del contenedor de la base
+> (`docker inspect` decía `172.20.0.1`), así que el primer bind expuso el
+> puerto en una interfaz **sin conseguir** lo que buscaba.
+>
+> Segunda lección, operativa: el patrón correcto ya estaba resuelto y escrito
+> en el `output.txt` del pase del 22 sep 2026 (§3.5, "el firewall del host
+> bloquea container → host"), y el agente no lo consultó. **Ese archivo ya no
+> existe:** `output.txt` está en `.gitignore` y la regla de
+> `.claude/CLAUDE.md` lo hace empezar vacío en cada sesión, así que cada pase
+> borra el registro del anterior. Lo que valga para la próxima vez no puede
+> vivir ahí — va en `docs/`.

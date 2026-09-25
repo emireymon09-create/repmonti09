@@ -119,7 +119,7 @@ export function seenState(opts: { offline: boolean; lastGoodAt: string | null })
 export const seenKey = {
   baby: 'baby',
   page: (
-    page: 'dashboard' | 'history' | 'growth' | 'feeding' | 'diapers' | 'sleep',
+    page: 'dashboard' | 'history' | 'growth' | 'feeding' | 'diapers' | 'sleep' | 'statistics',
     babyId: string,
   ) => `${page}:${babyId}`,
 }

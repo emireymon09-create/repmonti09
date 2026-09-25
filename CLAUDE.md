@@ -204,6 +204,25 @@ lib/format.ts      Fechas/horas en la TZ del hogar + conversión de unidades.
                    `DISPLAY_UNIT = 'oz'` (23 sep 2026): la app MUESTRA siempre
                    onzas. La base sigue guardando ml. `lib/useVolumeUnit.ts`
                    —la preferencia oz↔ml por dispositivo— se borró ese día.
+lib/schedule.ts    PURO (24 sep 2026): la cuenta regresiva de Today. `lastFeedingEnd`
+                   (el FIN del último evento de comida de cualquier tipo),
+                   `lastNapEnd`, `nextDue`/`dueFrom` y `nextAppointment` (ventana
+                   de 36 h). Reemplazó a `predictNextFeeding`/`predictNextNap`
+                   de lib/db.ts, que promediaban los últimos 6 intervalos.
+lib/lifeWeek.ts    PURO: la semana de vida (1, 2, 3… desde `birth_date`), en días
+                   de calendario del hogar. NO es `kpiWindows().week`.
+lib/push/schedule.ts  PURO: cuándo corresponde cada aviso nuevo y qué dice.
+                   `shouldAlert` es la regla de repetición cada 30 min.
+lib/calendar/ics.ts   PURO: el VCALENDAR (RFC 5545) — CRLF, plegado a 75 octetos,
+                   escapado de TEXT. Siempre en inglés: el feed no tiene sesión.
+lib/calendar/server.ts  SOLO server: el token opaco del feed y sus queries. Existe
+                   por lo mismo que lib/push/server.ts (§5.3): lib/db.ts es
+                   'use client' y el feed no tiene sesión que usar.
+components/Chart.tsx   Las dos gráficas de /statistics, SVG a mano. Las etiquetas
+                   del eje son HTML, no `<text>`: el viewBox va con
+                   preserveAspectRatio="none" y deformaba el texto 1,40x en la
+                   pared. No hay librería de gráficas en este repo.
+components/WeekPicker.tsx  El selector de semana de vida.
 lib/kpis.ts        Totales de /feeding, /diapers y /sleep: funciones PURAS (sin
                    reloj ni base). Ventanas `last24h` (**rodante**: ahora − 24 h,
                    23 sep 2026; antes era el día de calendario y se llamaba
@@ -544,6 +563,34 @@ Desde el 21 sep 2026 la app está en inglés y en español (`lib/i18n/`).
   manifest/metadata. El selector nativo de fecha sigue el idioma del
   navegador, no el de la app.
 
+### 5.8 El feed de calendario no tiene login, y es una decisión
+
+`/api/calendar/<token>.ics` (24 sep 2026) devuelve los turnos médicos de una
+familia **sin sesión, sin cookies y sin ningún header que podamos elegir**. No
+es una omisión de seguridad: es lo único que un cliente de calendario sabe
+hacer. iOS, Google Calendar y Thunderbird piden una URL y la vuelven a pedir
+cada hora; no mandan credenciales y no hay forma de que lo hagan.
+
+**La URL es el único control de acceso.** Con todas las letras:
+
+- **Qué expone quien tenga el link:** título, tipo, hora, doctor y notas de los
+  **turnos médicos** de esa familia. Nada más — ni tomas, ni pañales, ni sueño,
+  ni peso, ni los nombres de los padres, ni nada que permita entrar a la app.
+- **El token no es el `family_id`.** Es uno opaco y dedicado (`acal_` + 256
+  bits), en su propia tabla (`calendar_feeds`, 0012), y la base guarda **solo
+  el sha-256**: quien lea la base no se lleva un link que funcione.
+- **Se rota generando otro**, que pisa la fila (`family_id` es la PK) y deja
+  muerto el anterior **en el acto**. Es lo que hay que hacer si el link se
+  compartió sin querer, y por eso no hay historial de tokens: un token viejo
+  que siguiera sirviendo no sería una rotación. El `window.confirm` de Settings
+  dice que los calendarios suscritos hay que reapuntarlos.
+- **Un token mal formado y uno inexistente contestan lo mismo (404).**
+  Distinguirlos le diría a quien prueba tokens cuáles tienen la forma buena.
+- **El feed nunca entra a una caché**: `Cache-Control: private, no-store`.
+
+Si alguna vez esto tiene que dejar de ser público, la salida no es agregarle
+un login —rompería toda suscripción existente— sino dejar de publicar el feed.
+
 ---
 
 ## 6. Estado real — qué está y qué no
@@ -813,16 +860,86 @@ que el próximo check reintente.
 **NO hay tests de componentes ni de páginas.** Lo que se cubre es `lib/`
 y la base.
 
+**Countdown real, alertas configurables, tarjeta de cita, semana de vida,
+gráficas y calendario .ics (24 sep 2026).** El pase entero, y lo que hay que
+saber de cada frente:
+
+- **El countdown de Today dejó de ser un promedio.** Hasta hoy la línea "Next
+  feeding" salía de `predictNextFeeding` y "Next nap" de `predictNextNap`
+  (`lib/db.ts`), que **promediaban los últimos 6 intervalos**. El pedido decía
+  "reemplazar el cálculo hardcodeado": **no había ninguno**, y conviene tenerlo
+  escrito porque el cambio es real, no el relleno de un placeholder. El
+  promedio se autocorregía solo tras un estirón; el umbral fijo no. A cambio,
+  un umbral **sí puede disparar un aviso** ("llegó al promedio" es una
+  estadística, no una condición de alerta) y lo pone el padre. La lógica pura
+  está en `lib/schedule.ts`; las dos funciones viejas se borraron.
+- **Se mide desde el FIN del último evento, no desde su inicio.**
+  `predictNextFeeding` medía desde el inicio (`lib/kpis.ts` lo decía explícito).
+  Una toma de 40 minutos no vence tres horas después de *empezar*. Para un
+  evento puntual (biberón, sólido) el fin es `fed_at`, que es la única columna
+  que hay; para una toma terminada es `ended_at`; **con una sesión en curso no
+  vence nada**, y eso es lo que preserva —ahora por construcción, no con un
+  `if` aparte— el ocultamiento de la línea durante una lactancia.
+- **Los dos umbrales son un dato de FAMILIA, no del dispositivo.** Es la
+  diferencia con Theme, Language y Nursing alerts, que están en la misma
+  pantalla y viven en `localStorage`: los dos padres tienen que ver el mismo
+  número, y el **servidor** lo lee para decidir si manda el aviso.
+  `family_settings` (0012), scope `family_id` directo. **No pasan por la cola
+  offline**, a propósito: son un dato compartido y una cola que los aplica
+  tarde podría pisar lo que el otro cambió. Sin conexión la pantalla lo dice y
+  no guarda nada.
+- **El aviso de comida/siesta se repite cada ~30 min** mientras siga vencido, y
+  **un evento nuevo reinicia el ciclo** — sin esa tercera condición, un aviso
+  del ciclo anterior podía callar al siguiente media hora. La regla es pura
+  (`shouldAlert`, `lib/push/schedule.ts`). La marca se **toma antes de mandar y
+  de forma atómica** (compare-and-set sobre la columna), y **se devuelve si no
+  le llegó a nadie**: un aviso que sale sin quedar marcado se repite cada
+  minuto.
+- **La tarjeta de próxima cita volvió a Today**, debajo de las tres y solo
+  dentro de las **36 horas** previas. Se agrega, no reemplaza nada. **Sin borde
+  de color**: el borde de color se gasta en `.card.is-live` y nada más. El
+  recordatorio push sale **24 h antes y una sola vez** por cita
+  (`doctor_appointments.reminder_sent_at`, 0012, mismo patrón que 0009) — una
+  cita no cambia con el tiempo, repetirla cada media hora sería spam.
+- **`/statistics` dibuja.** Cuatro tarjetas —comida, pañales, sueño,
+  crecimiento— con los KPIs de la semana elegida arriba y una gráfica abajo.
+  **Barras** para las tres primeras (cantidades discretas que se comparan entre
+  días) y **línea** para el peso (magnitud continua: lo que importa es la
+  pendiente). El eje Y del peso **no arranca en cero**, a propósito: entre 3,9
+  y 4,3 kg un eje desde cero dibuja una línea plana. **No se agregó ninguna
+  librería de gráficas**: son SVG a mano, como los trece íconos.
+- **La "semana de vida" NO es la ventana `week` de `lib/kpis.ts`.** Es la
+  semana 1, 2, 3… desde `babies.birth_date`: un tramo **fijo** del calendario
+  que no se mueve, por eso se puede elegir y comparar. `lib/lifeWeek.ts`, en
+  días de calendario del hogar (una semana con cambio de horario dura 169 h, y
+  hay test). **Sin `birth_date` no hay semana y no se inventa una**: la
+  pantalla dice qué falta y dónde se carga.
+- **El selector de semana sustituyó la tarjeta de "Last 7 days"** en
+  `/feeding`, `/diapers` y `/sleep`. La de 24 h y el log de abajo no cambiaron.
+  La lectura cubre **la más vieja de las dos ventanas**: un total cortado corto
+  saldría corto en silencio.
+- **Feed de calendario `.ics`** (`/api/calendar/<token>.ics`), de solo lectura,
+  **sin login a propósito** — ver §5.8. Token opaco `acal_…` dedicado, **nunca
+  el `family_id`**, del que la base guarda solo el sha-256 (`calendar_feeds`,
+  0012, mismo espíritu que `device_tokens` de 0007). **Rotar = generar uno
+  nuevo**, que pisa la fila y mata el link viejo en el acto.
+- **Los tres checks nuevos viven en `/api/push/nursing-check`**, no en
+  endpoints nuevos. El nombre quedó chico y se dejó igual: el techo de
+  `lib/deviceAuth.ts` es **por IP, no por endpoint** (§7, pregunta 4), y `0011`
+  ya está escrita y en camino a la nube con ese jobname, la URL en Vault y el
+  token `push_check`. Un endpoint nuevo sería un secreto más en Vault, un job
+  más y otra corrida manual en producción. **Consecuencia buena: el único paso
+  manual nuevo en la nube es aplicar `0012`** — ni Vault, ni cron, ni variables
+  nuevas. Detalle en `docs/aplicar-en-la-nube-0012.md`.
+
 **No construido:**
 
-- **`/statistics` no dibuja nada.** La ruta existe, es destino de la barra y
-  del menú, está protegida y se abre sin conexión — pero su contenido es un
-  título y un estado vacío. **Y abre un hueco nuevo:** medida a 390×844 sin
-  datos tiene **267,5 px de tinta a la barra** (258,5 en español; eran 286,7 y
-  277,7 antes de que la barra pasara a `sticky`), que es casi
-  el número que Doctor tenía *antes* de arreglarlo (306,7). Se deja así a
-  propósito: no hay nada que poner hasta que existan las gráficas, y rellenar
-  con adorno sería peor. Queda como **hueco conocido abierto por este pase**.
+- *(Cerrado el 24 sep 2026: `/statistics` no dibujaba nada. Era el hueco
+  conocido que abrió el pase del 23 sep —267,5 px de tinta a la barra sin
+  datos— y lo cierra este: cuatro tarjetas con KPIs y gráficas de la semana de
+  vida. Lo que **sigue** valiendo de aquella nota: sin `birth_date` cargada, y
+  solo entonces, la pantalla vuelve a ser un estado vacío, porque sin fecha de
+  nacimiento no hay semana de vida que mostrar.)*
 - **El panel de edición todavía puede convertir una fila a `solid`.** "Solid"
   salió de todo formulario que *crea* una toma, pero el selector de los paneles
   de edición (`components/SectionPage.tsx` y `app/history/page.tsx`, los dos
@@ -1108,6 +1225,17 @@ y la base.
    `/api/push/nursing-check` pasa por el mismo `authenticateDevice`, y está
    pensado para llamarse **una vez por minuto**. Si el check y el NUC salen
    detrás de la misma IP, comparten las 20 por minuto.
+   **El 24 sep 2026 NO se agregó ninguno**, y fue una decisión, no una
+   casualidad: los tres checks nuevos (comida vencida, siesta vencida,
+   recordatorio de cita) se metieron **adentro** de `/api/push/nursing-check`
+   en vez de tener endpoints propios, justamente porque el techo es **por IP y
+   no por endpoint** — cuatro endpoints por minuto gastarían 4 de las 20 en vez
+   de 1. Sigue habiendo **un** consumidor por minuto.
+   **Y hay uno nuevo que NO tiene techo:** `/api/calendar/[token]`, público y
+   con `service_role`, no pasa por `authenticateDevice` y por lo tanto no tiene
+   límite de intentos (hallazgo M-6 de la auditoría del 24 sep 2026). Es de
+   solo lectura y el token es de 256 bits, pero queda anotado acá y no se
+   resuelve en este pase.
 5. **Cerrada el 21 sep 2026.** El CLI de Supabase no tiene forma de fijar el
    bind (evidencia E-3: el binario arma `-p puerto:puerto`, sin IP, y no hay
    clave de config que lo cambie). Se reemplazó por un `docker-compose.yml`
@@ -1150,7 +1278,7 @@ y la base.
    - Y ojo: el endpoint resuelve la familia **desde el token**, así que es
      **un job de `pg_cron` por familia**. Hoy hay una sola.
 7. **¿La ventana de 7 días también tiene que ser rodante?** (abierta el 23 sep
-   2026.) "Hoy" pasó a ser las últimas 24 horas porque a las 00:01 los números
+   2026; **parcialmente moot desde el 24 sep 2026** — ver el cierre al final.) "Hoy" pasó a ser las últimas 24 horas porque a las 00:01 los números
    se ponían en cero. `week` quedó como estaba —hoy + los 6 días de calendario
    anteriores— porque el pedido hablaba solo de "hoy", y cambiarlo sin que
    nadie lo pida habría sido alcance inventado. Pero si la idea de fondo es
@@ -1160,6 +1288,17 @@ y la base.
    mientras tanto, que conviene tener escrita:** la pantalla de sección mezcla
    a propósito **tres** unidades de tiempo — 24 h rodantes en la tarjeta corta,
    7 días de calendario en la larga, y el log agrupado por día de calendario.
+
+   **Actualización del 24 sep 2026:** la tarjeta de "últimos 7 días" **ya no
+   existe** en `/feeding`, `/diapers` ni `/sleep` — la sustituyó el selector de
+   semana de vida. Así que:
+   - **Para esas tres pantallas la pregunta queda sin objeto.** Y las tres
+     unidades de tiempo siguen siendo tres, pero otras: 24 h rodantes, la
+     semana de vida (fija) y el log por día de calendario.
+   - **Para `lib/kpis.ts` sigue abierta.** `kpiWindows().week` no se tocó y
+     sigue siendo una función pura con sus tests; hoy no la consume ninguna
+     pantalla. Si nunca vuelve a tener consumidor, la decisión es si se borra,
+     no si se vuelve rodante. **No lo resuelvas solo.**
 
 ---
 

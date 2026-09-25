@@ -24,6 +24,12 @@ export type Baby = {
   name: string
   birth_date: string | null
   pumping_reset_at: string | null
+  /**
+   * La familia a la que pertenece. La leen los ajustes compartidos (0012:
+   * `family_settings` y `calendar_feeds`), que tienen scope por `family_id`
+   * DIRECTO y no por un join a través de `baby_id` — la forma de la fase 2.
+   */
+  family_id: string
 }
 
 export type Feeding = {

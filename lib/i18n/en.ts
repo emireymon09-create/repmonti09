@@ -408,6 +408,102 @@ export const en = {
   'version.title': 'Version history',
   'version.current': 'Current version',
   'version.notesLanguage': 'Release notes are written in English.',
+
+  // ------------------------------------------------------------ next appointment card (/dashboard)
+  // Only on screen when the appointment is within 36 hours: further out it is
+  // not information about today, and Doctor already lists it.
+  'appt.next': 'Next appointment',
+  'appt.with': 'with {doctor}',
+  'appt.open': 'Open Doctor',
+  'appt.inHours': { one: 'in {count} hour', other: 'in {count} hours' },
+  'appt.inMinutes': { one: 'in {count} minute', other: 'in {count} minutes' },
+
+  // ------------------------------------------------------------ thresholds (/settings)
+  'settings.schedule': 'Feeding and nap reminders',
+  // Says out loud that this one is NOT per device, because every other
+  // control on this screen is.
+  'settings.scheduleNote':
+    'Shared by everyone in the family, not just this device. The countdown on Today uses these, and an alert goes out when one runs over.',
+  'settings.feedEvery': 'Feed every',
+  'settings.napAfter': 'Nap after being awake',
+  'settings.minutes': 'min',
+  'settings.thresholdRange': 'Between {min} and {max} minutes.',
+  'settings.thresholdNotNumber': 'That has to be a whole number of minutes.',
+  'settings.thresholdOutOfRange': 'That has to be between {min} and {max} minutes.',
+  'settings.thresholdSaved': 'Saved for the whole family.',
+  'settings.thresholdCouldNotSave': 'Couldn’t save — {error}',
+  'settings.thresholdCouldNotLoad': 'Couldn’t load the reminders — {error}',
+  'settings.thresholdOffline':
+    'Offline — these are shared with the other parent, so they can only be changed with a connection.',
+
+  // ------------------------------------------------------------ calendar feed (/settings)
+  // The name a calendar app shows for the subscription. Always English: the
+  // feed has no session and no language to read (CLAUDE.md §5.7).
+  'calendar.feedName': 'Amelia — appointments',
+  'calendar.title': 'Calendar feed',
+  'calendar.note':
+    'Subscribe a phone or computer calendar to the doctor appointments. The link is the only thing protecting it, so treat it like a password — anyone with it can see the appointments (and nothing else).',
+  'calendar.none': 'No link yet.',
+  'calendar.create': 'Create the link',
+  'calendar.rotate': 'Replace the link',
+  'calendar.rotateConfirm':
+    'Replace the calendar link? The old one stops working right away, and every calendar subscribed to it has to be pointed at the new one.',
+  'calendar.showOnce': 'Copy it now — it is shown once. If you lose it, replace it with a new one.',
+  'calendar.copy': 'Copy',
+  'calendar.copied': 'Copied',
+  'calendar.createdOn': 'Link created {when}.',
+  'calendar.lastRead': 'Last read by a calendar {when}.',
+  'calendar.neverRead': 'No calendar has read it yet.',
+  'calendar.couldNotCreate': 'Couldn’t create the link — {error}',
+  'calendar.couldNotLoad': 'Couldn’t check the calendar link — {error}',
+  'calendar.offline': 'Offline — the calendar link needs a connection.',
+  'calendar.howTo': 'In the calendar app, add a subscribed calendar and paste this address.',
+
+  // ------------------------------------------------------------ week of life
+  // NOT the rolling 7-day window of lib/kpis.ts: week 1, 2, 3… counted from
+  // her birthday, a fixed stretch of the calendar that does not move.
+  'week.label': 'Week of life',
+  'week.number': 'Week {week}',
+  'week.thisWeek': 'Week {week} · this one',
+  'week.range': '{start} – {end}',
+  'week.previous': 'Previous week',
+  'week.next': 'Next week',
+  'week.noBirthDate': 'Her date of birth isn’t saved yet',
+  'week.noBirthDateHint':
+    'Weeks of life are counted from her birthday, so this needs it first. Add it on Today and this fills in.',
+
+  // ------------------------------------------------------------ statistics (/statistics)
+  'stats.feeding': 'Feeding',
+  'stats.diapers': 'Diapers',
+  'stats.sleep': 'Sleep',
+  'stats.growth': 'Growth',
+  'stats.perDay': 'Per day',
+  'stats.chartFeedings': 'Feedings a day, this week',
+  'stats.chartBottle': 'Bottle a day, this week',
+  'stats.chartDiapers': 'Diapers a day, this week',
+  'stats.chartSleep': 'Hours asleep a day, this week',
+  'stats.chartWeight': 'Weight, every measurement so far',
+  'stats.noRows': 'Nothing logged this week',
+  'stats.noGrowth': 'No measurements yet',
+  'stats.dailyAverage': 'Daily average',
+  'stats.weekTotal': 'Week total',
+  'stats.latestWeight': 'Latest weight',
+  'stats.latestHeight': 'Latest length',
+  'stats.since': 'Since the one before',
+  'stats.couldNotLoad': 'Couldn’t load the statistics — {error}',
+  // The chart is drawn as an image; this is what a screen reader gets instead.
+  'stats.chartSummary': '{title}. {values}',
+  'stats.chartDayValue': '{day}: {value}',
+
+  // ------------------------------------------------------------ the three scheduled alerts
+  'push.feedingOverdue.title': 'Time to eat',
+  'push.feedingOverdue.body':
+    '{name} hasn’t eaten in {minutes} min — past what you set. Log it on Today once she does.',
+  'push.napOverdue.title': 'Time for a nap',
+  'push.napOverdue.body':
+    '{name} has been awake {minutes} min — past what you set. Start the nap on Today.',
+  'push.appointment.title': 'Appointment tomorrow',
+  'push.appointment.body': '{title} · in about {hours} hours.',
 } satisfies Record<string, string | Plural>
 
 export type MessageKey = keyof typeof en

@@ -14,7 +14,23 @@ import {
   type StoredSubscription,
 } from '@/lib/push/nursing'
 import { decideForbidden, type SendOutcome, type SubscriptionAttempt } from '@/lib/push/retry'
-import type { Side } from '@/lib/types'
+import type { Feeding, NursingSession, Side, SleepSession } from '@/lib/types'
+import {
+  APPOINTMENT_REMINDER_MS,
+  DEFAULT_FAMILY_SETTINGS,
+  dueFrom,
+  lastFeedingEnd,
+  lastNapEnd,
+} from '@/lib/schedule'
+import {
+  APPOINTMENT_TTL_SECONDS,
+  SCHEDULE_TTL_SECONDS,
+  appointmentPayload,
+  overdueFeedingPayload,
+  overdueNapPayload,
+  scheduleTopic,
+  shouldAlert,
+} from '@/lib/push/schedule'
 
 /**
  * Push, del lado del SERVIDOR. Solo lo importan route handlers
@@ -83,6 +99,7 @@ async function sendOne(
   payload: PushPayload,
   topic: string,
   vapid: Vapid,
+  ttl: number = LONG_NURSING_TTL_SECONDS,
 ): Promise<SendOutcome> {
   try {
     await webpush.sendNotification(
@@ -90,7 +107,7 @@ async function sendOne(
       JSON.stringify(payload),
       {
         vapidDetails: vapid,
-        TTL: LONG_NURSING_TTL_SECONDS,
+        TTL: ttl,
         urgency: 'high',
         topic,
         timeout: SEND_TIMEOUT_MS,
@@ -405,4 +422,418 @@ export async function runNursingCheck(
       .eq('family_id', identity.familyId)
   }
   return result
+}
+
+// ==================================================== los tres checks nuevos
+//
+// POR QUÉ VIVEN EN EL MISMO ENDPOINT QUE EL DE TOMA LARGA
+// -------------------------------------------------------
+// Decisión del 24 sep 2026, con el mismo criterio con que §7.6 eligió
+// pg_cron+pg_net sobre Vercel Cron y la caja de la casa:
+//
+//   · El techo de intentos de lib/deviceAuth.ts es por IP, no por endpoint
+//     (20 por minuto, CLAUDE.md §7 pregunta 4). Cuatro endpoints llamados una
+//     vez por minuto desde la misma IP gastan 4 de esas 20 en vez de 1, y ese
+//     techo ya lo comparten /api/ingest y /api/quick/nurse.
+//   · `0011` ya está escrita y en camino a aplicarse en la nube, con el
+//     jobname `nursing-check`, la URL en Vault y el token de scope
+//     `push_check`. Un endpoint nuevo sería un secreto más en Vault, un job
+//     más de pg_cron y otra corrida manual de Luis en producción. Nada de eso
+//     hace falta.
+//   · `0011` es historia y no se edita (CLAUDE.md §5.2). No hace falta
+//     tocarla.
+//
+// Lo que se paga: el nombre `nursing-check` ya no describe todo lo que hace.
+// Queda documentado acá, en el encabezado del handler y en CLAUDE.md §6. Es
+// preferible un nombre viejo y anotado a una pieza de infraestructura nueva
+// que alguien tiene que aplicar a mano en producción.
+
+export type ScheduleCheckResult = {
+  /** Avisos que salieron, por tipo. */
+  feeding: number
+  nap: number
+  appointments: number
+  sent: number
+  failed: number
+  /** Suscripciones que el servicio dio por muertas (404/410) y se borraron. */
+  removed: number
+  /** No se pudo decidir nada: falta la configuración o no hay a quién avisar. */
+  skipped: boolean
+}
+
+type Recipient = StoredSubscription
+
+/** Un envío a cada destinatario, en el idioma de cada uno. */
+async function deliver(
+  recipients: readonly Recipient[],
+  build: (lang: ReturnType<typeof subscriptionLang>) => PushPayload,
+  topic: string,
+  ttl: number,
+  vapid: Vapid,
+): Promise<{ sent: number; failed: number; gone: string[] }> {
+  const gone: string[] = []
+  const outcomes = await Promise.all(
+    recipients.map(async (sub) => {
+      const outcome = await sendOne(sub, build(subscriptionLang(sub.lang)), topic, vapid, ttl)
+      if (outcome === 'gone') gone.push(sub.id)
+      return outcome
+    }),
+  )
+  return {
+    sent: outcomes.filter((o) => o === 'ok').length,
+    failed: outcomes.filter((o) => o !== 'ok').length,
+    gone,
+  }
+}
+
+/**
+ * Comida vencida, siesta vencida y cita en 24 h, para la familia del token.
+ *
+ * `db` es service_role, así que —igual que runNursingCheck— cada query lleva
+ * la familia o los bebés de ESA familia explícitos: el aislamiento no lo hace
+ * RLS acá, lo hace este código.
+ *
+ * Las decisiones son todas de funciones puras: `dueFrom` y `nextAppointment`
+ * (lib/schedule.ts) y `shouldAlert` (lib/push/schedule.ts). Acá solo hay base
+ * y red.
+ */
+export async function runScheduleChecks(
+  db: SupabaseClient,
+  identity: Pick<DeviceIdentity, 'familyId' | 'babyId'>,
+  vapid: Vapid,
+  now: Date = new Date(),
+): Promise<ScheduleCheckResult | Failure> {
+  const result: ScheduleCheckResult = {
+    feeding: 0,
+    nap: 0,
+    appointments: 0,
+    sent: 0,
+    failed: 0,
+    removed: 0,
+    skipped: false,
+  }
+  const at = now.getTime()
+
+  const [subsRes, membersRes] = await Promise.all([
+    db
+      .from('push_subscriptions')
+      .select('id, user_id, endpoint, p256dh, auth, lang, updated_at')
+      .eq('family_id', identity.familyId),
+    db.from('family_members').select('user_id').eq('family_id', identity.familyId),
+  ])
+  if (subsRes.error) return { status: 500, error: subsRes.error.message }
+  if (membersRes.error) return { status: 500, error: membersRes.error.message }
+
+  const { recipients } = pickRecipients(
+    subsRes.data ?? [],
+    (membersRes.data ?? []).map((m) => m.user_id as string),
+    pushEndpointAllowed,
+  )
+  // Sin nadie a quien avisar no se marca nada: si alguien prende los avisos
+  // dentro de un rato, el vencimiento que sigue abierto le llega igual.
+  if (recipients.length === 0) {
+    result.skipped = true
+    return result
+  }
+
+  let babiesQuery = db.from('babies').select('id, name').eq('family_id', identity.familyId)
+  if (identity.babyId) babiesQuery = babiesQuery.eq('id', identity.babyId)
+  const babiesRes = await babiesQuery
+  if (babiesRes.error) return { status: 500, error: babiesRes.error.message }
+  const babies = (babiesRes.data ?? []) as { id: string; name: string }[]
+  if (babies.length === 0) {
+    result.skipped = true
+    return result
+  }
+  // M-2 (auditoría del 24 sep 2026): con más de un bebé en la familia y un
+  // token que no está clavado a ninguno, estos checks mezclaban los eventos de
+  // todos y le ponían al aviso el nombre de babies[0]. Falla CERRADO, que es
+  // lo que ya hace resolveBabyForDevice en lib/deviceAuth.ts para el mismo
+  // caso: no alcanza la información para decidir de quién hablar, así que no
+  // se habla. (El check de toma larga sí puede con varios bebés: cada aviso
+  // sale de UNA sesión, que trae su propio baby_id.)
+  if (babies.length > 1) {
+    result.skipped = true
+    return result
+  }
+  const babyIds = babies.map((b) => b.id)
+  const babyName = babies[0].name
+
+  // Los umbrales de la familia. Sin fila todavía, valen los defaults —los
+  // mismos números que el DEFAULT de la columna (0012)—, así que el aviso
+  // funciona antes de que nadie entre a Settings.
+  const settingsRes = await db
+    .from('family_settings')
+    .select('nap_threshold_minutes, feed_threshold_minutes, feed_alert_sent_at, nap_alert_sent_at')
+    .eq('family_id', identity.familyId)
+    .maybeSingle()
+  if (settingsRes.error) return { status: 500, error: settingsRes.error.message }
+  const settings = {
+    ...DEFAULT_FAMILY_SETTINGS,
+    feed_alert_sent_at: null as string | null,
+    nap_alert_sent_at: null as string | null,
+    ...(settingsRes.data ?? {}),
+  }
+
+  // Solo hace falta mirar hacia atrás lo que el umbral más largo abarca, más
+  // un margen: una fila de la semana pasada no cambia "cuándo fue la última".
+  const lookbackMs =
+    Math.max(settings.feed_threshold_minutes, settings.nap_threshold_minutes) * 60_000 * 2 +
+    DAY_LOOKBACK_MS
+  const sinceIso = new Date(at - lookbackMs).toISOString()
+
+  const [feedingsRes, nursingRes, sleepRes] = await Promise.all([
+    db
+      .from('feedings')
+      .select('id, fed_at, feeding_type, amount_ml, notes')
+      .in('baby_id', babyIds)
+      .is('voided_at', null)
+      .gte('fed_at', sinceIso),
+    db
+      .from('nursing_sessions')
+      .select('id, side, started_at, ended_at')
+      .in('baby_id', babyIds)
+      .is('voided_at', null)
+      .or(`started_at.gte."${sinceIso}",ended_at.gte."${sinceIso}",ended_at.is.null`),
+    db
+      .from('sleep_sessions')
+      .select('id, started_at, ended_at, source')
+      .in('baby_id', babyIds)
+      .is('voided_at', null)
+      .or(`started_at.gte."${sinceIso}",ended_at.gte."${sinceIso}",ended_at.is.null`),
+  ])
+  if (feedingsRes.error) return { status: 500, error: feedingsRes.error.message }
+  if (nursingRes.error) return { status: 500, error: nursingRes.error.message }
+  if (sleepRes.error) return { status: 500, error: sleepRes.error.message }
+
+  const gone = new Set<string>()
+
+  // ---------------------------------------------------------- comida vencida
+  const lastFeed = lastFeedingEnd(
+    (feedingsRes.data ?? []) as Feeding[],
+    (nursingRes.data ?? []) as NursingSession[],
+  )
+  const feedDue = dueFrom(lastFeed, settings.feed_threshold_minutes, at)
+  if (
+    feedDue &&
+    shouldAlert({
+      overdue: feedDue.overdue,
+      lastAlertAt: settings.feed_alert_sent_at,
+      lastEventAt: lastFeed?.endedAt ?? null,
+      now: at,
+    }).send
+  ) {
+    // M-1 / A-3: la marca se PONE ANTES de mandar y de forma atómica, igual
+    // que la de la toma larga (0009). Dos checks a la vez: el UPDATE del
+    // segundo re-evalúa su WHERE tras el lock de fila y no matchea, así que
+    // manda uno solo. Y si el claim falla —o lo ganó el otro— no se manda
+    // nada: antes el upsert se hacía DESPUÉS y sin mirar su error, así que un
+    // fallo ahí repetía el push cada minuto.
+    const previousFeedMark = settings.feed_alert_sent_at
+    const claimed = await claimAlert(
+      db,
+      identity.familyId,
+      'feed_alert_sent_at',
+      now,
+      previousFeedMark,
+    )
+    if (claimed) {
+      const out = await deliver(
+        recipients,
+        (lang) =>
+          overdueFeedingPayload(lang, {
+            familyId: identity.familyId,
+            babyName,
+            // A-1 (auditoría del 24 sep 2026): el texto dice "hace {minutes} que
+            // no come", así que tiene que ser el tiempo DESDE LA ÚLTIMA COMIDA,
+            // no los minutos de atraso. Con umbral 180 y 5 de atraso, mandar el
+            // atraso hacía decir "hace 5 min que no come" cuando hacía 185.
+            minutesOverdue: minutesSinceEvent(lastFeed, at),
+          }),
+        scheduleTopic(identity.familyId),
+        SCHEDULE_TTL_SECONDS,
+        vapid,
+      )
+      result.sent += out.sent
+      result.failed += out.failed
+      out.gone.forEach((id) => gone.add(id))
+      // La marca se pone SOLO si le llegó a alguien: si no salió, el próximo
+      // check reintenta en vez de quedarse callado media hora (§5.5 aplicado al
+      // aviso — no se da por mandado lo que no se mandó).
+      if (out.sent > 0) result.feeding = 1
+      else await releaseAlert(db, identity.familyId, 'feed_alert_sent_at', now, previousFeedMark)
+    }
+  }
+
+  // ---------------------------------------------------------- siesta vencida
+  const lastNap = lastNapEnd((sleepRes.data ?? []) as SleepSession[])
+  const napDue = dueFrom(lastNap, settings.nap_threshold_minutes, at)
+  if (
+    napDue &&
+    shouldAlert({
+      overdue: napDue.overdue,
+      lastAlertAt: settings.nap_alert_sent_at,
+      lastEventAt: lastNap?.endedAt ?? null,
+      now: at,
+    }).send
+  ) {
+    const previousNapMark = settings.nap_alert_sent_at
+    const claimedNap = await claimAlert(
+      db,
+      identity.familyId,
+      'nap_alert_sent_at',
+      now,
+      previousNapMark,
+    )
+    if (claimedNap) {
+      const out = await deliver(
+        recipients,
+        (lang) =>
+          overdueNapPayload(lang, {
+            familyId: identity.familyId,
+            babyName,
+            // A-1, mismo caso: el texto dice "lleva {minutes} despierta".
+            minutesOverdue: minutesSinceEvent(lastNap, at),
+          }),
+        scheduleTopic(identity.familyId),
+        SCHEDULE_TTL_SECONDS,
+        vapid,
+      )
+      result.sent += out.sent
+      result.failed += out.failed
+      out.gone.forEach((id) => gone.add(id))
+      if (out.sent > 0) result.nap = 1
+      else await releaseAlert(db, identity.familyId, 'nap_alert_sent_at', now, previousNapMark)
+    }
+  }
+
+  // ------------------------------------------------------ recordatorio de cita
+  // LA marca, con el mismo patrón que la toma larga (0009): un solo UPDATE con
+  // `reminder_sent_at is null` en el WHERE, así dos checks a la vez no mandan
+  // dos veces. Y el recordatorio NO se repite: "la cita es mañana a las 10" no
+  // cambia con el tiempo, repetirlo cada media hora sería spam.
+  const dueWindow = new Date(at + APPOINTMENT_REMINDER_MS).toISOString()
+  const claimed = await db
+    .from('doctor_appointments')
+    .update({ reminder_sent_at: now.toISOString() })
+    .in('baby_id', babyIds)
+    .eq('completed', false)
+    .is('reminder_sent_at', null)
+    .gt('scheduled_at', now.toISOString())
+    .lte('scheduled_at', dueWindow)
+    .select('id, title, scheduled_at')
+  if (claimed.error) return { status: 500, error: claimed.error.message }
+
+  for (const appt of claimed.data ?? []) {
+    const hours = Math.max(
+      1,
+      Math.round((Date.parse(appt.scheduled_at as string) - at) / 3_600_000),
+    )
+    const out = await deliver(
+      recipients,
+      (lang) =>
+        appointmentPayload(lang, { id: appt.id as string, title: appt.title as string, hours }),
+      scheduleTopic(appt.id as string),
+      APPOINTMENT_TTL_SECONDS,
+      vapid,
+    )
+    result.sent += out.sent
+    result.failed += out.failed
+    out.gone.forEach((id) => gone.add(id))
+    if (out.sent > 0) result.appointments += 1
+    else {
+      // No le llegó a nadie: se le saca la marca para que el próximo check lo
+      // reintente. Igual que `released` en runNursingCheck, y solo si la marca
+      // sigue siendo la que puso ESTE check.
+      await db
+        .from('doctor_appointments')
+        .update({ reminder_sent_at: null })
+        .eq('id', appt.id as string)
+        .in('baby_id', babyIds)
+        .eq('reminder_sent_at', now.toISOString())
+    }
+  }
+
+  // Las que el servicio dio por muertas. Los 403 los sigue decidiendo
+  // runNursingCheck con el contraste del lote (lib/push/retry.ts): acá no se
+  // toca ninguna racha, para no contar dos veces el mismo minuto.
+  if (gone.size > 0) {
+    const del = await db
+      .from('push_subscriptions')
+      .delete()
+      .in('id', [...gone])
+      .eq('family_id', identity.familyId)
+      .select('id')
+    result.removed = del.error ? 0 : (del.data?.length ?? 0)
+  }
+
+  return result
+}
+
+/** Un día de margen sobre el umbral más largo, para la ventana de lectura. */
+const DAY_LOOKBACK_MS = 24 * 60 * 60 * 1000
+
+/** Minutos enteros desde el fin del último evento. Es lo que dice el texto. */
+function minutesSinceEvent(last: { endedAt: string } | null, now: number): number {
+  if (!last) return 0
+  return Math.max(0, Math.round((now - Date.parse(last.endedAt)) / 60_000))
+}
+
+/**
+ * Toma la marca de "ya avisé" ANTES de mandar, y de forma exclusiva.
+ *
+ * El UPDATE lleva en el WHERE el valor que la marca tenía cuando se leyó
+ * (compare-and-set): si otro check la movió mientras tanto, no matchea ninguna
+ * fila y este check no manda. Es el mismo mecanismo que usa la toma larga en
+ * 0009 con `long_alert_sent_at is null`, adaptado a una marca que se PISA en
+ * vez de ponerse una sola vez.
+ *
+ * Devuelve `false` también si el UPDATE falla: sin marca confirmada no se
+ * manda nada, porque un aviso que sale sin quedar marcado se repite cada
+ * minuto mientras siga vencido (hallazgo A-3 de la auditoría del 24 sep 2026:
+ * antes la marca se escribía DESPUÉS de mandar y con el error ignorado).
+ */
+async function claimAlert(
+  db: SupabaseClient,
+  familyId: string,
+  column: 'feed_alert_sent_at' | 'nap_alert_sent_at',
+  now: Date,
+  previous: string | null,
+): Promise<boolean> {
+  // La familia puede no tener fila de ajustes todavía: los umbrales valen por
+  // default hasta que alguien entra a Settings, y el aviso no puede depender
+  // de eso. Se crea vacía y recién después se compite por la marca.
+  const seeded = await db
+    .from('family_settings')
+    .upsert({ family_id: familyId }, { onConflict: 'family_id', ignoreDuplicates: true })
+  if (seeded.error) return false
+
+  let q = db
+    .from('family_settings')
+    .update({ [column]: now.toISOString(), updated_at: now.toISOString() })
+    .eq('family_id', familyId)
+  q = previous === null ? q.is(column, null) : q.eq(column, previous)
+  const { data, error } = await q.select('family_id')
+  if (error) return false
+  return (data?.length ?? 0) > 0
+}
+
+/**
+ * Devuelve la marca a donde estaba: este check la tomó pero el aviso no le
+ * llegó a nadie, así que el próximo tiene que reintentar. Solo se revierte la
+ * marca que puso ESTE check (mismo valor), igual que `released` en
+ * runNursingCheck.
+ */
+async function releaseAlert(
+  db: SupabaseClient,
+  familyId: string,
+  column: 'feed_alert_sent_at' | 'nap_alert_sent_at',
+  now: Date,
+  previous: string | null,
+): Promise<void> {
+  await db
+    .from('family_settings')
+    .update({ [column]: previous })
+    .eq('family_id', familyId)
+    .eq(column, now.toISOString())
 }

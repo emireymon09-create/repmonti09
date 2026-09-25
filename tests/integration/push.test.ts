@@ -418,7 +418,15 @@ describe('/api/push/nursing-check — el aviso', () => {
 
     const first = await check(checkA)
     expect(first.status).toBe(200)
-    expect(await first.json()).toEqual({
+    // `schedule` es lo que devuelven los tres checks que se sumaron a este
+    // mismo endpoint el 24 sep 2026 (comida vencida, siesta vencida, cita en
+    // 24 h — ver el encabezado del handler). Se afirma aparte para que este
+    // test siga siendo sobre la toma larga: `objectContaining` dejaría pasar
+    // un campo de más en el resultado de la toma, que es justo lo que este
+    // `toEqual` está cuidando.
+    const body = (await first.json()) as Record<string, unknown>
+    const { schedule, ...nursingPart } = body
+    expect(nursingPart).toEqual({
       subscriptions: 2,
       marked: 1,
       sent: 2,
@@ -429,6 +437,7 @@ describe('/api/push/nursing-check — el aviso', () => {
       skipped: 0,
       released: 0,
     })
+    expect(schedule).toBeDefined()
     expect(await alertSentAt(id)).not.toBeNull()
 
     const [toA] = requestsTo(`/${tag}/a`)

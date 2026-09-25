@@ -988,6 +988,65 @@ un empate al pixel. Medido después: EN y ES a 1440 dan **290 / 290 / 290** en
 las tres tarjetas, las dos en una sola línea, y a 390 la fila no cambió de
 forma. La medida es relativa, así que vale igual en las dos superficies.
 
+### 5.17 Gráficas, semana de vida y la tarjeta de cita (24 sep 2026)
+
+**a · Las etiquetas del eje son HTML, no `<text>` adentro del SVG.** Es el
+hallazgo del `impeccable audit` de este pase, y vale más que el arreglo:
+`preserveAspectRatio="none"` es lo que deja que la gráfica llene el ancho de
+la tarjeta, pero **estira X e Y por separado**, y eso deforma cualquier texto
+que viva adentro. Medido con `<text>` adentro, antes de corregirlo:
+
+| ancho | escala X | escala Y | deformación | "Mon" renderizado |
+|---|---|---|---|---|
+| 390px | 3,24 | 3,04 | 1,07× | 34,1 × 18,4 px |
+| 1440px | 4,01 | 2,86 | **1,40×** | 42,2 × 16,4 px |
+
+O sea: en **la pared**, que es el objetivo primario de diseño (§1), las letras
+salían 40 % más anchas que altas y con 14,3 px de alto efectivo — **más chicas
+que en el teléfono**, exactamente al revés de lo que esa pantalla necesita.
+Sacándolas del SVG el texto vuelve a ser texto de la página: sin deformar y
+con `--t-meta`, que ya se re-apunta de 12 px a 17 px arriba de 1180px. El
+`<svg>` se quedó solo con geometría, y el eje pasó a ser un `border-top`.
+
+**Tokens nuevos**, los tres con su variante de pared: `--chart-ratio`
+(16/9 → **21/9**), `--chart-stroke` (1.4 → 1) y `--chart-axis-stroke`
+(0.6 → 0.45). Son relaciones y unidades de `viewBox`, no píxeles de pantalla.
+
+**b · Qué gráfica para qué, que no es decoración.** Barras por día para comida,
+pañales y sueño: son cantidades discretas que se comparan entre sí ("¿el jueves
+durmió menos?"). Línea para el peso: es una magnitud continua y lo que importa
+es la pendiente; barras sugerirían que cada visita es independiente de la
+anterior. **El eje Y del peso no arranca en cero**, a propósito: entre 3,9 y
+4,3 kg un eje desde cero dibuja una línea plana y esconde el único dato que la
+gráfica tiene para dar. Los números exactos están en los KPIs de arriba.
+
+**c · Nada compite con `.card.is-live`** (§2, economía del color). Las barras y
+la línea van en `--c-accent`, que ya es el color de "esto es un dato". La
+tarjeta de próxima cita **no lleva borde de color**: una cita de mañana no
+puede pelear la atención con una toma que está pasando ahora. El ícono del
+estado vacío sigue en `--c-line`.
+
+**d · El selector de semana**: dos flechas y el nombre en el medio, en vez de un
+`<select>` con cuarenta opciones — lo que se hace casi siempre es mirar la
+semana que corre o la anterior, y eso es un toque. Las dos flechas miden
+`--tap` entera. La semana futura no se ofrece: no tendría datos.
+
+**Barrido medido** (Chromium headless shell, 3 anchos × 2 temas × 2 idiomas ×
+6 pantallas = **72 combinaciones**): **0 desbordes, 0 scroll horizontal y 0
+targets táctiles por debajo de 44 px**. Contraste AA medido en el navegador
+sobre los elementos reales, en los dos temas: etiqueta del eje 7,59:1 (oscuro)
+/ 6,73:1 (claro), barras 6,42 / 5,91:1 (mínimo 3 para UI), números de KPI
+11,14 / 12,64:1, flecha del selector 9,76 / 10,66:1. Todo por encima del
+mínimo.
+
+> **Y una advertencia sobre el propio método, porque casi me come:** la primera
+> corrida de ese barrido dio "72 combinaciones, 0 desbordes" **midiendo la
+> pantalla de login**. El `.next` estaba corrupto, los chunks daban 500, la
+> sesión no se iniciaba y una página vacía no desborda nunca. El barrido ahora
+> **falla con exit 3 si la URL medida es `/login`** y registra el `<h1>` de
+> cada página. Un barrido que no puede distinguir "todo bien" de "no había
+> nada" no es una medición.
+
 ### Verificación de esta sección (20 sep 2026)
 
 Cada patrón de §5 afirma algo sobre el código. Se comprobó uno por uno:

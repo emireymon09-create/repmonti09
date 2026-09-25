@@ -33,6 +33,12 @@ const SAME_ON_PURPOSE = new Set<MessageKey>([
   'unit.oz',
   'unit.ml',
   'offset.minutes',
+  'settings.minutes',
+  // Puro andamiaje: no tienen una sola palabra propia, solo variables y
+  // puntuación. Traducirlas sería inventar una diferencia que no existe.
+  'week.range',
+  'stats.chartSummary',
+  'stats.chartDayValue',
 ])
 
 describe('diccionarios', () => {

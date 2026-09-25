@@ -21,6 +21,13 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { useBaby } from '@/lib/useBaby'
 import { NoBaby } from '@/components/NoBaby'
+import { WeekPicker } from '@/components/WeekPicker'
+import {
+  currentLifeWeek,
+  lifeWeekRange,
+  lifeWeekSinceIso,
+  type LifeWeekRange,
+} from '@/lib/lifeWeek'
 import { Banner, Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
 import { SeenNote, SyncBar, SyncErrorBanner } from '@/components/SyncStatus'
 import { lastGood, seenKey, type LastGood, type SeenState } from '@/lib/lastSeen'
@@ -89,6 +96,7 @@ import {
   longDate,
   mlToUnit,
   startOfHouseholdDay,
+  measuredOn,
   toHouseholdInputValue,
   unitToMl,
 } from '@/lib/format'
@@ -303,6 +311,13 @@ export function SectionPage({ section }: { section: Section }) {
   const serverRows = useRef<LastGood<ServerRows> | null>(null)
   const latestRead = useRef(0)
   const [seen, setSeen] = useState<SeenState>({ kind: 'live' })
+  // La semana de vida elegida. `null` = la que corre; se resuelve abajo, una
+  // vez que se sabe la fecha de nacimiento.
+  const [week, setWeek] = useState<number | null>(null)
+  // `refresh` es un useCallback con sus dependencias contadas; meterle la
+  // semana como dependencia lo recrearía y dispararía la lectura dos veces.
+  // La semana viaja por una ref y el efecto de abajo es el que relee.
+  const weekSince = useRef<string | null>(null)
 
   const show = useCallback(
     (rows: ServerRows, queued: PendingWrite[]) => {
@@ -356,7 +371,14 @@ export function SectionPage({ section }: { section: Section }) {
         setSeen(last.state(offline))
       }
 
-      const since = new Date(startOfHouseholdDay(new Date(), 6)).toISOString()
+      // La lectura tiene que cubrir las DOS ventanas de la pantalla: la
+      // rodante de 24 h y la semana de vida elegida, que puede ser de hace
+      // meses. Se lee desde la más vieja de las dos. Un total cortado corto
+      // saldría corto EN SILENCIO, que es lo que lib/kpis.ts previene con
+      // tests.
+      const weekStart = weekSince.current
+      const dayStart = new Date(startOfHouseholdDay(new Date(), 6)).toISOString()
+      const since = weekStart && weekStart < dayStart ? weekStart : dayStart
       const [reads, queued] = await Promise.all([
         readSection(section, babyId, since),
         pendingWrites(),
@@ -382,6 +404,17 @@ export function SectionPage({ section }: { section: Section }) {
   useEffect(() => {
     if (baby) refresh(baby.id)
   }, [baby, refresh])
+
+  // Elegir otra semana de vida cambia la ventana de lectura (`weekSince`), así
+  // que hay que volver a leer: una semana de hace dos meses no está entre las
+  // filas que trajo la lectura anterior, y mostrar 0 sería mostrar un total
+  // falso en silencio (§5.4).
+  useEffect(() => {
+    if (baby && week !== null) refresh(baby.id)
+    // `refresh` lee la semana de una ref a propósito (ver weekSince): meterla
+    // como dependencia suya recrearía el callback y duplicaría la lectura.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [week])
 
   function problemText(problem: PastRangeProblem): string {
     return t(`past.${problem}`)
@@ -608,6 +641,18 @@ export function SectionPage({ section }: { section: Section }) {
   // Offline with nothing saved on this device: a total of 0 would be a guess.
   const unknown = seen.kind === 'nothing'
   const windows = kpiWindows(new Date(now))
+
+  // La semana de vida: semana 1, 2, 3… desde que nació. NO es `windows.week`
+  // (hoy + los 6 días de calendario anteriores), que sigue viviendo en
+  // lib/kpis.ts y ya no se muestra acá — la sustituyó este selector, que es lo
+  // que el pedido del 24 sep 2026 pidió. Sin fecha de nacimiento no hay semana
+  // de vida y no se inventa una (§5.4): la tarjeta dice qué falta.
+  const birthDate = baby.birth_date
+  const currentWeek = currentLifeWeek(birthDate, new Date(now))
+  const weekRange: LifeWeekRange | null = birthDate
+    ? lifeWeekRange(birthDate, week ?? currentWeek ?? 1)
+    : null
+  weekSince.current = weekRange ? lifeWeekSinceIso(weekRange) : null
   const maxInput = toHouseholdInputValue(new Date(now))
 
   function totals(w: KpiWindow): { rows: [string, string][]; pending: boolean } {
@@ -647,11 +692,12 @@ export function SectionPage({ section }: { section: Section }) {
     }
   }
 
-  function kpiCard(title: string, w: KpiWindow) {
+  function kpiCard(title: string, w: KpiWindow, header?: React.ReactNode) {
     const { rows, pending: hasPending } = totals(w)
     return (
       <Card key={title}>
         <Label>{title}</Label>
+        {header}
         <dl className="kpis">
           {rows.map(([label, value]) => (
             <Fragment key={label}>
@@ -703,7 +749,23 @@ export function SectionPage({ section }: { section: Section }) {
 
       <Grid>
         {kpiCard(t('kpi.last24h'), windows.last24h)}
-        {kpiCard(t('kpi.week'), windows.week)}
+        {weekRange ? (
+          kpiCard(
+            t('week.number', { week: weekRange.week }),
+            { start: weekRange.start, end: weekRange.end },
+            <WeekPicker
+              range={weekRange}
+              isCurrent={currentWeek !== null && weekRange.week >= currentWeek}
+              canGoBack={weekRange.week > 1}
+              onChange={setWeek}
+            />,
+          )
+        ) : (
+          <Card>
+            <Label>{t('week.label')}</Label>
+            <p className="note">{t('week.noBirthDateHint')}</p>
+          </Card>
+        )}
 
         {/* ---------------- Log a past one ---------------- */}
         <Card>

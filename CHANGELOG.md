@@ -4,6 +4,41 @@ Every version of Amelia, newest first. The current version is the `version`
 field in `package.json`; this file is the history. A test fails if the two
 disagree. Shown in the app under the settings gear → Version history.
 
+## [0.10.0] - 2026-09-24
+
+Today counts down to the next feeding and the next nap on times you choose,
+the next doctor appointment shows up before it happens, Statistics finally
+draws something, and the appointments can be subscribed to from a real
+calendar app.
+
+- **The next feeding and the next nap are now a real countdown.** They used
+  to be a guess averaged from the last six gaps. Now they come from two
+  thresholds you set — every 3 hours for feeding, 2 hours awake before a nap,
+  by default — and they count from when the last one **ended**, not when it
+  started: a 40-minute feed is not due three hours after it began.
+- **Those two thresholds are shared by the whole family**, not set per
+  device like the theme and the language. Both parents see the same numbers,
+  and they are in Settings.
+- **A notification when one of them runs over**, repeating every half hour
+  until something is logged. It stops on its own as soon as you log the feed
+  or start the nap.
+- **The next doctor appointment appears on Today** when it is less than 36
+  hours away, with how long is left and who it is with. It disappears on its
+  own afterwards, and a notification arrives a day before.
+- **Statistics draws the week now.** Pick a week of Amelia's life — week 1,
+  2, 3… counted from her birthday — and each section shows its totals and a
+  chart of the week: feedings, diapers and sleep day by day, and her weight
+  across every measurement so far. This is what the screen promised when it
+  was added and could not do yet.
+- **The same week picker replaces the "last 7 days" totals** on Feeding,
+  Diapers and Sleep. The last-24-hours card and the log underneath are
+  unchanged.
+- **The doctor appointments can be subscribed to from a phone or computer
+  calendar.** Settings has a link you create once; anything you add or change
+  shows up there. The link is the only thing protecting it, so it is shown
+  once and can be replaced at any time — replacing it stops the old one
+  working immediately.
+
 ## [0.9.0] - 2026-09-23
 
 A Statistics screen joins the bottom bar, "today's" totals become the last

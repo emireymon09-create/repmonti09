@@ -12,3 +12,8 @@ output.txt
 *.tsbuildinfo
 .env.test
 supabase/docker/.env
+
+# Reportes sueltos que dejan los agentes en la raíz (pases anteriores).
+# No son del proyecto y no se commitean.
+.*-report.md
+.close-summary-agente.md

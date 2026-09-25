@@ -24,10 +24,21 @@
  *     antes se mantiene; lo que no hay es forma de hacer uno nuevo.
  */
 
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useBaby } from '@/lib/useBaby'
 import { Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
+import { Banner } from '@/components/Banner'
 import { NursingAlerts } from '@/components/NursingAlerts'
+import { calendarFeed, familySettings, saveFamilySettings, type CalendarFeedInfo } from '@/lib/db'
+import { timeAgo } from '@/lib/format'
+import {
+  DEFAULT_FAMILY_SETTINGS,
+  MAX_THRESHOLD_MINUTES,
+  MIN_THRESHOLD_MINUTES,
+  checkThreshold,
+  type FamilySettings,
+} from '@/lib/schedule'
 import { createClient } from '@/lib/supabaseClient'
 import { forgetSeen } from '@/lib/lastSeen'
 import { forgetAlertsOnSignOut } from '@/lib/push/client'
@@ -55,6 +66,7 @@ export default function Settings() {
   const { t } = useT()
   const [theme, setTheme] = useTheme()
   const [langChoice, setLangChoice] = useLanguageChoice()
+  const familyId = baby?.family_id ?? null
 
   async function signOut() {
     // First, and whatever signOut() does offline: this screen is shared,
@@ -132,6 +144,9 @@ export default function Settings() {
           <NursingAlerts babyId={baby?.id} />
         </Card>
 
+        <ScheduleSettings familyId={familyId} />
+        <CalendarFeedSettings familyId={familyId} />
+
         <Card>
           <Label>{t('settings.account')}</Label>
           <p className="setting-note">
@@ -145,5 +160,257 @@ export default function Settings() {
         </Card>
       </Grid>
     </Page>
+  )
+}
+
+/**
+ * Los dos umbrales del countdown de Today. **Dato de FAMILIA, no de este
+ * dispositivo** — al revés que Theme, Language y Nursing alerts, que están
+ * arriba en esta misma pantalla y viven en `localStorage`. Los dos padres
+ * tienen que ver el mismo número, y el servidor lo lee para decidir si manda
+ * el aviso (0012). La nota lo dice con todas las letras: sin eso, la pantalla
+ * sugiere que es una preferencia de este teléfono como las tres de arriba.
+ *
+ * Y no pasa por la cola offline, a propósito (lib/db.ts lo explica): sin
+ * conexión no se guarda nada y la pantalla lo dice, en vez de mostrar un
+ * número como guardado que después podría pisar el del otro padre (§5.5).
+ */
+function ScheduleSettings({ familyId }: { familyId: string | null }) {
+  const { t } = useT()
+  const [feed, setFeed] = useState(String(DEFAULT_FAMILY_SETTINGS.feed_threshold_minutes))
+  const [nap, setNap] = useState(String(DEFAULT_FAMILY_SETTINGS.nap_threshold_minutes))
+  const [err, setErr] = useState<string | null>(null)
+  const [flash, setFlash] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (!familyId) return
+    let cancelled = false
+    familySettings(familyId).then((res) => {
+      if (cancelled) return
+      if (res.error) {
+        setErr(t('settings.thresholdCouldNotLoad', { error: res.error }))
+        return
+      }
+      if (res.data) {
+        setFeed(String(res.data.feed_threshold_minutes))
+        setNap(String(res.data.nap_threshold_minutes))
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [familyId, t])
+
+  const save = useCallback(
+    async (patch: FamilySettings) => {
+      if (!familyId || busy) return
+      setBusy(true)
+      setErr(null)
+      setFlash(null)
+      const res = await saveFamilySettings(familyId, patch)
+      setBusy(false)
+      if (res.error) setErr(t('settings.thresholdCouldNotSave', { error: res.error }))
+      else setFlash(t('settings.thresholdSaved'))
+    },
+    [familyId, busy, t],
+  )
+
+  function commit(which: 'feed' | 'nap', raw: string) {
+    const minutes = Number(raw)
+    // Se valida acá y no solo contra el CHECK de la columna, para que el error
+    // se lea como una frase y no como un mensaje de Postgres (§5.5).
+    const problem = checkThreshold(minutes)
+    if (problem) {
+      setFlash(null)
+      setErr(
+        problem === 'notNumber'
+          ? t('settings.thresholdNotNumber')
+          : t('settings.thresholdOutOfRange', {
+              min: MIN_THRESHOLD_MINUTES,
+              max: MAX_THRESHOLD_MINUTES,
+            }),
+      )
+      return
+    }
+    void save({
+      feed_threshold_minutes: which === 'feed' ? minutes : Number(feed),
+      nap_threshold_minutes: which === 'nap' ? minutes : Number(nap),
+    })
+  }
+
+  return (
+    <Card>
+      <Label>{t('settings.schedule')}</Label>
+      <p className="setting-note">{t('settings.scheduleNote')}</p>
+
+      <div className="setting-group">
+        <label className="label" htmlFor="feed-threshold">
+          {t('settings.feedEvery')}
+        </label>
+        <div className="row-tight">
+          <input
+            id="feed-threshold"
+            className="input narrow"
+            type="number"
+            inputMode="numeric"
+            min={MIN_THRESHOLD_MINUTES}
+            max={MAX_THRESHOLD_MINUTES}
+            value={feed}
+            disabled={!familyId || busy}
+            onChange={(e) => setFeed(e.target.value)}
+            onBlur={(e) => commit('feed', e.target.value)}
+          />
+          <span className="meta">{t('settings.minutes')}</span>
+        </div>
+      </div>
+
+      <div className="setting-group">
+        <label className="label" htmlFor="nap-threshold">
+          {t('settings.napAfter')}
+        </label>
+        <div className="row-tight">
+          <input
+            id="nap-threshold"
+            className="input narrow"
+            type="number"
+            inputMode="numeric"
+            min={MIN_THRESHOLD_MINUTES}
+            max={MAX_THRESHOLD_MINUTES}
+            value={nap}
+            disabled={!familyId || busy}
+            onChange={(e) => setNap(e.target.value)}
+            onBlur={(e) => commit('nap', e.target.value)}
+          />
+          <span className="meta">{t('settings.minutes')}</span>
+        </div>
+      </div>
+
+      <p className="setting-note">
+        {t('settings.thresholdRange', { min: MIN_THRESHOLD_MINUTES, max: MAX_THRESHOLD_MINUTES })}
+      </p>
+      {flash && <Banner kind="ok">{flash}</Banner>}
+      {err && <Banner kind="error">{err}</Banner>}
+    </Card>
+  )
+}
+
+/**
+ * El feed .ics de los turnos médicos.
+ *
+ * El token en claro se muestra UNA vez: la base guarda solo el sha-256 (0012),
+ * así que ni esta pantalla ni nadie puede volver a armar el link. Si se pierde,
+ * se reemplaza — y reemplazarlo es también la forma de rotarlo si alguien lo
+ * compartió sin querer, por eso el confirm dice que el anterior deja de
+ * funcionar en el acto (§5.6: la confirmación dice qué se pierde).
+ */
+function CalendarFeedSettings({ familyId }: { familyId: string | null }) {
+  const { t, lang } = useT()
+  const [info, setInfo] = useState<CalendarFeedInfo | null>(null)
+  const [url, setUrl] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    if (!familyId) return
+    let cancelled = false
+    calendarFeed(familyId).then((res) => {
+      if (cancelled) return
+      if (res.error) setErr(t('calendar.couldNotLoad', { error: res.error }))
+      else setInfo(res.data)
+      setLoaded(true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [familyId, t])
+
+  async function issue(rotate: boolean) {
+    if (busy) return
+    if (rotate && !window.confirm(t('calendar.rotateConfirm'))) return
+    setBusy(true)
+    setErr(null)
+    setCopied(false)
+    try {
+      const res = await fetch('/api/calendar/feed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rotate }),
+      })
+      const body: unknown = await res.json()
+      const payload = body as { url?: string; error?: string }
+      if (!res.ok || !payload.url) {
+        setErr(t('calendar.couldNotCreate', { error: payload.error ?? String(res.status) }))
+      } else {
+        setUrl(payload.url)
+        if (familyId) {
+          const again = await calendarFeed(familyId)
+          if (!again.error) setInfo(again.data)
+        }
+      }
+    } catch (e) {
+      // Offline: el link necesita el servidor. No se encola — no hay nada que
+      // encolar, el valor lo genera el servidor (§5.5).
+      setErr(
+        navigator.onLine === false
+          ? t('calendar.offline')
+          : t('calendar.couldNotCreate', {
+              error: e instanceof Error ? e.message : String(e),
+            }),
+      )
+    }
+    setBusy(false)
+  }
+
+  async function copy() {
+    if (!url) return
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopied(true)
+    } catch {
+      // Sin permiso de portapapeles el texto sigue ahí y es `user-select: all`:
+      // se selecciona de un toque. No se muestra un error por esto.
+    }
+  }
+
+  return (
+    <Card>
+      <Label>{t('calendar.title')}</Label>
+      <p className="setting-note">{t('calendar.note')}</p>
+
+      {loaded && !info && !url && <p className="setting-note">{t('calendar.none')}</p>}
+      {info && (
+        <p className="setting-note">
+          {t('calendar.createdOn', {
+            when: timeAgo(info.rotated_at ?? info.created_at, Date.now(), lang),
+          })}{' '}
+          {info.last_fetched_at
+            ? t('calendar.lastRead', { when: timeAgo(info.last_fetched_at, Date.now(), lang) })
+            : t('calendar.neverRead')}
+        </p>
+      )}
+
+      {url && (
+        <>
+          <p className="setting-note">{t('calendar.showOnce')}</p>
+          <code className="feed-url">{url}</code>
+          <p className="setting-note">{t('calendar.howTo')}</p>
+          <div className="row-tight">
+            <Btn variant="quiet" onClick={copy}>
+              {copied ? t('calendar.copied') : t('calendar.copy')}
+            </Btn>
+          </div>
+        </>
+      )}
+
+      <div className="row-tight">
+        <Btn variant="quiet" disabled={!familyId || busy} onClick={() => issue(Boolean(info))}>
+          {info ? t('calendar.rotate') : t('calendar.create')}
+        </Btn>
+      </div>
+      {err && <Banner kind="error">{err}</Banner>}
+    </Card>
   )
 }

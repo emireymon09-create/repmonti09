@@ -21,6 +21,7 @@
 
 import { createClient } from '@/lib/supabaseClient'
 import { formatVolume } from '@/lib/format'
+import type { FamilySettings } from '@/lib/schedule'
 import { documentLang, translate, type Lang, type MessageKey } from '@/lib/i18n'
 import {
   browserQueueStore,
@@ -387,7 +388,7 @@ export async function sleepSince(
 export async function currentBaby(): Promise<Result<Baby | null>> {
   const { data: rows, error } = await data()
     .from('babies')
-    .select('id, name, birth_date, pumping_reset_at')
+    .select('id, name, birth_date, pumping_reset_at, family_id')
     .order('created_at', { ascending: true })
     .limit(1)
   if (error) return fail(null, error)
@@ -949,6 +950,68 @@ export function buildActivity(
         Number(!!b.ongoing) - Number(!!a.ongoing) ||
         new Date(b.at).getTime() - new Date(a.at).getTime(),
     )
+}
+
+// --------------------------------------------------- family settings (0012)
+
+/*
+ * Los umbrales del countdown de /dashboard. NO son localStorage como el tema o
+ * el idioma: los dos padres tienen que ver el mismo número, y el check de push
+ * (lib/push/server.ts) los lee del lado del servidor, donde no hay
+ * localStorage. Scope por `family_id` directo — la forma de la fase 2.
+ *
+ * Y NO PASAN POR LA COLA OFFLINE, a propósito: son un dato compartido con el
+ * otro padre, y una cola que los aplica tarde podría pisar un valor que el
+ * otro cambió mientras tanto. Sin conexión, la pantalla lo dice y no guarda
+ * nada (§5.5: nada se presenta como guardado si no lo está).
+ */
+
+export async function familySettings(familyId: string): Promise<Result<FamilySettings | null>> {
+  const { data: rows, error } = await data()
+    .from('family_settings')
+    .select('nap_threshold_minutes, feed_threshold_minutes')
+    .eq('family_id', familyId)
+    .maybeSingle()
+  if (error) return fail(null, error)
+  return ok((rows ?? null) as FamilySettings | null)
+}
+
+export async function saveFamilySettings(
+  familyId: string,
+  patch: FamilySettings,
+): Promise<Result<null>> {
+  const { error } = await data()
+    .from('family_settings')
+    .upsert(
+      { family_id: familyId, ...patch, updated_at: new Date().toISOString() },
+      { onConflict: 'family_id' },
+    )
+  if (error) return fail(null, error)
+  return ok(null)
+}
+
+// -------------------------------------------------- calendar feed (0012)
+
+export type CalendarFeedInfo = {
+  created_at: string
+  rotated_at: string | null
+  last_fetched_at: string | null
+}
+
+/**
+ * Lo que la pantalla puede saber del feed sin poder reconstruir el link: la
+ * base guarda solo el hash, así que esta lectura NO trae nada con lo que
+ * armar una URL. El valor en claro existe una sola vez, en la respuesta de
+ * /api/calendar/feed, y no se vuelve a mostrar.
+ */
+export async function calendarFeed(familyId: string): Promise<Result<CalendarFeedInfo | null>> {
+  const { data: rows, error } = await data()
+    .from('calendar_feeds')
+    .select('created_at, rotated_at, last_fetched_at')
+    .eq('family_id', familyId)
+    .maybeSingle()
+  if (error) return fail(null, error)
+  return ok((rows ?? null) as CalendarFeedInfo | null)
 }
 
 // --------------------------------------------------------------- predictions

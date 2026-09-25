@@ -125,6 +125,7 @@ entero: un auditor que arregla mientras mira deja de mirar.
 | Fecha | Commit | Quién | 🔴 | 🟠 | 🟡 | 🟢 | Reporte |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 2026-09-20 | `7c72ba2` | Claude Opus 5 | 2 | 6 | 6 | 5 | [auditorias/2026-09-20-auditoria-inicial.md](auditorias/2026-09-20-auditoria-inicial.md) |
+| 2026-09-24 | `86f9bcf` + árbol sin commitear | Claude Opus 5 (1M) | 0 | 3 | 9 | 14 | [auditorias/2026-09-24-auditoria-countdown-calendario.md](auditorias/2026-09-24-auditoria-countdown-calendario.md) |
 
 **Cadencia sugerida:** una corrida antes de cada deploy, y una cada vez que se
 agregue una tabla o un route handler nuevo.
