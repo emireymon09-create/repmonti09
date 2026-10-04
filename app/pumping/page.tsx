@@ -400,26 +400,40 @@ export default function PumpingPage() {
   const stashPending = shelf.some((c) => c.pending)
   const unitName = t(`unit.${unit}`)
 
-  const amountFields = (
+  // Etiqueta visible por lado: el placeholder solo no alcanza — "Izquierdo, oz"
+  // no entra en un campo angosto, y desaparece apenas se tipea un número.
+  const amountFields = (idPrefix: string) => (
     <>
       <p className="meta">{t('milk.sidesHint')}</p>
       <div className="row-tight row-wrap">
-        <input
-          className="input narrow"
-          value={left}
-          onChange={(e) => setLeft(e.target.value)}
-          inputMode="decimal"
-          placeholder={t('milk.left', { unit: unitName })}
-          aria-label={t('milk.left', { unit: unitName })}
-        />
-        <input
-          className="input narrow"
-          value={right}
-          onChange={(e) => setRight(e.target.value)}
-          inputMode="decimal"
-          placeholder={t('milk.right', { unit: unitName })}
-          aria-label={t('milk.right', { unit: unitName })}
-        />
+        <div>
+          <label className="label" htmlFor={`${idPrefix}-left`}>
+            {t('side.left')}
+          </label>
+          <input
+            id={`${idPrefix}-left`}
+            className="input narrow"
+            value={left}
+            onChange={(e) => setLeft(e.target.value)}
+            inputMode="decimal"
+            placeholder={unitName}
+            aria-label={t('milk.left', { unit: unitName })}
+          />
+        </div>
+        <div>
+          <label className="label" htmlFor={`${idPrefix}-right`}>
+            {t('side.right')}
+          </label>
+          <input
+            id={`${idPrefix}-right`}
+            className="input narrow"
+            value={right}
+            onChange={(e) => setRight(e.target.value)}
+            inputMode="decimal"
+            placeholder={unitName}
+            aria-label={t('milk.right', { unit: unitName })}
+          />
+        </div>
         <AmountUnit value={unit} onChange={setUnit} disabled={busy} />
       </div>
       <input
@@ -457,7 +471,7 @@ export default function PumpingPage() {
               </div>
               {stopping ? (
                 <div className="stack">
-                  {amountFields}
+                  {amountFields('pump-live')}
                   <div className="row-tight">
                     <Btn type="submit" disabled={busy}>
                       {busy ? t('common.saving') : t('milk.logSession')}
@@ -496,7 +510,7 @@ export default function PumpingPage() {
             <form onSubmit={save}>
               <Label>{t('milk.logTitle')}</Label>
               <div className="stack">
-                {amountFields}
+                {amountFields('pump-manual')}
                 <div>
                   <label className="label" htmlFor="pump-at">
                     {t('milk.when')}
@@ -578,22 +592,34 @@ export default function PumpingPage() {
                       </p>
                     )}
                     <div className="row-tight row-wrap">
-                      <input
-                        className="input narrow"
-                        value={eLeft}
-                        onChange={(e) => setELeft(e.target.value)}
-                        inputMode="decimal"
-                        placeholder={t('milk.left', { unit: t('unit.oz') })}
-                        aria-label={t('milk.left', { unit: t('unit.oz') })}
-                      />
-                      <input
-                        className="input narrow"
-                        value={eRight}
-                        onChange={(e) => setERight(e.target.value)}
-                        inputMode="decimal"
-                        placeholder={t('milk.right', { unit: t('unit.oz') })}
-                        aria-label={t('milk.right', { unit: t('unit.oz') })}
-                      />
+                      <div>
+                        <label className="label" htmlFor="pump-edit-left">
+                          {t('side.left')}
+                        </label>
+                        <input
+                          id="pump-edit-left"
+                          className="input narrow"
+                          value={eLeft}
+                          onChange={(e) => setELeft(e.target.value)}
+                          inputMode="decimal"
+                          placeholder={t('unit.oz')}
+                          aria-label={t('milk.left', { unit: t('unit.oz') })}
+                        />
+                      </div>
+                      <div>
+                        <label className="label" htmlFor="pump-edit-right">
+                          {t('side.right')}
+                        </label>
+                        <input
+                          id="pump-edit-right"
+                          className="input narrow"
+                          value={eRight}
+                          onChange={(e) => setERight(e.target.value)}
+                          inputMode="decimal"
+                          placeholder={t('unit.oz')}
+                          aria-label={t('milk.right', { unit: t('unit.oz') })}
+                        />
+                      </div>
                     </div>
                     <input
                       className="input"
