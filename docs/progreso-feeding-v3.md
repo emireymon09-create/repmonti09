@@ -14,6 +14,7 @@ correr o comprobar.
 | 3 · Interfaz + i18n | Hecho (código) | `tsc`, `lint`, `format:check`, `build` en verde; **comportamiento en pantalla NO VERIFICADO** (ver abajo) |
 | 4 · Documentación y documento familiar | Hecho | `docs/milk-business-logic.md`, `docs/handoff-2026-10-04.md`, `docs/reglas-de-uso-familia.md`, índice de `docs/README.md`; grep de términos técnicos sobre el documento familiar: sin resultados |
 | Revisión independiente (3 agentes + 2 vueltas sobre los arreglos) | Hecha | Hallazgos bloqueantes abiertos: 0 (tablas abajo) |
+| 5 · Verificación local (0013 en el stack local, navegador, barrido) | Hecho (4 oct 2026) | `pnpm test:all` 4×351 + 115 (milk 9/9); recorrido a–f 13/13; barrido 64 combinaciones 16 → 0 hallazgos (ver al final) |
 
 ## Notas
 
@@ -167,5 +168,51 @@ profundidad 1. Tres menores, los tres **corregidos**: una línea vieja en
 Leche mostraba un contenedor de "0 oz" (ahora filtra con `EMPTY_ML`); cambiar
 la unidad a mano y recibir una sugerencia nueva volvía a oz sin avisar (ahora
 cuenta como edición y aparece "La sugerencia cambió mientras editabas").
+
+**Hallazgos bloqueantes abiertos al cierre: 0.**
+
+## Pase de verificación local (4 oct 2026)
+
+Autorizado por el dueño **solo para el stack local**. Detalle completo en
+`docs/handoff-2026-10-04.md` §2.1.
+
+- **0013 aplicada al stack local** con `pnpm db:up` [VERIFICADO], tras probar
+  que el destino era 127.0.0.1 y que no había credenciales de la nube en el
+  entorno. Primero falló: el worktree no tenía `supabase/docker/.env` y el
+  script generó claves nuevas; se restauró el `.env` real del stack y el
+  segundo intento quedó sano.
+- **`pnpm test:all`** [VERIFICADO]: 351/351 × 4 TZ; integración 115/115,
+  `tests/integration/milk.test.ts` **9/9** (antes: 8 saltados). Nada que
+  corregir.
+- **Recorrido en navegador a–f** [VERIFICADO], familia descartable borrada:
+  extracción izq+der → M1; toma M1 + M2 + fórmula desde el panel de Hoy;
+  anularla devuelve la leche; editar una extracción mueve su contenedor; sin
+  conexión la toma se marca, baja lo que hay y se reenvía una sola vez;
+  el cronómetro sobrevive a recargar. 13/13, chequeado también en la base.
+  **Ojo con cómo se llegó a 13/13**: la primera corrida dio 11/13 por dos
+  aserciones mal escritas del script (editó M1 en vez de M2 porque el primer
+  "Edit" era otro; y el chequeo de lo que hay sin conexión pasaba en vacío
+  porque la regex no matcheaba). Se corrigieron las aserciones —no la app— y
+  la corrida siguiente midió de verdad: "What there is 0 oz" sin conexión.
+- **Barrido de layout** [VERIFICADO]: 64 combinaciones (5 pantallas + 3
+  estados abiertos × 390/1440 × claro/oscuro × EN/ES). Hallazgo único, en
+  Leche: placeholders de izquierdo/derecho cortados y sin etiqueta visible una
+  vez tipeado el número. **Corregido** en `app/pumping/page.tsx` (etiqueta
+  visible por lado, unidad en el placeholder, ids únicos). Después: 0 hallazgos
+  en las 64, recorrido 13/13 otra vez.
+- **Encontrado, NO corregido**: el ↗ de la tarjeta Dormir de Hoy se pisa con el
+  título largo en español a 390 px. Previo a esta rama.
+
+### Revisión independiente del arreglo de Leche
+
+Un subagente nuevo, contexto limpio, solo lectura, sobre el diff de
+`app/pumping/page.tsx`. **0 bloqueantes.**
+
+| Sev. | Hallazgo | Resolución |
+|---|---|---|
+| IMPORTANTE | Inferido del CSS: `.row-tight` no tiene `align-items`, así que el toggle oz/ml se estiraría al alto "etiqueta + campo" y quedaría desalineado | **Descartado con medición**: en las capturas del barrido (390 y 1440, ES y EN) la etiqueta `.label` es inline y queda AL LADO del campo, no arriba. La fila no ganó alto y el toggle pasa a su propio renglón (`row-wrap`). Las 64 combinaciones dan 0 hallazgos |
+| MENOR | Los ids con prefijo son defensivos: el cronómetro y el formulario manual son excluyentes (`stopping`) y hay un solo panel de edición | Aceptado, se dejan |
+| MENOR | `aria-label` pisa al `<label>` como nombre accesible ("Left, oz"): incluye la palabra visible (WCAG 2.5.3) | Aceptado |
+| MENOR | El `margin-bottom` de un `<label>` inline no hace nada; ya pasaba con `pump-at` | Aceptado, no es nuevo |
 
 **Hallazgos bloqueantes abiertos al cierre: 0.**

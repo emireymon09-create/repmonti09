@@ -7,11 +7,9 @@ import { adminClient, anonClient, seedTwoFamilies, type SeededFamily } from '../
 // El inventario de leche (0013) por el camino real: PostgREST + JWT de un padre,
 // RLS y GRANTs de verdad, las cinco funciones y sus guardas.
 //
-// NECESITA 0013 APLICADA EN LA BASE LOCAL. El pedido del 4 oct 2026 prohíbe
-// aplicar migraciones en cualquier entorno, así que en este pase la suite se
-// SALTA sola (la sonda de abajo) y queda reportada como NO VERIFICADA. Lo que
-// sí se corrió es el mismo recorrido en SQL, en un Postgres efímero, dentro de
-// una transacción con ROLLBACK (docs/progreso-feeding-v3.md).
+// NECESITA 0013 APLICADA EN LA BASE LOCAL (`pnpm db:up`). Sin ella la suite se
+// SALTA sola (la sonda de abajo) y hay que reportarla como NO VERIFICADA. Corrió
+// en verde contra el stack local el 4 oct 2026 (docs/progreso-feeding-v3.md).
 
 async function hasMilkSchema(): Promise<boolean> {
   try {
