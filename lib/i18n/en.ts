@@ -357,6 +357,8 @@ export const en = {
   'milk.sessionsTitle': 'Sessions',
   'milk.nothingSaved': 'Offline, and nothing saved on this device yet.',
   'milk.servedNote': '{amount} already served from it',
+  'milk.legacyHint':
+    'Logged before left and right were separate: its {amount} total stays as it is unless you type the sides.',
   'milk.deletedPending': 'Deleted on this device — not synced yet.',
 
   // ------------------------------------------------------------ bottle (0013)
@@ -379,6 +381,8 @@ export const en = {
   'bottle.chooseContainer': 'Container…',
   'bottle.containerOption': '{label} · {amount} left',
   'bottle.amountAria': 'Milk row {n}: amount, {unit}',
+  'bottle.planChanged': 'The suggestion changed while you were editing.',
+  'bottle.startOver': 'Start over from it',
   'bottle.removeRow': 'Remove',
   'bottle.addRow': '+ Add row',
   'bottle.formula': 'Formula',

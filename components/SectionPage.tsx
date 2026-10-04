@@ -18,7 +18,7 @@
  * untouched.
  */
 
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useBaby } from '@/lib/useBaby'
 import { NoBaby } from '@/components/NoBaby'
 import { WeekPicker } from '@/components/WeekPicker'
@@ -36,6 +36,7 @@ import {
   diapersSince,
   feedingsSince,
   keepLastGood,
+  lastBottleFeeding,
   listContainers,
   listDrawdowns,
   logBottleFeed,
@@ -140,10 +141,13 @@ type ServerRows = {
   /** The milk inventory (0013), Feeding only: what a bottle can come from. */
   containers: MilkContainer[]
   drawdowns: MilkDrawdown[]
+  /** The last bottle, which the log may not reach: what the suggestion starts from. */
+  lastBottle: Feeding[]
 }
 const NO_ROWS: ServerRows = {
   containers: [],
   drawdowns: [],
+  lastBottle: [],
   feedings: [],
   nursing: [],
   diapers: [],
@@ -170,6 +174,7 @@ function readSection(section: Section, babyId: string, sinceIso: string): Promis
     weekSleep: NOT_READ,
     containers: NOT_READ,
     drawdowns: NOT_READ,
+    lastBottle: NOT_READ,
   }
   if (section === 'feeding') {
     return Promise.all([
@@ -179,15 +184,19 @@ function readSection(section: Section, babyId: string, sinceIso: string): Promis
       nursingSince(babyId, sinceIso),
       listContainers(babyId),
       listDrawdowns(babyId),
-    ]).then(([feedings, nursing, weekFeedings, weekNursing, containers, drawdowns]) => ({
-      ...none,
-      feedings,
-      nursing,
-      weekFeedings,
-      weekNursing,
-      containers,
-      drawdowns,
-    }))
+      lastBottleFeeding(babyId),
+    ]).then(
+      ([feedings, nursing, weekFeedings, weekNursing, containers, drawdowns, lastBottle]) => ({
+        ...none,
+        feedings,
+        nursing,
+        weekFeedings,
+        weekNursing,
+        containers,
+        drawdowns,
+        lastBottle: { ...lastBottle, data: lastBottle.data ? [lastBottle.data] : [] },
+      }),
+    )
   }
   if (section === 'diapers') {
     return Promise.all([recentDiapers(babyId, LOG_LIMIT), diapersSince(babyId, sinceIso)]).then(
@@ -211,6 +220,7 @@ type Shown = {
   weekSleep: WithPending<SleepSession>[]
   containers: WithPending<MilkContainer>[]
   drawdowns: WithPending<MilkDrawdown>[]
+  lastBottle: Feeding[]
 }
 
 /** One calendar day of the log, household timezone (as on /history). */
@@ -301,7 +311,6 @@ export function SectionPage({ section }: { section: Section }) {
   // hasn't ended — it stays open and is stopped from Today, as if Start had
   // been pressed at the time picked.
   const [pOngoing, setPOngoing] = useState(false)
-  const pPlanRef = useRef<{ sig: string; plan: BottlePlan } | null>(null)
 
   function resetPast() {
     // The builder starts over from a fresh suggestion, its unit back to oz.
@@ -357,12 +366,14 @@ export function SectionPage({ section }: { section: Section }) {
         weekDiapers: mergePending(rows.weekDiapers, 'diaper_changes', queued),
         weekSleep: mergePending(rows.weekSleep, 'sleep_sessions', queued),
         ...applyPendingInventory(rows.containers ?? [], rows.drawdowns ?? [], queued),
+        lastBottle: rows.lastBottle ?? [],
       }
       // Only this section's tables: the others were never read and stay empty.
       if (section !== 'feeding') {
         next.feedings = next.nursing = next.weekFeedings = next.weekNursing = []
         next.containers = []
         next.drawdowns = []
+        next.lastBottle = []
       }
       if (section !== 'diapers') next.diapers = next.weekDiapers = []
       if (section !== 'sleep') next.sleep = next.weekSleep = []
@@ -679,6 +690,22 @@ export function SectionPage({ section }: { section: Section }) {
 
   // ------------------------------------------------------------ render
 
+  // The past bottle starts from the same suggestion as Today's, with what
+  // could be used AT THE TIME PICKED: not expired then, and already pumped by
+  // then — a bottle at 08:00 can't come from milk pumped at 10:00. Memoized on
+  // what they contain, so the builder doesn't start over on every render;
+  // `pPlanKey` starts it over after a save.
+  const pAtMs = Date.parse(instant(pAt) ?? '') || now
+  const pUsableSig = JSON.stringify(
+    usableContainers(shown.containers, pAtMs).filter((c) => Date.parse(c.stored_at) <= pAtMs),
+  )
+  const pUsable = useMemo<WithPending<MilkContainer>[]>(() => JSON.parse(pUsableSig), [pUsableSig])
+  const pPlanSig = JSON.stringify({
+    key: pPlanKey,
+    plan: suggestPlan(suggestedTotalMl([...shown.feedings, ...shown.lastBottle]), pUsable, pAtMs),
+  })
+  const pPlan = useMemo<BottlePlan>(() => JSON.parse(pPlanSig).plan, [pPlanSig])
+
   if (loading)
     return (
       <Page>
@@ -716,19 +743,6 @@ export function SectionPage({ section }: { section: Section }) {
     : null
   weekSince.current = weekRange ? lifeWeekSinceIso(weekRange) : null
   const maxInput = toHouseholdInputValue(new Date(now))
-
-  // The past bottle starts from the same suggestion as Today's, with the
-  // containers that could be used at the time picked. The same plan object is
-  // kept while it is equal, so the rows don't start over under the person's
-  // fingers (see the dashboard).
-  const pAtMs = Date.parse(instant(pAt) ?? '') || now
-  const pUsable = usableContainers(shown.containers, pAtMs)
-  const pRawPlan = suggestPlan(suggestedTotalMl(shown.feedings), pUsable, pAtMs)
-  const pPlanSig = `${pPlanKey}:${JSON.stringify(pRawPlan)}`
-  if (!pPlanRef.current || pPlanRef.current.sig !== pPlanSig) {
-    pPlanRef.current = { sig: pPlanSig, plan: pRawPlan }
-  }
-  const pPlan = pPlanRef.current.plan
 
   function totals(w: KpiWindow): { rows: [string, string][]; pending: boolean } {
     if (section === 'feeding') {

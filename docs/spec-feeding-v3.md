@@ -230,6 +230,23 @@ Un rechazo del servidor es un error visible, nunca algo encolado en silencio.
   `ROLLBACK`, y la prueba de concurrencia (dos sesiones) en la base de ese
   mismo contenedor descartable. Es la lectura que respeta la prohibición (ningún
   entorno de la app tiene `0013`) sin entregar SQL sin correr.
+- **S-20 · La cinta de un contenedor anulado se puede volver a usar.** La
+  etiqueta siguiente es una más que la mayor de los contenedores **vivos**, y
+  el servidor solo rechaza una cinta que tenga un contenedor vivo. Si se anula
+  el M5 (una sesión cargada por error), la próxima vuelve a ser M5 — que es lo
+  que suele estar escrito en el biberón real. Señalado por el verificador de
+  reglas (M-1) y mantenido a propósito; está cubierto por el chequeo SQL "the
+  tape of a voided container can be used again".
+- **S-21 · Las reglas de conservación viven en `babies`** (lo pide el pedido
+  §4), así que técnicamente son "por bebé". Con un solo bebé por familia —
+  el caso de esta app — es lo mismo que "de la familia": las ven y las cambian
+  los dos padres, y no dependen del dispositivo. Señalado por el verificador
+  (M-4); si algún día hay dos bebés, se mudan a `family_settings`.
+- **S-22 · Una sesión anterior a 0013 recibe contenedor solo si se le
+  escriben los lados a propósito.** Corregirle la hora o la nota no le toca el
+  total (ni lo reparte 50/50, ni le crea contenedor); escribirle izquierda y
+  derecha es decir "esta leche está en un biberón", y entonces sí nace su M#.
+  La pantalla de edición lo avisa. Señalado por el auditor (#4).
 - **S-18 · Orden de despliegue.** La app nueva lee columnas de `0013`
   (`recentFeedings`, Leche, Ajustes): **`0013` tiene que estar aplicada en la
   nube antes de que esta rama llegue a `main`**. `currentBaby`,

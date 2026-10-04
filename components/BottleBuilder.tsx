@@ -17,7 +17,7 @@
  * the other unit (the failure design.md §5.7 warns about).
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AmountUnit } from '@/components/AmountUnit'
 import { useT } from '@/lib/i18n/react'
 import { newId } from '@/lib/queue'
@@ -35,7 +35,19 @@ export type BottleValue = {
   problem: string | null
 }
 
-type Row = { key: string; containerId: string; text: string }
+/**
+ * One milk row. `planMl`/`planText`: what the suggestion put in it. While the
+ * field still says exactly that, the row means the plan's EXACT millilitres —
+ * the text is rounded to 0.01 oz, and reading it back would move a 120 ml
+ * suggestion to 120.07 ml with nobody touching anything.
+ */
+type Row = {
+  key: string
+  containerId: string
+  text: string
+  planMl: number | null
+  planText: string
+}
 
 /** An amount for a field, in `unit`: two decimals in oz, whole ml. */
 function amountText(ml: number, unit: VolumeUnit): string {
@@ -44,20 +56,20 @@ function amountText(ml: number, unit: VolumeUnit): string {
 }
 
 function rowsFromPlan(plan: BottlePlan): Row[] {
-  return plan.portions.map((p) => ({
-    key: newId(),
-    containerId: p.containerId,
-    text: amountText(p.ml, DISPLAY_UNIT),
-  }))
+  return plan.portions.map((p) => {
+    const text = amountText(p.ml, DISPLAY_UNIT)
+    return { key: newId(), containerId: p.containerId, text, planMl: p.ml, planText: text }
+  })
 }
 
 /** Same rows, same formula — what "Log with changes" compares against. */
 export function sameAsPlan(value: BottleValue, plan: BottlePlan): boolean {
-  if (Math.abs(value.formulaMl - plan.formulaMl) > 0.05) return false
+  const same = (a: number, b: number) => Math.abs(a - b) <= 1e-6
+  if (!same(value.formulaMl, plan.formulaMl)) return false
   if (value.portions.length !== plan.portions.length) return false
   return plan.portions.every((p, i) => {
     const v = value.portions[i]
-    return v && v.container_id === p.containerId && Math.abs(v.amount_ml - p.ml) <= 0.05
+    return v && v.container_id === p.containerId && same(v.amount_ml, p.ml)
   })
 }
 
@@ -81,12 +93,35 @@ export function BottleBuilder({
   const [unit, setUnit] = useState<VolumeUnit>(DISPLAY_UNIT)
   const [rows, setRows] = useState<Row[]>(() => rowsFromPlan(plan))
   const [formula, setFormula] = useState(() => amountText(plan.formulaMl, DISPLAY_UNIT))
+  const [formulaPlan, setFormulaPlan] = useState<{ ml: number; text: string | null }>(() => ({
+    ml: plan.formulaMl,
+    text: amountText(plan.formulaMl, DISPLAY_UNIT),
+  }))
+  // Once the person has typed something, a new plan (the other phone logged a
+  // bottle, a container expired) does NOT wipe it: the builder says the
+  // suggestion changed and offers to start over.
+  const [dirty, setDirty] = useState(false)
+  const [stale, setStale] = useState(false)
 
-  // A different plan — the page changed the total or the time — starts over.
-  useEffect(() => {
+  function startOver(from: BottlePlan) {
+    const text = amountText(from.formulaMl, DISPLAY_UNIT)
     setUnit(DISPLAY_UNIT)
-    setRows(rowsFromPlan(plan))
-    setFormula(amountText(plan.formulaMl, DISPLAY_UNIT))
+    setRows(rowsFromPlan(from))
+    setFormula(text)
+    setFormulaPlan({ ml: from.formulaMl, text })
+    setDirty(false)
+    setStale(false)
+  }
+
+  // A different plan — the page changed the total, the time, or what there is.
+  const firstPlan = useRef(plan)
+  useEffect(() => {
+    if (plan === firstPlan.current) return
+    firstPlan.current = plan
+    if (dirty) setStale(true)
+    else startOver(plan)
+    // `dirty` is read, not watched: typing must not start the rows over.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [plan])
 
   const value = useMemo<BottleValue>(() => {
@@ -110,7 +145,10 @@ export function BottleBuilder({
         problem ??= t('bottle.amountFor', { label: container.label })
         continue
       }
-      const ml = portionMl(Number(row.text.trim().replace(',', '.')), unit, container)
+      const ml =
+        row.planMl !== null && row.text === row.planText
+          ? row.planMl
+          : portionMl(Number(row.text.trim().replace(',', '.')), unit, container)
       // Never more than the container holds — shown here, refused by the
       // server too. Nothing is quietly cut down.
       if (ml > container.remaining_ml + 1e-9) {
@@ -125,14 +163,24 @@ export function BottleBuilder({
     }
     const f = parseAmountMl(formula, unit)
     if (f.problem) problem ??= t('bottle.formulaNotNumber')
-    const formulaMl = f.ml ?? 0
+    const formulaMl = formula === formulaPlan.text ? formulaPlan.ml : (f.ml ?? 0)
     const breast = portions.reduce((sum, p) => sum + p.amount_ml, 0)
     const totalMl = breast + formulaMl
     if (!problem && !(totalMl > 0)) problem = t('bottle.empty')
     return { portions, formulaMl, totalMl, containersPending, problem }
-  }, [rows, formula, unit, usable, t])
+  }, [rows, formula, formulaPlan, unit, usable, t])
 
-  useEffect(() => onChange(value), [value, onChange])
+  // Report up only when the value really changed. The page re-renders every
+  // second (its clock) and hands down a fresh `usable` array each time; a new
+  // but equal value must not set the page's state again, or the two would
+  // keep re-rendering each other forever.
+  const reported = useRef<string | null>(null)
+  useEffect(() => {
+    const sig = JSON.stringify(value)
+    if (sig === reported.current) return
+    reported.current = sig
+    onChange(value)
+  }, [value, onChange])
 
   function switchUnit(next: VolumeUnit) {
     if (next === unit) return
@@ -140,21 +188,41 @@ export function BottleBuilder({
       const parsed = parseAmountMl(text, unit)
       return parsed.ml == null ? text : amountText(parsed.ml, next)
     }
-    setRows((rs) => rs.map((r) => ({ ...r, text: convert(r.text) })))
+    // The texts change, so they no longer stand for the plan's exact ml.
+    setRows((rs) => rs.map((r) => ({ ...r, text: convert(r.text), planMl: null })))
     setFormula(convert)
+    setFormulaPlan({ ml: 0, text: null })
     setUnit(next)
+    setDirty(true)
   }
 
   function addRow() {
     const used = new Set(rows.map((r) => r.containerId))
     const next = usable.find((c) => !used.has(c.id))
-    setRows((rs) => [...rs, { key: newId(), containerId: next?.id ?? '', text: '' }])
+    setRows((rs) => [
+      ...rs,
+      { key: newId(), containerId: next?.id ?? '', text: '', planMl: null, planText: '' },
+    ])
+    setDirty(true)
+  }
+
+  function updateRow(key: string, change: Partial<Row>) {
+    setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...change } : r)))
+    setDirty(true)
   }
 
   const unitName = t(`unit.${unit}`)
 
   return (
     <div className="stack">
+      {stale && (
+        <p className="meta">
+          {t('bottle.planChanged')}{' '}
+          <button type="button" className="linkish" onClick={() => startOver(plan)}>
+            {t('bottle.startOver')}
+          </button>
+        </p>
+      )}
       {rows.length === 0 && usable.length === 0 && <p className="meta">{t('bottle.noMilk')}</p>}
       {rows.map((row, i) => (
         <div key={row.key} className="row-tight row-wrap">
@@ -163,11 +231,7 @@ export function BottleBuilder({
             value={row.containerId}
             disabled={disabled}
             aria-label={t('bottle.containerAria', { n: i + 1 })}
-            onChange={(e) =>
-              setRows((rs) =>
-                rs.map((r) => (r.key === row.key ? { ...r, containerId: e.target.value } : r)),
-              )
-            }
+            onChange={(e) => updateRow(row.key, { containerId: e.target.value, planMl: null })}
           >
             <option value="">{t('bottle.chooseContainer')}</option>
             {usable.map((c) => (
@@ -186,17 +250,16 @@ export function BottleBuilder({
             inputMode="decimal"
             placeholder={unitName}
             aria-label={t('bottle.amountAria', { n: i + 1, unit: unitName })}
-            onChange={(e) =>
-              setRows((rs) =>
-                rs.map((r) => (r.key === row.key ? { ...r, text: e.target.value } : r)),
-              )
-            }
+            onChange={(e) => updateRow(row.key, { text: e.target.value })}
           />
           <button
             type="button"
             className="linkish"
             disabled={disabled}
-            onClick={() => setRows((rs) => rs.filter((r) => r.key !== row.key))}
+            onClick={() => {
+              setRows((rs) => rs.filter((r) => r.key !== row.key))
+              setDirty(true)
+            }}
           >
             {t('bottle.removeRow')}
           </button>
@@ -220,7 +283,10 @@ export function BottleBuilder({
           disabled={disabled}
           inputMode="decimal"
           placeholder={unitName}
-          onChange={(e) => setFormula(e.target.value)}
+          onChange={(e) => {
+            setFormula(e.target.value)
+            setDirty(true)
+          }}
         />
         <AmountUnit value={unit} onChange={switchUnit} disabled={disabled} />
       </div>

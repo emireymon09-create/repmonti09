@@ -831,9 +831,18 @@ export function updatePumpingSession(
   id: string,
   input: PumpingInput,
   ctx: MilkContext,
-  opts?: { pending?: boolean },
+  opts?: {
+    pending?: boolean
+    /**
+     * The session is from before 0013: a total and no sides. With both sides
+     * left empty, only its time and note change — the server keeps the total
+     * (and the screen shows it kept), never erases it or splits it 50/50.
+     */
+    legacy?: boolean
+  },
 ): Promise<Result<null>> {
   const total = totalOf(input)
+  const keepLegacy = !!opts?.legacy && input.left_ml == null && input.right_ml == null
   const live = ctx.containers.find((c) => c.source_session_id === id && !c.voided_at)
   const container = total > 0 && !live ? newContainer(ctx, input.pumped_at) : null
   const side = sideOf(input)
@@ -857,14 +866,16 @@ export function updatePumpingSession(
       table: 'pumping_sessions',
       id,
       effect: 'update',
-      patch: {
-        side,
-        left_ml: input.left_ml,
-        right_ml: input.right_ml,
-        amount_ml: total > 0 ? total : null,
-        notes: input.notes,
-        pumped_at: input.pumped_at,
-      },
+      patch: keepLegacy
+        ? { notes: input.notes, pumped_at: input.pumped_at }
+        : {
+            side,
+            left_ml: input.left_ml,
+            right_ml: input.right_ml,
+            amount_ml: total > 0 ? total : null,
+            notes: input.notes,
+            pumped_at: input.pumped_at,
+          },
       creates: container ? [container.id] : [],
     },
     { queueOnly: !!opts?.pending },
@@ -981,12 +992,17 @@ export type BottleInput = {
  * session is still in the queue. The server doesn't know it yet, so the
  * bottle queues behind it instead of being rejected as unknown.
  */
-export function logBottleFeed(
+export async function logBottleFeed(
   babyId: string,
   userId: string | null,
   input: BottleInput,
   opts?: { containersPending?: boolean },
 ): Promise<Result<null>> {
+  // Behind any milk change still in the queue, too: a queued void gives milk
+  // back and a queued edit can raise a container. Sent straight to the server
+  // ahead of them, this bottle could be refused as an overdraw that the
+  // replay, in order, would have let through.
+  const milkQueued = (await store.all()).some((w) => w.op.kind === 'rpc')
   const id = newId()
   const breast = input.portions.reduce((sum, p) => sum + p.amount_ml, 0)
   const args: BottleFeedArgs = {
@@ -1018,7 +1034,7 @@ export function logBottleFeed(
       },
       refs: input.portions.map((p) => p.container_id),
     },
-    { queueOnly: !!opts?.containersPending },
+    { queueOnly: !!opts?.containersPending || milkQueued },
   )
 }
 
@@ -1069,8 +1085,15 @@ export async function milkRules(babyId: string): Promise<Result<MilkRules | null
 }
 
 export async function saveMilkRules(babyId: string, rules: MilkRules): Promise<Result<null>> {
-  const { error } = await data().from('babies').update(rules).eq('id', babyId)
+  // `.select` so an update that matched nothing (a baby RLS doesn't show this
+  // parent) is an error, not a "Saved" that saved nothing (§5.5).
+  const { data: rows, error } = await data()
+    .from('babies')
+    .update(rules)
+    .eq('id', babyId)
+    .select('id')
   if (error) return fail(null, error)
+  if (!rows || rows.length !== 1) return fail(null, { message: 'milk_baby_not_found' })
   return ok(null)
 }
 

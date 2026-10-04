@@ -89,9 +89,16 @@ export function containerExpiresAt(
 
 // ------------------------------------------------------------- usable
 
+/**
+ * Below this a container is empty: what float arithmetic leaves behind after
+ * a portion is taken offline (1e-10 ml is not milk, and must not be offered
+ * or end up as a portion).
+ */
+export const EMPTY_ML = 0.01
+
 /** Not voided, milk left, and not expired at `atMs` (expiry is exclusive). */
 export function isUsable(c: MilkContainer, atMs: number): boolean {
-  return !c.voided_at && c.remaining_ml > 0 && Date.parse(c.expires_at) > atMs
+  return !c.voided_at && c.remaining_ml >= EMPTY_ML && Date.parse(c.expires_at) > atMs
 }
 
 function labelNumber(label: string | null | undefined): number | null {
@@ -118,10 +125,12 @@ export function activeContainers<T extends MilkContainer>(containers: T[]): T[] 
 }
 
 /**
- * The tape for the next container: one more than the highest M label there
- * is. Gaps are not filled — M2 may be on a bottle in the fridge after M3 was
- * voided by mistake, and two bottles with the same number would be worse
- * than a skipped number.
+ * The tape for the next container: one more than the highest M label among
+ * the LIVE containers it is given (lib/db.ts passes the non-voided ones, and
+ * the server only refuses a label a live container has). Gaps below the top
+ * are not filled. A voided container's label can come back — if M5 was a
+ * session logged by mistake, the next real one is M5 again, which is what
+ * the tape on that bottle may already say (docs/spec-feeding-v3.md S-20).
  */
 export function nextContainerLabel(labels: (string | null | undefined)[]): string {
   const highest = labels.reduce<number>((max, label) => Math.max(max, labelNumber(label) ?? 0), 0)
@@ -174,7 +183,7 @@ export function suggestPlan(
     left -= ml
   }
   // Below a hundredth of a millilitre there is nothing to pour.
-  const formulaMl = left > 0.01 ? left : 0
+  const formulaMl = left > EMPTY_ML ? left : 0
   return { portions, formulaMl, totalMl }
 }
 

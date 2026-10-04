@@ -33,6 +33,7 @@ import { NursingAlerts } from '@/components/NursingAlerts'
 import {
   calendarFeed,
   familySettings,
+  milkErrorText,
   milkRules,
   saveFamilySettings,
   saveMilkRules,
@@ -322,7 +323,7 @@ function ScheduleSettings({ familyId }: { familyId: string | null }) {
  * registren de acá en adelante: la caducidad se calcula al guardar cada una.
  */
 function MilkStorageSettings({ babyId }: { babyId: string | null }) {
-  const { t } = useT()
+  const { t, lang } = useT()
   const [room, setRoom] = useState(String(DEFAULT_MILK_RULES.milk_room_hours))
   const [fridge, setFridge] = useState(String(DEFAULT_MILK_RULES.milk_fridge_days))
   const [freezer, setFreezer] = useState(String(DEFAULT_MILK_RULES.milk_freezer_months))
@@ -379,7 +380,7 @@ function MilkStorageSettings({ babyId }: { babyId: string | null }) {
     setBusy(true)
     const res = await saveMilkRules(babyId, checked.rules)
     setBusy(false)
-    if (res.error) setErr(t('milkRules.couldNotSave', { error: res.error }))
+    if (res.error) setErr(t('milkRules.couldNotSave', { error: milkErrorText(res.error, lang) }))
     else setFlash(t('milkRules.saved'))
   }
 

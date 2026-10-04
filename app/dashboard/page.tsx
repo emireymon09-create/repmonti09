@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useBaby } from '@/lib/useBaby'
 import { NoBaby } from '@/components/NoBaby'
@@ -453,18 +453,14 @@ export default function Dashboard() {
   // How much to suggest: the last bottle's total (queued ones included), or
   // the 3 oz starting value when there never was one (lib/milk.ts).
   const suggestedMl = suggestedTotalMl([...feedings, ...lastBottle])
-  const usable = usableContainers(containers, now)
-  // The plan is recomputed every second (the clock ticks), but it only
-  // CHANGES when the amount, the containers or an expiry do. Handing the
-  // builder a new object each second would start its rows over under the
-  // person's fingers, so the same plan object is kept while it is equal.
-  const rawPlan = suggestPlan(suggestedMl, usable, now)
-  const planSig = JSON.stringify(rawPlan)
-  const planRef = useRef<{ sig: string; plan: BottlePlan } | null>(null)
-  if (!planRef.current || planRef.current.sig !== planSig) {
-    planRef.current = { sig: planSig, plan: rawPlan }
-  }
-  const plan = planRef.current.plan
+  // Recomputed every second (the clock ticks), but they only CHANGE when the
+  // amount, the containers or an expiry do. The builder gets the same objects
+  // while they are equal: a new one each second would make it redo its work
+  // (or, without its own guard, re-render with this page forever).
+  const usableSig = JSON.stringify(usableContainers(containers, now))
+  const usable = useMemo<WithPending<MilkContainer>[]>(() => JSON.parse(usableSig), [usableSig])
+  const planSig = JSON.stringify(suggestPlan(suggestedMl, usable, now))
+  const plan = useMemo<BottlePlan>(() => JSON.parse(planSig), [planSig])
 
   function planLine(p: BottlePlan): string {
     const parts = p.portions.map((x) => `${x.label} ${formatMilkOz(x.ml)}`)
@@ -1001,7 +997,10 @@ export default function Dashboard() {
             id="bottle-panel"
             className="stack"
             onKeyDown={(e) => {
-              if (e.key === 'Escape') closeBottle()
+              // Escape on an open <select> closes the select, not the panel.
+              if (e.key === 'Escape' && (e.target as HTMLElement).tagName !== 'SELECT') {
+                closeBottle()
+              }
             }}
           >
             <h2 className="label" tabIndex={-1} ref={panelHead}>

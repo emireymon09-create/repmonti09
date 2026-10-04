@@ -95,6 +95,11 @@ function writeTimer(babyId: string, value: string | null) {
 
 const SERVED_EPSILON_ML = 0.01
 
+/** Logged before left and right existed (0013): a total, no sides. */
+function isLegacy(row: PumpingSession): boolean {
+  return row.left_ml == null && row.right_ml == null && row.amount_ml != null
+}
+
 export default function PumpingPage() {
   const { baby, userId, loading, unreachable } = useBaby()
   const { t, lang } = useT()
@@ -333,7 +338,7 @@ export default function PumpingPage() {
       editing.id,
       { left_ml: l.ml, right_ml: r.ml, notes: eNotes.trim() || null, pumped_at: pumpedAt },
       ctx,
-      { pending: !!editing.pending },
+      { pending: !!editing.pending, legacy: isLegacy(editing) },
     )
     setBusy(false)
     if (error) {
@@ -565,6 +570,11 @@ export default function PumpingPage() {
                 {editing?.id === row.id ? (
                   <div className="stack">
                     <Label>{t('milk.editSession')}</Label>
+                    {isLegacy(row) && (
+                      <p className="meta">
+                        {t('milk.legacyHint', { amount: formatMilkOz(row.amount_ml ?? 0) })}
+                      </p>
+                    )}
                     <div className="row-tight row-wrap">
                       <input
                         className="input narrow"

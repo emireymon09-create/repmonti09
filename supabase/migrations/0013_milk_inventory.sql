@@ -24,15 +24,23 @@
 
 -- ================================================================ COLUMNAS
 
+-- Topes finitos en TODAS las cantidades nuevas. No es decoración: PostgREST
+-- arma los argumentos con json_to_record, así que "NaN" o "Infinity" llegan
+-- como numeric válidos, y en Postgres NaN es MAYOR que cualquier número —
+-- `NaN > 0` es verdadero. Sin el tope, un contenedor con NaN dejaría servir
+-- cualquier cantidad y el total de lo que hay sería NaN. `x < 100000` es falso
+-- para NaN y para Infinity. 100 000 ml son 100 litros: ninguna cantidad real
+-- se acerca.
 alter table pumping_sessions
-  add column if not exists left_ml numeric check (left_ml >= 0),
-  add column if not exists right_ml numeric check (right_ml >= 0);
+  add column if not exists left_ml numeric check (left_ml >= 0 and left_ml < 100000),
+  add column if not exists right_ml numeric check (right_ml >= 0 and right_ml < 100000);
 
 -- Nulos en las tomas de antes de esta migración: son las "tomas viejas sin
 -- desglose", que siguen siendo editables como siempre.
 alter table feedings
-  add column if not exists breast_milk_ml numeric check (breast_milk_ml >= 0),
-  add column if not exists formula_ml numeric check (formula_ml >= 0);
+  add column if not exists breast_milk_ml numeric
+    check (breast_milk_ml >= 0 and breast_milk_ml < 100000),
+  add column if not exists formula_ml numeric check (formula_ml >= 0 and formula_ml < 100000);
 
 -- Las reglas del pediatra. Son de la familia (los dos padres ven las mismas),
 -- se cambian en Ajustes y se guardan directo, sin cola offline. Viven en
@@ -61,8 +69,8 @@ create table milk_containers (
   source_session_id uuid references pumping_sessions(id) on delete set null,
   -- La cinta del biberón: M1, M2, M3…
   label text not null check (label ~ '^M[1-9][0-9]*$'),
-  amount_ml numeric not null check (amount_ml > 0),
-  remaining_ml numeric not null check (remaining_ml >= 0),
+  amount_ml numeric not null check (amount_ml > 0 and amount_ml < 100000),
+  remaining_ml numeric not null check (remaining_ml >= 0 and remaining_ml < 100000),
   stored_at timestamptz not null,
   -- Hoy todo va al refrigerador. "Pasar al congelador" no se construye; la
   -- columna y la regla quedan listas.
@@ -74,7 +82,9 @@ create table milk_containers (
   constraint milk_containers_remaining_le_amount check (remaining_ml <= amount_ml),
   constraint milk_containers_expires_after_stored check (expires_at > stored_at),
   constraint milk_containers_baby_in_family
-    foreign key (baby_id, family_id) references babies (id, family_id) on delete cascade
+    foreign key (baby_id, family_id) references babies (id, family_id) on delete cascade,
+  -- Para que una porción solo pueda apuntar a un contenedor de SU familia.
+  constraint milk_containers_id_family_key unique (id, family_id)
 );
 
 -- Dos biberones vivos con la misma cinta serían peor que un número salteado.
@@ -94,9 +104,9 @@ create table milk_drawdowns (
   id uuid primary key default gen_random_uuid(),
   family_id uuid not null references families(id) on delete cascade,
   baby_id uuid not null,
-  container_id uuid not null references milk_containers(id) on delete cascade,
+  container_id uuid not null,
   feeding_id uuid not null references feedings(id) on delete cascade,
-  amount_ml numeric not null check (amount_ml > 0),
+  amount_ml numeric not null check (amount_ml > 0 and amount_ml < 100000),
   voided_at timestamptz,
   logged_by uuid references auth.users(id),
   created_at timestamptz not null default now(),
@@ -104,7 +114,12 @@ create table milk_drawdowns (
   -- contenedor en una toma serían una sola porción escrita dos veces.
   unique (feeding_id, container_id),
   constraint milk_drawdowns_baby_in_family
-    foreign key (baby_id, family_id) references babies (id, family_id) on delete cascade
+    foreign key (baby_id, family_id) references babies (id, family_id) on delete cascade,
+  -- El contenedor es de la MISMA familia que la porción (defensa en
+  -- profundidad: las funciones ya lo verifican vía RLS).
+  constraint milk_drawdowns_container_in_family
+    foreign key (container_id, family_id) references milk_containers (id, family_id)
+    on delete cascade
 );
 
 create index milk_drawdowns_container_live
@@ -244,9 +259,29 @@ begin
 end;
 $$;
 
+-- Los contenedores tienen una excepción: si alguien borra DE VERDAD una sesión
+-- (service_role o el SQL Editor; la app nunca lo hace), la FK pone
+-- `source_session_id` en null, y eso es un UPDATE que no pasa por ninguna
+-- función. Se deja pasar ese cambio y solo ese.
+create or replace function milk_guard_containers()
+returns trigger
+language plpgsql set search_path = public as $$
+begin
+  if milk_in_rpc() then
+    return new;
+  end if;
+  if tg_op = 'UPDATE'
+     and old.source_session_id is not null and new.source_session_id is null
+     and (to_jsonb(new) - 'source_session_id') = (to_jsonb(old) - 'source_session_id') then
+    return new;
+  end if;
+  raise exception 'milk_rpc_only';
+end;
+$$;
+
 create trigger milk_guard_containers
   before insert or update on milk_containers
-  for each row execute function milk_guard_inventory();
+  for each row execute function milk_guard_containers();
 create trigger milk_guard_drawdowns
   before insert or update on milk_drawdowns
   for each row execute function milk_guard_inventory();
@@ -289,27 +324,31 @@ $$;
 -- llega a la pantalla un error de Postgres crudo por estos casos.
 
 -- Crea el contenedor de una extracción. Interna: la usan las dos de abajo.
+-- Sin parámetro de actor ni de familia: el actor es auth.uid() y la familia
+-- sale del bebé, que RLS solo deja ver si es de la familia de quien llama.
 create or replace function milk_create_container(
   p_container_id uuid,
   p_label text,
-  p_family_id uuid,
   p_baby_id uuid,
   p_session_id uuid,
   p_amount_ml numeric,
-  p_stored_at timestamptz,
-  p_uid uuid
+  p_stored_at timestamptz
 )
 returns void
 language plpgsql security invoker set search_path = public as $$
 declare
   v_fridge numeric;
   v_freezer numeric;
+  v_family uuid;
 begin
   if p_container_id is null or p_label is null or p_label !~ '^M[1-9][0-9]*$' then
     raise exception 'milk_bad_input';
   end if;
-  select milk_fridge_days, milk_freezer_months into v_fridge, v_freezer
+  select family_id, milk_fridge_days, milk_freezer_months into v_family, v_fridge, v_freezer
     from babies where id = p_baby_id;
+  if v_family is null then
+    raise exception 'milk_baby_not_found';
+  end if;
   -- Una cinta por bebé, a la vez: dos extracciones simultáneas esperan acá en
   -- fila, y la segunda ve la primera.
   perform pg_advisory_xact_lock(hashtext('amelia_milk_label:' || p_baby_id::text));
@@ -325,9 +364,9 @@ begin
     id, family_id, baby_id, source_session_id, label,
     amount_ml, remaining_ml, stored_at, location, expires_at, logged_by
   ) values (
-    p_container_id, p_family_id, p_baby_id, p_session_id, p_label,
+    p_container_id, v_family, p_baby_id, p_session_id, p_label,
     p_amount_ml, p_amount_ml, p_stored_at, 'fridge',
-    milk_expires_at(p_stored_at, 'fridge', v_fridge, v_freezer), p_uid
+    milk_expires_at(p_stored_at, 'fridge', v_fridge, v_freezer), auth.uid()
   );
 end;
 $$;
@@ -372,9 +411,11 @@ begin
   end if;
   perform set_config('amelia.milk_rpc', 'on', true);
 
+  -- `not (x >= 0 and x < tope)` y no `x < 0`: así también rechaza NaN.
   if p_id is null or p_baby_id is null or p_pumped_at is null
      or p_side is null or p_side not in ('left', 'right', 'both')
-     or p_left_ml < 0 or p_right_ml < 0 then
+     or (p_left_ml is not null and not (p_left_ml >= 0 and p_left_ml < 100000))
+     or (p_right_ml is not null and not (p_right_ml >= 0 and p_right_ml < 100000)) then
     raise exception 'milk_bad_input';
   end if;
 
@@ -382,6 +423,12 @@ begin
   if v_family is null or not is_family_member(v_family) then
     raise exception 'milk_baby_not_found';
   end if;
+
+  -- Un reintento que llega mientras la primera llamada todavía no terminó (la
+  -- cola corta el pedido a los 15 s, el servidor no) espera acá a que termine,
+  -- y después ve lo que esa hizo: un no-op, no un sobregiro falso ni un error
+  -- de clave duplicada.
+  perform pg_advisory_xact_lock(hashtext('amelia_milk_op:' || p_id::text));
 
   -- Idempotencia estricta sobre lo que una edición no cambia (S-16): el bebé y
   -- el contenedor que creó. Lo demás (cantidades, hora, nota) se edita.
@@ -411,7 +458,7 @@ begin
   -- Sin cantidad, sin contenedor.
   if v_total > 0 then
     perform milk_create_container(
-      p_container_id, p_container_label, v_family, p_baby_id, p_id, v_total, p_pumped_at, v_uid
+      p_container_id, p_container_label, p_baby_id, p_id, v_total, p_pumped_at
     );
   end if;
   perform set_config('amelia.milk_rpc', '', true);
@@ -440,6 +487,7 @@ declare
   v_served numeric;
   v_fridge numeric;
   v_freezer numeric;
+  v_legacy boolean;
 begin
   if v_uid is null then
     raise exception 'milk_not_signed_in';
@@ -448,10 +496,12 @@ begin
 
   if p_id is null or p_pumped_at is null
      or p_side is null or p_side not in ('left', 'right', 'both')
-     or p_left_ml < 0 or p_right_ml < 0 then
+     or (p_left_ml is not null and not (p_left_ml >= 0 and p_left_ml < 100000))
+     or (p_right_ml is not null and not (p_right_ml >= 0 and p_right_ml < 100000)) then
     raise exception 'milk_bad_input';
   end if;
 
+  perform pg_advisory_xact_lock(hashtext('amelia_milk_op:' || p_id::text));
   -- RLS: una sesión de otra familia no se ve, y se trata como inexistente.
   select * into v_session from pumping_sessions where id = p_id for update;
   if not found or v_session.voided_at is not null then
@@ -460,6 +510,19 @@ begin
   select family_id, milk_fridge_days, milk_freezer_months
     into v_family, v_fridge, v_freezer
     from babies where id = v_session.baby_id;
+
+  -- Una sesión de antes de 0013 solo tiene un total, sin izquierda ni derecha
+  -- y sin contenedor. Corregirle la hora o la nota sin escribir los lados NO
+  -- puede borrarle el total (ni inventarle un reparto 50/50): se le cambian
+  -- esas dos cosas y nada más.
+  v_legacy := p_left_ml is null and p_right_ml is null
+    and v_session.left_ml is null and v_session.right_ml is null
+    and v_session.amount_ml is not null;
+  if v_legacy then
+    update pumping_sessions set notes = p_notes, pumped_at = p_pumped_at where id = p_id;
+    perform set_config('amelia.milk_rpc', '', true);
+    return;
+  end if;
 
   v_total := coalesce(p_left_ml, 0) + coalesce(p_right_ml, 0);
 
@@ -491,8 +554,7 @@ begin
   elsif v_total > 0 then
     -- No tenía cantidad y ahora sí: el contenedor nace ahora.
     perform milk_create_container(
-      p_container_id, p_container_label, v_family, v_session.baby_id, p_id,
-      v_total, p_pumped_at, v_uid
+      p_container_id, p_container_label, v_session.baby_id, p_id, v_total, p_pumped_at
     );
   end if;
 
@@ -521,6 +583,7 @@ begin
   end if;
   perform set_config('amelia.milk_rpc', 'on', true);
 
+  perform pg_advisory_xact_lock(hashtext('amelia_milk_op:' || p_id::text));
   select * into v_session from pumping_sessions where id = p_id for update;
   -- Nunca llegó, o ya está anulada: no hay nada que hacer.
   if not found or v_session.voided_at is not null then
@@ -578,7 +641,8 @@ begin
   perform set_config('amelia.milk_rpc', 'on', true);
 
   if p_id is null or p_baby_id is null or p_fed_at is null
-     or v_formula < 0 or jsonb_typeof(v_portions) <> 'array' then
+     or not (v_formula >= 0 and v_formula < 100000)
+     or jsonb_typeof(v_portions) <> 'array' then
     raise exception 'milk_bad_input';
   end if;
 
@@ -590,14 +654,14 @@ begin
     select 1 from jsonb_array_elements(v_portions) e
     where (e->>'container_id') is null
        or (e->>'amount_ml') is null
-       or (e->>'amount_ml')::numeric <= 0
+       or not ((e->>'amount_ml')::numeric > 0 and (e->>'amount_ml')::numeric < 100000)
   ) or v_count <> (
     select count(distinct e->>'container_id') from jsonb_array_elements(v_portions) e
   ) then
     raise exception 'milk_bad_input';
   end if;
   -- Solo fórmula vale; solo leche vale; nada de nada, no es una toma.
-  if v_breast + v_formula <= 0 then
+  if not (v_breast + v_formula > 0 and v_breast + v_formula < 100000) then
     raise exception 'milk_bad_input';
   end if;
 
@@ -605,6 +669,12 @@ begin
   if v_family is null or not is_family_member(v_family) then
     raise exception 'milk_baby_not_found';
   end if;
+
+  -- Un reintento que llega mientras la primera llamada todavía no terminó (la
+  -- cola corta el pedido a los 15 s, el servidor no) espera acá a que termine,
+  -- y después ve lo que esa hizo: un no-op, no un sobregiro falso ni un error
+  -- de clave duplicada.
+  perform pg_advisory_xact_lock(hashtext('amelia_milk_op:' || p_id::text));
 
   -- Idempotencia estricta (S-16): el mismo id con el mismo bebé, la misma
   -- fórmula y las mismas porciones es un reenvío y no hace nada. La hora y la
@@ -696,6 +766,7 @@ begin
   end if;
   perform set_config('amelia.milk_rpc', 'on', true);
 
+  perform pg_advisory_xact_lock(hashtext('amelia_milk_op:' || p_feeding_id::text));
   select * into v_feeding from feedings where id = p_feeding_id for update;
   -- Nunca llegó, o ya está anulada: no-op.
   if not found or v_feeding.voided_at is not null then
@@ -734,9 +805,10 @@ revoke all on function milk_in_rpc() from public, anon;
 revoke all on function milk_guard_feedings() from public, anon;
 revoke all on function milk_guard_pumping() from public, anon;
 revoke all on function milk_guard_inventory() from public, anon;
+revoke all on function milk_guard_containers() from public, anon;
 revoke all on function milk_expires_at(timestamptz, text, numeric, numeric) from public, anon;
 revoke all on function milk_served_ml(uuid) from public, anon;
-revoke all on function milk_create_container(uuid, text, uuid, uuid, uuid, numeric, timestamptz, uuid)
+revoke all on function milk_create_container(uuid, text, uuid, uuid, numeric, timestamptz)
   from public, anon;
 revoke all on function log_pumping_session(
   uuid, uuid, text, numeric, numeric, text, timestamptz, uuid, text, timestamptz
@@ -756,9 +828,8 @@ revoke all on function void_bottle_feed(uuid, timestamptz) from public, anon;
 grant execute on function milk_in_rpc() to authenticated, service_role;
 grant execute on function milk_expires_at(timestamptz, text, numeric, numeric) to authenticated;
 grant execute on function milk_served_ml(uuid) to authenticated;
-grant execute on function milk_create_container(
-  uuid, text, uuid, uuid, uuid, numeric, timestamptz, uuid
-) to authenticated;
+grant execute on function milk_create_container(uuid, text, uuid, uuid, numeric, timestamptz)
+  to authenticated;
 grant execute on function log_pumping_session(
   uuid, uuid, text, numeric, numeric, text, timestamptz, uuid, text, timestamptz
 ) to authenticated;

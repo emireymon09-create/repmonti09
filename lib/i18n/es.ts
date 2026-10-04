@@ -350,6 +350,8 @@ export const es: Dictionary = {
   'milk.sessionsTitle': 'Sesiones',
   'milk.nothingSaved': 'Sin conexión, y todavía no hay nada guardado en este dispositivo.',
   'milk.servedNote': 'Ya se sirvieron {amount} de acá',
+  'milk.legacyHint':
+    'Registrada antes de que izquierdo y derecho fueran por separado: su total de {amount} queda como está, salvo que escribas los lados.',
   'milk.deletedPending': 'Borrada en este dispositivo — sin sincronizar todavía.',
 
   // ------------------------------------------------------------ bottle (0013)
@@ -373,6 +375,8 @@ export const es: Dictionary = {
   'bottle.chooseContainer': 'Extracción…',
   'bottle.containerOption': '{label} · quedan {amount}',
   'bottle.amountAria': 'Fila de leche {n}: cantidad, {unit}',
+  'bottle.planChanged': 'La sugerencia cambió mientras editabas.',
+  'bottle.startOver': 'Empezar de nuevo desde ahí',
   'bottle.removeRow': 'Quitar',
   'bottle.addRow': '+ Agregar fila',
   'bottle.formula': 'Fórmula',
