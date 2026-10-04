@@ -118,9 +118,11 @@ export function BottleBuilder({
   useEffect(() => {
     if (plan === firstPlan.current) return
     firstPlan.current = plan
-    if (dirty) setStale(true)
+    // Typed rows, or a unit picked by hand, are not wiped by a new plan: the
+    // builder says the suggestion changed and offers to start over.
+    if (dirty || unit !== DISPLAY_UNIT) setStale(true)
     else startOver(plan)
-    // `dirty` is read, not watched: typing must not start the rows over.
+    // `dirty` and `unit` are read, not watched: typing must not start over.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [plan])
 

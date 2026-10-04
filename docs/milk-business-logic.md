@@ -173,9 +173,11 @@ NO VERIFICADO con extracciones reales — ver §8]
   `milk_idempotency_conflict`). Un reintento que llega mientras la primera
   llamada todavía corre espera un lock por id y termina en no-op.
   [VERIFICADO: SQL, unit de la cola, y concurrencia en el Postgres efímero]
-- Una toma nueva se encola detrás de cualquier operación de leche que ya
-  esté en la cola (una anulación que devuelve leche, por ejemplo), para no
-  ser rechazada por un sobregiro que el reenvío en orden habría resuelto.
+- Una toma nueva se encola detrás solo si alguna porción sale de una
+  extracción que todavía está en la cola. Si una anulación encolada todavía no
+  devolvió la leche, la toma nueva puede recibir un rechazo visible
+  (`milk_overdraw`) en vez de quedar trabada: se vuelve a intentar al
+  sincronizar.
 - Una edición o un borrado de algo que todavía es un alta en la cola, o una
   toma que sirve de un contenedor que todavía está en la cola, se encola
   detrás (`queueOnly`) en vez de mandarse directo a un servidor que todavía no

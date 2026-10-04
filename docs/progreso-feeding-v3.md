@@ -12,8 +12,8 @@ correr o comprobar.
 | 1 · Migración 0013 + `lib/milk.ts` + tests | Hecho | `vitest run tests/unit/milk.test.ts` 45/45; `tsc --noEmit` limpio; SQL en Postgres efímero (ver abajo) |
 | 2 · Datos y cola + tests (+ página Leche) | Hecho | `pnpm test` 350/350; `tsc --noEmit` limpio; `pnpm test:integration` 107 pasan + 8 saltados (suite de leche: la base local no tiene 0013) |
 | 3 · Interfaz + i18n | Hecho (código) | `tsc`, `lint`, `format:check`, `build` en verde; **comportamiento en pantalla NO VERIFICADO** (ver abajo) |
-| 4 · Documentación y documento familiar | Pendiente | — |
-| Revisión independiente (3 agentes) | Pendiente | — |
+| 4 · Documentación y documento familiar | Hecho | `docs/milk-business-logic.md`, `docs/handoff-2026-10-04.md`, `docs/reglas-de-uso-familia.md`, índice de `docs/README.md`; grep de términos técnicos sobre el documento familiar: sin resultados |
+| Revisión independiente (3 agentes + 2 vueltas sobre los arreglos) | Hecha | Hallazgos bloqueantes abiertos: 0 (tablas abajo) |
 
 ## Notas
 
@@ -156,3 +156,16 @@ Dos subagentes nuevos, solo lectura, sobre los arreglos.
 
 Revalidación de 0013 en un Postgres efímero nuevo: **61** chequeos en una
 transacción con `ROLLBACK` [VERIFICADO], contenedor borrado.
+
+## Tercera vuelta (sobre `0ee8b2f`)
+
+Un subagente nuevo, solo lectura. **0 bloqueantes, 0 importantes.** Confirmó
+con la semántica de Postgres que la guarda solo deja pasar la acción de la FK
+(profundidad 2 en un borrado directo, 3+ en cascada) y que un PATCH llega a
+profundidad 1. Tres menores, los tres **corregidos**: una línea vieja en
+`docs/milk-business-logic.md` que describía la regla revertida; la lista de
+Leche mostraba un contenedor de "0 oz" (ahora filtra con `EMPTY_ML`); cambiar
+la unidad a mano y recibir una sugerencia nueva volvía a oz sin avisar (ahora
+cuenta como edición y aparece "La sugerencia cambió mientras editabas").
+
+**Hallazgos bloqueantes abiertos al cierre: 0.**

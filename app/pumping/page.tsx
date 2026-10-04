@@ -25,6 +25,7 @@ import { lastGood, seenKey, type LastGood, type SeenState } from '@/lib/lastSeen
 import { looksOffline, type PendingWrite } from '@/lib/queue'
 import {
   DEFAULT_MILK_RULES,
+  EMPTY_ML,
   activeContainers,
   applyPendingInventory,
   isUsable,
@@ -393,7 +394,8 @@ export default function PumpingPage() {
   // Building the stash starts weeks before the due date, so this page works
   // even on the "Expecting" screen — it never checks birth_date.
   const unknown = seen.kind === 'nothing'
-  const shelf = activeContainers(live).filter((c) => c.remaining_ml > 0)
+  // What the screen would show as "0 oz" is empty (lib/milk.ts, EMPTY_ML).
+  const shelf = activeContainers(live).filter((c) => c.remaining_ml >= EMPTY_ML)
   const stash = stashMl(live, now)
   const stashPending = shelf.some((c) => c.pending)
   const unitName = t(`unit.${unit}`)
