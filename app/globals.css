@@ -670,6 +670,28 @@ body {
   background: var(--c-live);
   color: var(--c-on-live);
 }
+/* A button with one of the nav's stroke icons before its text: the bottle
+   button on Today (0013). Two classes deep on purpose — the phone's bottom-bar
+   rule for `.nav-icon` is unscoped and would otherwise give it the tab's pill
+   (4.4em wide, filled). Sizes are relative, so the wall scales it like the
+   text next to it. */
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+}
+.btn-icon .nav-icon {
+  display: inline-flex;
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  background: none;
+}
+.btn-icon .nav-icon svg {
+  width: 1.4em;
+  height: 1.4em;
+}
 
 .input {
   width: 100%;

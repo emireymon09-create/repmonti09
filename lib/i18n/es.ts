@@ -234,7 +234,6 @@ export const es: Dictionary = {
   'dash.label.sleepStart': 'se durmió',
   'dash.label.sleepEnd': 'se despertó',
   'dash.birthWeightNote': 'Peso al nacer',
-  'dash.bottleNotNumber': 'La cantidad del biberón tiene que ser un número en {unit}.',
   'dash.expecting': 'Esperando a {name}',
   'dash.notBornYet': 'Todavía no nació',
   'dash.notBornNote':
@@ -250,7 +249,6 @@ export const es: Dictionary = {
   'dash.stopNursing': 'Terminar la toma',
   'dash.startOn': 'La próxima, empezá por el {side}',
   'dash.nextFeeding': 'Próxima toma {time} · {due}',
-  'dash.bottleAmount': 'Cantidad del biberón en {unit}',
   'dash.bottle': 'Biberón',
   'dash.detected': 'Detectado',
   'dash.asleep': 'Dormida',
@@ -319,7 +317,6 @@ export const es: Dictionary = {
   'milk.logged': 'Sesión registrada',
   'milk.removeConfirm': '¿Borrar esta sesión? Su leche también sale de lo que hay.',
   'milk.logTitle': 'Registrar una extracción',
-  'milk.amount': 'Cantidad, {unit}',
   'milk.when': 'Cuándo (si no la cambiás, ahora)',
   'milk.logSession': 'Registrar sesión',
   'milk.inStash': 'Lo que hay',
@@ -357,6 +354,51 @@ export const es: Dictionary = {
 
   // ------------------------------------------------------------ bottle (0013)
   'bottle.formulaPart': 'fórmula {amount}',
+  'bottle.panelTitle': 'Biberón',
+  'bottle.planFormula': '{amount} de fórmula',
+  'bottle.stashLeft': 'Leche materna que queda: {amount}',
+  'bottle.logAsIs': 'Registrar tal cual',
+  'bottle.changeHint':
+    'O cambialo — cualquier extracción, cualquier cantidad — y registrá los cambios:',
+  'bottle.logChanges': 'Registrar con cambios',
+  'bottle.close': 'Cerrar',
+  'bottle.pickContainer': 'Elegí una extracción para cada fila de leche, o quitá la fila.',
+  'bottle.sameTwice': '{label} está en dos filas. Dejala en una sola.',
+  'bottle.amountFor': '¿Cuánto de {label}?',
+  'bottle.notEnough': 'A {label} le quedan solo {amount}.',
+  'bottle.formulaNotNumber': 'La fórmula tiene que ser un número.',
+  'bottle.empty': 'Este biberón todavía no tiene nada.',
+  'bottle.noMilk': 'No hay leche materna que se pueda usar ahora — va todo de fórmula.',
+  'bottle.containerAria': 'Fila de leche {n}: extracción',
+  'bottle.chooseContainer': 'Extracción…',
+  'bottle.containerOption': '{label} · quedan {amount}',
+  'bottle.amountAria': 'Fila de leche {n}: cantidad, {unit}',
+  'bottle.removeRow': 'Quitar',
+  'bottle.addRow': '+ Agregar fila',
+  'bottle.formula': 'Fórmula',
+  'bottle.total': 'En total: {amount}',
+  'bottle.timeOnly':
+    'Solo se puede cambiar la hora. Para cambiar lo que tenía, borrala — la leche vuelve — y registrala de nuevo.',
+  'dash.give': 'Dale {amount}',
+
+  // ------------------------------------------------------------ milk storage (0013)
+  'milkRules.title': 'Conservación de la leche',
+  'milkRules.note':
+    'Las reglas del pediatra, para toda la familia. Cada extracción nueva toma de acá su fecha límite al guardarse.',
+  'milkRules.room': 'A temperatura ambiente',
+  'milkRules.fridge': 'En el refrigerador',
+  'milkRules.freezer': 'En el congelador',
+  'milkRules.hours': 'horas',
+  'milkRules.days': 'días',
+  'milkRules.months': 'meses',
+  'milkRules.problem.empty': '“{field}” no puede quedar vacío.',
+  'milkRules.problem.number': '“{field}” tiene que ser un número.',
+  'milkRules.problem.whole': '“{field}” tiene que ser una cantidad entera de meses.',
+  'milkRules.problem.range': '“{field}” tiene que ser más de 0 y como mucho {max}.',
+  'milkRules.offline': 'Estás sin conexión. No se guardó nada — probá de nuevo cuando vuelva.',
+  'milkRules.saved': 'Guardado para toda la familia.',
+  'milkRules.couldNotSave': 'No se pudo guardar — {error}',
+  'milkRules.couldNotLoad': 'No se pudieron cargar las reglas de conservación — {error}',
 
   // ------------------------------------------------------------ milk errors (0013)
   'milkError.overdraw':

@@ -72,20 +72,37 @@ export function Btn({
   type = 'button',
   variant = 'action',
   disabled,
+  icon,
+  ref,
+  ariaExpanded,
+  ariaControls,
 }: {
   children: React.ReactNode
   onClick?: () => void
   type?: 'button' | 'submit'
   variant?: 'action' | 'quiet' | 'live'
   disabled?: boolean
+  /** One of the nav's stroke icons, drawn before the text (the bottle button on Today). */
+  icon?: keyof typeof ICONS
+  /** For a button that opens a panel and gets the focus back when it closes. */
+  ref?: React.Ref<HTMLButtonElement>
+  ariaExpanded?: boolean
+  ariaControls?: string
 }) {
+  const cls = ['btn']
+  if (variant !== 'action') cls.push(variant)
+  if (icon) cls.push('btn-icon')
   return (
     <button
+      ref={ref}
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className={variant === 'action' ? 'btn' : `btn ${variant}`}
+      className={cls.join(' ')}
+      aria-expanded={ariaExpanded}
+      aria-controls={ariaControls}
     >
+      {icon && <NavIcon name={icon} />}
       {children}
     </button>
   )

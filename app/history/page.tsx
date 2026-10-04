@@ -9,7 +9,10 @@ import { lastGood, seenKey, type LastGood, type SeenState } from '@/lib/lastSeen
 import {
   buildActivity,
   keepLastGood,
+  listContainers,
+  listDrawdowns,
   mergePending,
+  milkErrorText,
   pendingWrites,
   recentDiapers,
   recentFeedings,
@@ -21,6 +24,7 @@ import {
   updateNursing,
   updatePumping,
   updateSleep,
+  voidBottleFeed,
   voidDiaper,
   voidFeeding,
   voidNursing,
@@ -32,12 +36,15 @@ import { useT } from '@/lib/i18n/react'
 import { useReturnFocus } from '@/lib/useReturnFocus'
 import type { Lang } from '@/lib/i18n'
 import { looksOffline, type PendingWrite } from '@/lib/queue'
+import { applyPendingInventory, describeBottle, isInventoryBottleFeed } from '@/lib/milk'
 import type {
   ActivityEntry,
   DiaperChange,
   DiaperType,
   Feeding,
   FeedingType,
+  MilkContainer,
+  MilkDrawdown,
   NursingSession,
   PumpingSession,
   PumpSide,
@@ -65,8 +72,22 @@ type ServerRows = {
   nursing: NursingSession[]
   sleep: SleepSession[]
   pumping: PumpingSession[]
+  /**
+   * Which containers each bottle came from (0013), for the breakdown line —
+   * and the containers, so a bottle given offline still names its M#.
+   */
+  containers: MilkContainer[]
+  drawdowns: MilkDrawdown[]
 }
-const NO_ROWS: ServerRows = { feedings: [], diapers: [], nursing: [], sleep: [], pumping: [] }
+const NO_ROWS: ServerRows = {
+  feedings: [],
+  diapers: [],
+  nursing: [],
+  sleep: [],
+  pumping: [],
+  containers: [],
+  drawdowns: [],
+}
 
 /** One calendar day's worth of entries, household timezone. */
 type Day = { key: string; label: string; entries: ActivityEntry[] }
@@ -121,6 +142,7 @@ export default function HistoryPage() {
 
   const [days, setDays] = useState<Day[]>([])
   const [feedings, setFeedings] = useState<WithPending<Feeding>[]>([])
+  const [drawdowns, setDrawdowns] = useState<WithPending<MilkDrawdown>[]>([])
   const [diapers, setDiapers] = useState<WithPending<DiaperChange>[]>([])
   const [nursing, setNursing] = useState<WithPending<NursingSession>[]>([])
   const [sleep, setSleep] = useState<WithPending<SleepSession>[]>([])
@@ -184,6 +206,9 @@ export default function HistoryPage() {
       const mPumping = mergePending(rows.pumping, 'pumping_sessions', queued)
 
       setFeedings(mFeedings)
+      setDrawdowns(
+        applyPendingInventory(rows.containers ?? [], rows.drawdowns ?? [], queued).drawdowns,
+      )
       setDiapers(mDiapers)
       setNursing(mNursing)
       setSleep(mSleep)
@@ -230,15 +255,25 @@ export default function HistoryPage() {
         setSeen(last.state(offline))
       }
 
-      const [feedingsRead, diapersRead, nursingRead, sleepRead, pumpingRead, queued] =
-        await Promise.all([
-          recentFeedings(babyId, HISTORY_LIMIT),
-          recentDiapers(babyId, HISTORY_LIMIT),
-          recentNursing(babyId, HISTORY_LIMIT),
-          recentSleep(babyId, HISTORY_LIMIT),
-          recentPumping(babyId, HISTORY_LIMIT),
-          pendingWrites(),
-        ])
+      const [
+        feedingsRead,
+        diapersRead,
+        nursingRead,
+        sleepRead,
+        pumpingRead,
+        containersRead,
+        drawdownsRead,
+        queued,
+      ] = await Promise.all([
+        recentFeedings(babyId, HISTORY_LIMIT),
+        recentDiapers(babyId, HISTORY_LIMIT),
+        recentNursing(babyId, HISTORY_LIMIT),
+        recentSleep(babyId, HISTORY_LIMIT),
+        recentPumping(babyId, HISTORY_LIMIT),
+        listContainers(babyId),
+        listDrawdowns(babyId),
+        pendingWrites(),
+      ])
       if (read !== latestRead.current) return
 
       const { rows, error } = keepLastGood(last.rows, {
@@ -247,6 +282,8 @@ export default function HistoryPage() {
         nursing: nursingRead,
         sleep: sleepRead,
         pumping: pumpingRead,
+        containers: containersRead,
+        drawdowns: drawdownsRead,
       })
       setSeen(last.settle(rows, error))
       // A read that failed for lack of network is not an error to shout:
@@ -315,18 +352,33 @@ export default function HistoryPage() {
 
     let result: { error: string | null; queued?: boolean }
 
-    if (editing.kind === 'feeding') {
+    const editedFeed =
+      editing.kind === 'feeding' ? feedings.find((r) => r.id === editing.id) : undefined
+    // Behind its own insert when that is still queued (see `write` in lib/db.ts).
+    const queueOnly = !!editedFeed?.pending
+    if (editing.kind === 'feeding' && editedFeed && isInventoryBottleFeed(editedFeed)) {
+      // A bottle with a breakdown: the time only (lib/milk.ts).
+      result = await updateFeeding(
+        editing.id,
+        { fed_at: fromHouseholdInputValue(fAt) },
+        { queueOnly },
+      )
+    } else if (editing.kind === 'feeding') {
       const amount = fAmount.trim() === '' ? null : Number(fAmount)
       if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
         setErr(t('history.amountNotNumber', { unit: t(`unit.${DISPLAY_UNIT}`) }))
         setBusy(false)
         return
       }
-      result = await updateFeeding(editing.id, {
-        feeding_type: fType,
-        amount_ml: fType === 'bottle' && amount !== null ? unitToMl(amount, DISPLAY_UNIT) : null,
-        fed_at: fromHouseholdInputValue(fAt),
-      })
+      result = await updateFeeding(
+        editing.id,
+        {
+          feeding_type: fType,
+          amount_ml: fType === 'bottle' && amount !== null ? unitToMl(amount, DISPLAY_UNIT) : null,
+          fed_at: fromHouseholdInputValue(fAt),
+        },
+        { queueOnly },
+      )
     } else if (editing.kind === 'diaper') {
       result = await updateDiaper(editing.id, {
         diaper_type: dType,
@@ -361,7 +413,7 @@ export default function HistoryPage() {
     }
 
     if (result.error) {
-      setErr(t('common.couldNotSave', { error: result.error }))
+      setErr(t('common.couldNotSave', { error: milkErrorText(result.error, lang) }))
     } else {
       setEditing(null)
       confirm(result.queued ? t('common.queued') : t('common.saved'))
@@ -382,19 +434,24 @@ export default function HistoryPage() {
     setBusy(true)
     setErr(null)
 
+    const feed = kind === 'feeding' ? feedings.find((r) => r.id === id) : undefined
+    // A bottle with a breakdown goes through the function that also gives its
+    // milk back to each container (0013).
     const result =
-      kind === 'feeding'
-        ? await voidFeeding(id)
-        : kind === 'diaper'
-          ? await voidDiaper(id)
-          : kind === 'nursing'
-            ? await voidNursing(id)
-            : kind === 'sleep'
-              ? await voidSleep(id)
-              : await voidPumping(id)
+      feed && isInventoryBottleFeed(feed)
+        ? await voidBottleFeed(id, { pending: !!feed.pending })
+        : kind === 'feeding'
+          ? await voidFeeding(id)
+          : kind === 'diaper'
+            ? await voidDiaper(id)
+            : kind === 'nursing'
+              ? await voidNursing(id)
+              : kind === 'sleep'
+                ? await voidSleep(id)
+                : await voidPumping(id)
 
     if (result.error) {
-      setErr(t('common.couldNotDelete', { error: result.error }))
+      setErr(t('common.couldNotDelete', { error: milkErrorText(result.error, lang) }))
     } else {
       if (editing?.id === id) setEditing(null)
       confirm(result.queued ? t('common.queued') : t('common.deleted'))
@@ -450,6 +507,10 @@ export default function HistoryPage() {
               <div className="feed">
                 {day.entries.map((entry) => {
                   const isEditing = editing?.kind === entry.kind && editing.id === entry.id
+                  const feedRow =
+                    entry.kind === 'feeding' ? feedings.find((r) => r.id === entry.id) : undefined
+                  const locked = !!feedRow && isInventoryBottleFeed(feedRow)
+                  const breakdown = locked ? describeBottle(feedRow!, drawdowns, lang) : null
                   return (
                     <div key={`${entry.kind}-${entry.id}`}>
                       <div className="feed-item">
@@ -457,6 +518,7 @@ export default function HistoryPage() {
                         <span className="feed-what">
                           <span className="meta">{t(`history.kind.${entry.kind}`)} · </span>
                           {entry.detail}
+                          {breakdown && <span className="meta feed-span">{breakdown}</span>}
                         </span>
                         {isEditable(entry.kind) && !isEditing && (
                           <RowMenu
@@ -474,7 +536,29 @@ export default function HistoryPage() {
                         )}
                       </div>
 
-                      {isEditing && editing.kind === 'feeding' && (
+                      {isEditing && editing.kind === 'feeding' && locked && (
+                        <div className="edit-panel">
+                          <p className="meta">{t('bottle.timeOnly')}</p>
+                          <input
+                            type="datetime-local"
+                            className="input"
+                            value={fAt}
+                            onChange={(e) => setFAt(e.target.value)}
+                            max={toHouseholdInputValue()}
+                            aria-label={t('common.timeItHappened')}
+                          />
+                          <div className="row-tight">
+                            <Btn disabled={busy} onClick={saveEdit}>
+                              {t('common.save')}
+                            </Btn>
+                            <Btn variant="quiet" onClick={() => setEditing(null)}>
+                              {t('common.cancel')}
+                            </Btn>
+                          </div>
+                        </div>
+                      )}
+
+                      {isEditing && editing.kind === 'feeding' && !locked && (
                         <div className="edit-panel">
                           <div className="row">
                             {(['bottle', 'solid', 'nursing'] as FeedingType[]).map((type) => (

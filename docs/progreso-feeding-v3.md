@@ -11,7 +11,7 @@ correr o comprobar.
 | 0 · Lectura, exploración, plan, spec | Hecho (4 oct 2026) | — |
 | 1 · Migración 0013 + `lib/milk.ts` + tests | Hecho | `vitest run tests/unit/milk.test.ts` 45/45; `tsc --noEmit` limpio; SQL en Postgres efímero (ver abajo) |
 | 2 · Datos y cola + tests (+ página Leche) | Hecho | `pnpm test` 350/350; `tsc --noEmit` limpio; `pnpm test:integration` 107 pasan + 8 saltados (suite de leche: la base local no tiene 0013) |
-| 3 · Interfaz + i18n | Pendiente | — |
+| 3 · Interfaz + i18n | Hecho (código) | `tsc`, `lint`, `format:check`, `build` en verde; **comportamiento en pantalla NO VERIFICADO** (ver abajo) |
 | 4 · Documentación y documento familiar | Pendiente | — |
 | Revisión independiente (3 agentes) | Pendiente | — |
 
@@ -55,3 +55,18 @@ correr o comprobar.
   está escrita y se salta sola contra una base sin 0013 (sonda sobre
   `milk_containers`). Las otras seis suites corren y pasan contra el stack
   local sin 0013 [VERIFICADO, `pnpm test:integration`].
+
+- **Hito 3.** `components/BottleBuilder.tsx` (el constructor de filas, uno
+  solo), Hoy (línea "Dale X oz", botón de mamila, panel inline con "Registrar
+  tal cual" / "Registrar con cambios"), `/feeding` (Registrar uno pasado con
+  el mismo constructor; tomas con desglose: solo la hora, borrar con
+  `voidBottleFeed`, desglose debajo), Historial (lo mismo), Ajustes
+  ("Conservación de la leche"), `Btn` con ícono/ref/aria, `.btn-icon`. Se
+  borraron `logFeeding` (sin uso: un biberón ahora siempre lleva desglose) y
+  tres claves de i18n que quedaron sin lector.
+- **La interfaz NO se probó en un navegador contra datos reales** [NO
+  VERIFICADO]: las pantallas leen tablas de 0013, y 0013 no está aplicada en
+  el stack local (prohibido en este pase). Contra el stack actual, Leche, Hoy,
+  /feeding e Historial mostrarían el error de lectura de `milk_containers`. Lo
+  que sí está verificado es que compila, pasa lint y build, y que toda la
+  lógica que la interfaz usa tiene tests unitarios.

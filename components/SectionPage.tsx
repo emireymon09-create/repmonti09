@@ -36,9 +36,12 @@ import {
   diapersSince,
   feedingsSince,
   keepLastGood,
+  listContainers,
+  listDrawdowns,
+  logBottleFeed,
   logDiaper,
-  logFeeding,
   mergePending,
+  milkErrorText,
   nursingSince,
   pendingWrites,
   recentDiapers,
@@ -52,6 +55,7 @@ import {
   updateFeeding,
   updateNursing,
   updateSleep,
+  voidBottleFeed,
   voidDiaper,
   voidFeeding,
   voidNursing,
@@ -67,7 +71,16 @@ import {
   type PastRangeProblem,
 } from '@/lib/kpis'
 import { useSync } from '@/lib/useSync'
-import { AmountUnit } from '@/components/AmountUnit'
+import { BottleBuilder, type BottleValue } from '@/components/BottleBuilder'
+import {
+  applyPendingInventory,
+  describeBottle,
+  isInventoryBottleFeed,
+  suggestPlan,
+  suggestedTotalMl,
+  usableContainers,
+  type BottlePlan,
+} from '@/lib/milk'
 import { useT } from '@/lib/i18n/react'
 import { useReturnFocus } from '@/lib/useReturnFocus'
 import type { Lang, MessageKey } from '@/lib/i18n'
@@ -78,11 +91,12 @@ import type {
   DiaperType,
   Feeding,
   FeedingType,
+  MilkContainer,
+  MilkDrawdown,
   NursingSession,
   Result,
   Side,
   SleepSession,
-  VolumeUnit,
   WithPending,
 } from '@/lib/types'
 import {
@@ -123,8 +137,13 @@ type ServerRows = {
   weekNursing: NursingSession[]
   weekDiapers: DiaperChange[]
   weekSleep: SleepSession[]
+  /** The milk inventory (0013), Feeding only: what a bottle can come from. */
+  containers: MilkContainer[]
+  drawdowns: MilkDrawdown[]
 }
 const NO_ROWS: ServerRows = {
+  containers: [],
+  drawdowns: [],
   feedings: [],
   nursing: [],
   diapers: [],
@@ -149,6 +168,8 @@ function readSection(section: Section, babyId: string, sinceIso: string): Promis
     weekNursing: NOT_READ,
     weekDiapers: NOT_READ,
     weekSleep: NOT_READ,
+    containers: NOT_READ,
+    drawdowns: NOT_READ,
   }
   if (section === 'feeding') {
     return Promise.all([
@@ -156,12 +177,16 @@ function readSection(section: Section, babyId: string, sinceIso: string): Promis
       recentNursing(babyId, LOG_LIMIT),
       feedingsSince(babyId, sinceIso),
       nursingSince(babyId, sinceIso),
-    ]).then(([feedings, nursing, weekFeedings, weekNursing]) => ({
+      listContainers(babyId),
+      listDrawdowns(babyId),
+    ]).then(([feedings, nursing, weekFeedings, weekNursing, containers, drawdowns]) => ({
       ...none,
       feedings,
       nursing,
       weekFeedings,
       weekNursing,
+      containers,
+      drawdowns,
     }))
   }
   if (section === 'diapers') {
@@ -184,6 +209,8 @@ type Shown = {
   weekNursing: WithPending<NursingSession>[]
   weekDiapers: WithPending<DiaperChange>[]
   weekSleep: WithPending<SleepSession>[]
+  containers: WithPending<MilkContainer>[]
+  drawdowns: WithPending<MilkDrawdown>[]
 }
 
 /** One calendar day of the log, household timezone (as on /history). */
@@ -262,10 +289,10 @@ export function SectionPage({ section }: { section: Section }) {
   // "Log a past one".
   const [pKind, setPKind] = useState<PastFeeding>('breast')
   const [pSide, setPSide] = useState<Side>('left')
-  const [pAmount, setPAmount] = useState('')
-  // Same as the dashboard's bottle field: what THIS number is in. Not saved,
-  // back to ounces on every mount (components/AmountUnit.tsx).
-  const [pUnit, setPUnit] = useState<VolumeUnit>(DISPLAY_UNIT)
+  // A past bottle (0013): the same row builder as Today's bottle panel.
+  const [pBuilt, setPBuilt] = useState<BottleValue | null>(null)
+  // A new plan starts the builder over — after a save, or another time.
+  const [pPlanKey, setPPlanKey] = useState(0)
   const [pDiaper, setPDiaper] = useState<DiaperType>('wet')
   const [pAt, setPAt] = useState(() => toHouseholdInputValue())
   const [pStart, setPStart] = useState(() => minutesAgo(section === 'sleep' ? 60 : 15))
@@ -274,12 +301,11 @@ export function SectionPage({ section }: { section: Section }) {
   // hasn't ended — it stays open and is stopped from Today, as if Start had
   // been pressed at the time picked.
   const [pOngoing, setPOngoing] = useState(false)
+  const pPlanRef = useRef<{ sig: string; plan: BottlePlan } | null>(null)
 
   function resetPast() {
-    setPAmount('')
-    // With the field. A unit left over from the last entry turns the next
-    // "4" into 4 ml instead of 4 oz, and it looks like a real entry.
-    setPUnit(DISPLAY_UNIT)
+    // The builder starts over from a fresh suggestion, its unit back to oz.
+    setPPlanKey((k) => k + 1)
     setPAt(toHouseholdInputValue())
     setPStart(minutesAgo(section === 'sleep' ? 60 : 15))
     setPEnd(toHouseholdInputValue())
@@ -330,10 +356,13 @@ export function SectionPage({ section }: { section: Section }) {
         weekNursing: mergePending(rows.weekNursing, 'nursing_sessions', queued),
         weekDiapers: mergePending(rows.weekDiapers, 'diaper_changes', queued),
         weekSleep: mergePending(rows.weekSleep, 'sleep_sessions', queued),
+        ...applyPendingInventory(rows.containers ?? [], rows.drawdowns ?? [], queued),
       }
       // Only this section's tables: the others were never read and stay empty.
       if (section !== 'feeding') {
         next.feedings = next.nursing = next.weekFeedings = next.weekNursing = []
+        next.containers = []
+        next.drawdowns = []
       }
       if (section !== 'diapers') next.diapers = next.weekDiapers = []
       if (section !== 'sleep') next.sleep = next.weekSleep = []
@@ -432,6 +461,7 @@ export function SectionPage({ section }: { section: Section }) {
       const row = shown.feedings.find((r) => r.id === entry.id)
       if (!row) return
       setFType(row.feeding_type)
+      // A bottle with a breakdown only shows its time (lib/milk.ts).
       setFAmount(row.amount_ml != null ? String(mlToUnit(row.amount_ml, DISPLAY_UNIT)) : '')
       setFAt(toHouseholdInputValue(new Date(row.fed_at)))
     } else if (entry.kind === 'diaper') {
@@ -462,7 +492,18 @@ export function SectionPage({ section }: { section: Section }) {
     let send: () => Promise<{ error: string | null; queued?: boolean }>
     let problem: PastRangeProblem | null
 
-    if (editing.kind === 'feeding') {
+    const editedFeed =
+      editing.kind === 'feeding' ? shown.feedings.find((r) => r.id === editing.id) : undefined
+    if (editing.kind === 'feeding' && editedFeed && isInventoryBottleFeed(editedFeed)) {
+      // Time only: what was in it is fixed (delete and log again to change
+      // it — the milk goes back). Only `fed_at` is sent, so nothing else can
+      // drift, and behind its own insert when that is still queued.
+      const at = instant(fAt)
+      problem = checkPastRange(at, undefined, Date.now())
+      const id = editing.id
+      const queueOnly = !!editedFeed.pending
+      send = () => updateFeeding(id, { fed_at: at! }, { queueOnly })
+    } else if (editing.kind === 'feeding') {
       const amount = fAmount.trim() === '' ? null : Number(fAmount)
       if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
         setErr(t('history.amountNotNumber', { unit: t(`unit.${DISPLAY_UNIT}`) }))
@@ -471,12 +512,18 @@ export function SectionPage({ section }: { section: Section }) {
       const at = instant(fAt)
       problem = checkPastRange(at, undefined, Date.now())
       const id = editing.id
+      const queueOnly = !!editedFeed?.pending
       send = () =>
-        updateFeeding(id, {
-          feeding_type: fType,
-          amount_ml: fType === 'bottle' && amount !== null ? unitToMl(amount, DISPLAY_UNIT) : null,
-          fed_at: at!,
-        })
+        updateFeeding(
+          id,
+          {
+            feeding_type: fType,
+            amount_ml:
+              fType === 'bottle' && amount !== null ? unitToMl(amount, DISPLAY_UNIT) : null,
+            fed_at: at!,
+          },
+          { queueOnly },
+        )
     } else if (editing.kind === 'diaper') {
       const at = instant(dAt)
       problem = checkPastRange(at, undefined, Date.now())
@@ -522,17 +569,22 @@ export function SectionPage({ section }: { section: Section }) {
     setBusy(true)
     setErr(null)
 
+    const feed = kind === 'feeding' ? shown.feedings.find((r) => r.id === id) : undefined
+    // A bottle with a breakdown is deleted by the function that also gives its
+    // milk back to each container (0013).
     const result =
-      kind === 'feeding'
-        ? await voidFeeding(id)
-        : kind === 'diaper'
-          ? await voidDiaper(id)
-          : kind === 'nursing'
-            ? await voidNursing(id)
-            : await voidSleep(id)
+      feed && isInventoryBottleFeed(feed)
+        ? await voidBottleFeed(id, { pending: !!feed.pending })
+        : kind === 'feeding'
+          ? await voidFeeding(id)
+          : kind === 'diaper'
+            ? await voidDiaper(id)
+            : kind === 'nursing'
+              ? await voidNursing(id)
+              : await voidSleep(id)
 
     if (result.error) {
-      setErr(t('common.couldNotDelete', { error: result.error }))
+      setErr(t('common.couldNotDelete', { error: milkErrorText(result.error, lang) }))
     } else {
       if (editing?.id === id) setEditing(null)
       confirm(result.queued ? t('common.queued') : t('common.deleted'))
@@ -570,16 +622,24 @@ export function SectionPage({ section }: { section: Section }) {
     } else if (section === 'feeding') {
       at = instant(pAt)
       problem = checkPastRange(at, undefined, nowMs)
-      const raw = pAmount.trim()
-      const amount = raw === '' ? null : Number(raw)
-      if (amount !== null && (!Number.isFinite(amount) || amount <= 0)) {
-        setErr(t('dash.bottleNotNumber', { unit: t(`unit.${pUnit}`) }))
+      const built = pBuilt
+      if (!built || built.problem) {
+        setErr(built?.problem ?? t('bottle.empty'))
         return
       }
-      // Stored in ml, as always: the toggle only says what was typed.
-      const ml = amount === null ? null : unitToMl(amount, pUnit)
       label = t('dash.label.bottle')
-      send = () => logFeeding(baby.id, userId, 'bottle', ml, at!)
+      send = () =>
+        logBottleFeed(
+          baby.id,
+          userId,
+          {
+            fed_at: at!,
+            notes: null,
+            formula_ml: built.formulaMl,
+            portions: built.portions,
+          },
+          { containersPending: built.containersPending },
+        )
     } else if (section === 'diapers') {
       at = instant(pAt)
       problem = checkPastRange(at, undefined, nowMs)
@@ -606,7 +666,7 @@ export function SectionPage({ section }: { section: Section }) {
     setBusy(true)
     const { error, queued } = await send()
     if (error) {
-      setErr(t('dash.couldNotSaveLabel', { label, error }))
+      setErr(t('dash.couldNotSaveLabel', { label, error: milkErrorText(error, lang) }))
     } else {
       const when = t('dash.forTime', { time: clockTime(at, lang) })
       confirm(t(queued ? 'dash.queuedLabel' : 'dash.loggedLabel', { label, when }))
@@ -656,6 +716,19 @@ export function SectionPage({ section }: { section: Section }) {
     : null
   weekSince.current = weekRange ? lifeWeekSinceIso(weekRange) : null
   const maxInput = toHouseholdInputValue(new Date(now))
+
+  // The past bottle starts from the same suggestion as Today's, with the
+  // containers that could be used at the time picked. The same plan object is
+  // kept while it is equal, so the rows don't start over under the person's
+  // fingers (see the dashboard).
+  const pAtMs = Date.parse(instant(pAt) ?? '') || now
+  const pUsable = usableContainers(shown.containers, pAtMs)
+  const pRawPlan = suggestPlan(suggestedTotalMl(shown.feedings), pUsable, pAtMs)
+  const pPlanSig = `${pPlanKey}:${JSON.stringify(pRawPlan)}`
+  if (!pPlanRef.current || pPlanRef.current.sig !== pPlanSig) {
+    pPlanRef.current = { sig: pPlanSig, plan: pRawPlan }
+  }
+  const pPlan = pPlanRef.current.plan
 
   function totals(w: KpiWindow): { rows: [string, string][]; pending: boolean } {
     if (section === 'feeding') {
@@ -813,17 +886,13 @@ export function SectionPage({ section }: { section: Section }) {
               </div>
             )}
             {section === 'feeding' && pKind === 'bottle' && (
-              <div className="row row-wrap">
-                <input
-                  className="input narrow"
-                  value={pAmount}
-                  onChange={(e) => setPAmount(e.target.value)}
-                  inputMode="decimal"
-                  placeholder={t(`unit.${pUnit}`)}
-                  aria-label={t('dash.bottleAmount', { unit: t(`unit.${pUnit}`) })}
-                />
-                <AmountUnit value={pUnit} onChange={setPUnit} disabled={busy} />
-              </div>
+              <BottleBuilder
+                usable={pUsable}
+                plan={pPlan}
+                disabled={busy}
+                onChange={setPBuilt}
+                idPrefix="past-bottle"
+              />
             )}
             {needsRange && (
               <div className="row">
@@ -911,6 +980,13 @@ export function SectionPage({ section }: { section: Section }) {
                 {day.entries.map((entry) => {
                   const isEditing = editing?.kind === entry.kind && editing.id === entry.id
                   const span = spanOf(entry)
+                  const feedRow =
+                    entry.kind === 'feeding'
+                      ? shown.feedings.find((r) => r.id === entry.id)
+                      : undefined
+                  const locked = !!feedRow && isInventoryBottleFeed(feedRow)
+                  // "M3 1.75 oz + M4 0.5 oz + formula 0.75 oz": where it came from.
+                  const breakdown = locked ? describeBottle(feedRow!, shown.drawdowns, lang) : null
                   return (
                     <div key={`${entry.kind}-${entry.id}`}>
                       <div className="feed-item">
@@ -918,6 +994,7 @@ export function SectionPage({ section }: { section: Section }) {
                         <span className="feed-what">
                           {section === 'feeding' ? entry.what : entry.detail}
                           {span && <span className="meta feed-span">{span}</span>}
+                          {breakdown && <span className="meta feed-span">{breakdown}</span>}
                         </span>
                         {isEditable(entry.kind) && !isEditing && (
                           <span className="feed-actions">
@@ -945,7 +1022,22 @@ export function SectionPage({ section }: { section: Section }) {
                         )}
                       </div>
 
-                      {isEditing && editing.kind === 'feeding' && (
+                      {isEditing && editing.kind === 'feeding' && locked && (
+                        <div className="edit-panel">
+                          <p className="meta">{t('bottle.timeOnly')}</p>
+                          <input
+                            type="datetime-local"
+                            className="input"
+                            value={fAt}
+                            onChange={(e) => setFAt(e.target.value)}
+                            max={maxInput}
+                            aria-label={t('common.timeItHappened')}
+                          />
+                          {editButtons}
+                        </div>
+                      )}
+
+                      {isEditing && editing.kind === 'feeding' && !locked && (
                         <div className="edit-panel">
                           <div className="row">
                             {(['bottle', 'solid', 'nursing'] as FeedingType[]).map((type) => (

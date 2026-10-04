@@ -30,7 +30,20 @@ import { useBaby } from '@/lib/useBaby'
 import { Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
 import { Banner } from '@/components/Banner'
 import { NursingAlerts } from '@/components/NursingAlerts'
-import { calendarFeed, familySettings, saveFamilySettings, type CalendarFeedInfo } from '@/lib/db'
+import {
+  calendarFeed,
+  familySettings,
+  milkRules,
+  saveFamilySettings,
+  saveMilkRules,
+  type CalendarFeedInfo,
+} from '@/lib/db'
+import {
+  DEFAULT_MILK_RULES,
+  MILK_RULE_LIMITS,
+  validateMilkRules,
+  type MilkRulesField,
+} from '@/lib/milk'
 import { timeAgo } from '@/lib/format'
 import {
   DEFAULT_FAMILY_SETTINGS,
@@ -145,6 +158,7 @@ export default function Settings() {
         </Card>
 
         <ScheduleSettings familyId={familyId} />
+        <MilkStorageSettings babyId={baby?.id ?? null} />
         <CalendarFeedSettings familyId={familyId} />
 
         <Card>
@@ -289,6 +303,125 @@ function ScheduleSettings({ familyId }: { familyId: string | null }) {
       <p className="setting-note">
         {t('settings.thresholdRange', { min: MIN_THRESHOLD_MINUTES, max: MAX_THRESHOLD_MINUTES })}
       </p>
+      {flash && <Banner kind="ok">{flash}</Banner>}
+      {err && <Banner kind="error">{err}</Banner>}
+    </Card>
+  )
+}
+
+/**
+ * Conservación de la leche (0013): las tres reglas del pediatra — ambiente,
+ * refrigerador, congelador. Como los umbrales de arriba, son **de la familia**
+ * (viven en `babies`, los dos padres ven lo mismo) y **no pasan por la cola
+ * offline**: sin conexión no se guarda nada y la tarjeta lo dice.
+ *
+ * Se validan las tres JUNTAS y se guardan con un botón, no campo por campo al
+ * salir: un campo vacío nunca se guarda como 0 (con 0 días de refrigerador,
+ * cada extracción caducaría al guardarla), y el error se lee como una frase,
+ * no como un CHECK de Postgres. Cambiarlas afecta a las extracciones que se
+ * registren de acá en adelante: la caducidad se calcula al guardar cada una.
+ */
+function MilkStorageSettings({ babyId }: { babyId: string | null }) {
+  const { t } = useT()
+  const [room, setRoom] = useState(String(DEFAULT_MILK_RULES.milk_room_hours))
+  const [fridge, setFridge] = useState(String(DEFAULT_MILK_RULES.milk_fridge_days))
+  const [freezer, setFreezer] = useState(String(DEFAULT_MILK_RULES.milk_freezer_months))
+  const [err, setErr] = useState<string | null>(null)
+  const [flash, setFlash] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (!babyId) return
+    let cancelled = false
+    milkRules(babyId).then((res) => {
+      if (cancelled) return
+      if (res.error) {
+        setErr(t('milkRules.couldNotLoad', { error: res.error }))
+        return
+      }
+      if (res.data) {
+        setRoom(String(res.data.milk_room_hours))
+        setFridge(String(res.data.milk_fridge_days))
+        setFreezer(String(res.data.milk_freezer_months))
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [babyId, t])
+
+  const NAMES: Record<MilkRulesField, MessageKey> = {
+    room: 'milkRules.room',
+    fridge: 'milkRules.fridge',
+    freezer: 'milkRules.freezer',
+  }
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault()
+    if (!babyId || busy) return
+    setErr(null)
+    setFlash(null)
+    const checked = validateMilkRules({ room, fridge, freezer })
+    if (!checked.rules) {
+      const field = t(NAMES[checked.field])
+      setErr(
+        t(`milkRules.problem.${checked.problem}`, {
+          field,
+          max: MILK_RULE_LIMITS[checked.field].max,
+        }),
+      )
+      return
+    }
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      setErr(t('milkRules.offline'))
+      return
+    }
+    setBusy(true)
+    const res = await saveMilkRules(babyId, checked.rules)
+    setBusy(false)
+    if (res.error) setErr(t('milkRules.couldNotSave', { error: res.error }))
+    else setFlash(t('milkRules.saved'))
+  }
+
+  const field = (
+    id: string,
+    name: MilkRulesField,
+    value: string,
+    set: (v: string) => void,
+    unit: MessageKey,
+  ) => (
+    <div className="setting-group">
+      <label className="label" htmlFor={id}>
+        {t(NAMES[name])}
+      </label>
+      <div className="row-tight">
+        <input
+          id={id}
+          className="input narrow"
+          inputMode="decimal"
+          value={value}
+          disabled={!babyId || busy}
+          onChange={(e) => set(e.target.value)}
+        />
+        <span className="meta">{t(unit)}</span>
+      </div>
+    </div>
+  )
+
+  return (
+    <Card>
+      <Label>{t('milkRules.title')}</Label>
+      <p className="setting-note">{t('milkRules.note')}</p>
+      <form onSubmit={save}>
+        {field('milk-room', 'room', room, setRoom, 'milkRules.hours')}
+        {field('milk-fridge', 'fridge', fridge, setFridge, 'milkRules.days')}
+        {field('milk-freezer', 'freezer', freezer, setFreezer, 'milkRules.months')}
+        <div className="row-tight">
+          <Btn type="submit" disabled={!babyId || busy}>
+            {busy ? t('common.saving') : t('common.save')}
+          </Btn>
+        </div>
+      </form>
       {flash && <Banner kind="ok">{flash}</Banner>}
       {err && <Banner kind="error">{err}</Banner>}
     </Card>

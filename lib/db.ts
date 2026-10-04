@@ -476,25 +476,9 @@ export async function recentFeedings(babyId: string, limit = 20): Promise<Result
   return ok((rows ?? []) as Feeding[])
 }
 
-export function logFeeding(
-  babyId: string,
-  userId: string | null,
-  type: FeedingType,
-  amountMl: number | null,
-  at?: string,
-): Promise<Result<null>> {
-  return write(type === 'bottle' ? 'Bottle' : 'Solid', {
-    kind: 'insert',
-    table: 'feedings',
-    row: {
-      id: newId(),
-      ...scope(babyId, userId),
-      feeding_type: type,
-      amount_ml: amountMl,
-      fed_at: at ?? new Date().toISOString(),
-    },
-  })
-}
+// No `logFeeding` any more (4 oct 2026): a bottle is logged with
+// logBottleFeed, which writes its breakdown and takes the milk from its
+// containers. Solids stopped being created on 23 sep 2026.
 
 /** Edit a past feeding — correcting the type, amount, or time after the fact. */
 export function updateFeeding(
