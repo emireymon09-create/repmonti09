@@ -345,6 +345,8 @@ export function SectionPage({ section }: { section: Section }) {
         next.nursing,
         next.diapers,
         next.sleep,
+        // Pumping has its own screen (/pumping) and never shows up here.
+        [],
         0,
         DISPLAY_UNIT,
         lang,

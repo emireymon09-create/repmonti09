@@ -23,6 +23,10 @@ function entries() {
       { id: 's1', started_at: at, ended_at: at, source: 'manual' },
       { id: 's2', started_at: at, ended_at: at, source: 'nuc_derived' },
     ],
+    [
+      { id: 'p1', pumped_at: at, side: 'left', amount_ml: 90, notes: null },
+      { id: 'p2', pumped_at: at, side: 'both', amount_ml: null, notes: null, pending: true },
+    ],
     0,
     'ml',
   )
@@ -36,6 +40,7 @@ describe('buildActivity', () => {
     expect(byId('n1').what).toBe('Nursed · left')
     expect(byId('f1').what).toBe('Bottle · 120 ml')
     expect(byId('s1').what).toBe('Woke')
+    expect(byId('p1').what).toBe('Pumped · left · 90 ml')
   })
 
   it('gives History a detail that does not repeat the kind label', () => {
@@ -46,6 +51,15 @@ describe('buildActivity', () => {
     expect(byId('f3').detail).toBe('Nursing (logged as feed)')
     expect(byId('s1').detail).toBe('Woke')
     expect(byId('s2').detail).toBe('Woke (detected)')
+    expect(byId('p1').detail).toBe('Left side · 90 ml')
+  })
+
+  it('una extracción sin cantidad no inventa un número, y nunca está en curso', () => {
+    expect(byId('p2').what).toBe('Pumped · both · not synced yet')
+    expect(byId('p2').detail).toBe('Both sides · not synced yet')
+    expect(byId('p2').kind).toBe('pumping')
+    expect(byId('p2').at).toBe(at)
+    expect(byId('p1').ongoing).toBeUndefined()
   })
 
   it('never starts a detail with its own kind', () => {
@@ -54,6 +68,7 @@ describe('buildActivity', () => {
       nursing: /^nurs/i,
       feeding: /^feed/i,
       sleep: /^sleep/i,
+      pumping: /^pump/i,
     }
     for (const e of entries()) expect(e.detail).not.toMatch(noun[e.kind])
   })
@@ -77,6 +92,7 @@ describe('buildActivity — sesiones en curso', () => {
         { id: 's9', started_at: started, ended_at: null, source: 'manual', pending: true },
         { id: 's8', started_at: started, ended_at: null, source: 'nuc_derived' },
       ],
+      [],
       since,
       'ml',
       lang,
@@ -123,6 +139,7 @@ describe('buildActivity — sesiones en curso', () => {
       [{ id: 'n9', side: 'right', started_at: started, ended_at: null }],
       [{ id: 'd9', changed_at: later, diaper_type: 'wet' }],
       [{ id: 's9', started_at: '2026-09-20T10:00:00.000Z', ended_at: null, source: 'manual' }],
+      [],
       0,
     )
     // Las en curso primero (entre ellas, la más nueva arriba), después el resto.
@@ -142,6 +159,7 @@ describe('buildActivity — valores que ningún diccionario conoce', () => {
       [{ id: 'n', side: 'middle' as never, started_at: at, ended_at: at }],
       [{ id: 'd', changed_at: at, diaper_type: 'purple' as never, pending: true }],
       [{ id: 's', started_at: at, ended_at: at, source: 'robot' as never }],
+      [],
       0,
       'ml',
       'es',

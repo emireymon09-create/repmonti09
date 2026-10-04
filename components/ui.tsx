@@ -142,6 +142,16 @@ const ICONS = {
    * que es donde viven los ajustes desde este pase.
    */
   menu: ['M7 5v14', 'M12 5v14', 'M17 5v14'],
+  /**
+   * "Más opciones" de una fila (RowMenu): tres PUNTOS en horizontal. No se
+   * confunde con `menu`, que son tres líneas verticales y vive en la barra.
+   * Círculos de radio chico con el trazo de siempre: se leen como puntos llenos.
+   */
+  more: [
+    'M6 12m-1.25 0a1.25 1.25 0 1 0 2.5 0a1.25 1.25 0 1 0-2.5 0',
+    'M12 12m-1.25 0a1.25 1.25 0 1 0 2.5 0a1.25 1.25 0 1 0-2.5 0',
+    'M18 12m-1.25 0a1.25 1.25 0 1 0 2.5 0a1.25 1.25 0 1 0-2.5 0',
+  ],
 } as const
 
 export function NavIcon({ name }: { name: keyof typeof ICONS }) {
@@ -188,6 +198,112 @@ export function EmptyState({
       </span>
       <p className="empty-title">{title}</p>
       {hint && <p className="empty-hint">{hint}</p>}
+    </div>
+  )
+}
+
+/**
+ * El "⋯" de una fila: Edit y Delete detrás de un solo botón, en vez de dos
+ * enlaces siempre a la vista en cada entrada (pedido de Emilio: la lista se
+ * leía amontonada). Mismo patrón que el menú de Nav — `aria-haspopup`,
+ * `aria-expanded`, cierre con un toque afuera y con Escape (el foco vuelve al
+ * botón) — porque onBlur solo no cierra nada en Safari de iOS.
+ *
+ * `editFor` va en el BOTÓN de la fila y no en el ítem "Edit": el ítem
+ * desaparece al abrir el panel, así que es el botón ⋯ el que tiene que
+ * recibir el foco de vuelta cuando el panel se cierra (lib/useReturnFocus.ts).
+ * Sin `onEdit` (una sesión todavía en curso) el menú ofrece solo Delete.
+ */
+export function RowMenu({
+  label,
+  editFor,
+  onEdit,
+  onDelete,
+  disabled,
+}: {
+  label: string
+  editFor: string
+  onEdit?: () => void
+  onDelete: () => void
+  disabled?: boolean
+}) {
+  const { t } = useT()
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function onPointerDown(e: PointerEvent) {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return
+      setOpen(false)
+      btnRef.current?.focus()
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+
+  // Si la fila se deshabilita con el menú abierto (otra fila guardando), se cierra.
+  useEffect(() => {
+    if (disabled) setOpen(false)
+  }, [disabled])
+
+  return (
+    <div
+      ref={wrapRef}
+      className="row-menu"
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) setOpen(false)
+      }}
+    >
+      <button
+        ref={btnRef}
+        type="button"
+        className="kebab"
+        data-edit-for={editFor}
+        aria-label={label}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <NavIcon name="more" />
+      </button>
+      {open && (
+        <div className="row-menu-list" role="menu" aria-label={label}>
+          {onEdit && (
+            <button
+              type="button"
+              role="menuitem"
+              className="row-menu-item"
+              onClick={() => {
+                setOpen(false)
+                onEdit()
+              }}
+            >
+              {t('common.edit')}
+            </button>
+          )}
+          <button
+            type="button"
+            role="menuitem"
+            className="row-menu-item is-danger"
+            onClick={() => {
+              setOpen(false)
+              onDelete()
+            }}
+          >
+            {t('common.delete')}
+          </button>
+        </div>
+      )}
     </div>
   )
 }

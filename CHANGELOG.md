@@ -4,6 +4,22 @@ Every version of Amelia, newest first. The current version is the `version`
 field in `package.json`; this file is the history. A test fails if the two
 disagree. Shown in the app under the settings gear → Version history.
 
+## [0.11.0] - 2026-10-04
+
+Editing moves to one place, so the screens you log from stay clean.
+
+- **History now has a "⋯" button on each entry instead of Edit and Delete on
+  every line.** Tap it to fix the time, the amount, the side or the duration of
+  an entry, or to remove it. The list reads like a list again rather than a row
+  of buttons.
+- **Pumping sessions can be corrected from History.** They now show up there
+  with everything else, and the same "⋯" fixes the side, amount, notes or time,
+  or removes the session — which also takes it out of the stash total, and the
+  confirmation says so.
+- **Milk is just for logging and looking.** The session list there no longer has
+  Edit and Delete beside every entry; the corner button on the list goes
+  straight to History, where they live now.
+
 ## [0.10.7] - 2026-09-25
 
 Nothing in the app changed here either. A correction to the notes.

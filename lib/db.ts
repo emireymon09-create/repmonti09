@@ -853,6 +853,7 @@ export function buildActivity(
   nursing: WithPending<NursingSession>[],
   diapers: WithPending<DiaperChange>[],
   sleep: WithPending<SleepSession>[],
+  pumping: WithPending<PumpingSession>[],
   since: number,
   unit: VolumeUnit = 'oz',
   lang: Lang = 'en',
@@ -938,6 +939,19 @@ export function buildActivity(
       const text = s.source === 'nuc_derived' ? t('activity.asleepDetected') : t('activity.asleep')
       running(s, s.started_at, 'sleep', text, text)
     }
+  }
+  // A pumping session is a single moment, never "in progress". The amount is
+  // optional on the form, so it is only appended when there is one — the
+  // same rule as a bottle above.
+  for (const p of pumping) {
+    const amount = p.amount_ml ? ` · ${formatVolume(p.amount_ml, unit)}` : ''
+    entry(
+      p,
+      p.pumped_at,
+      'pumping',
+      `${t('activity.pumped', { side: t(`side.${p.side}`) })}${amount}`,
+      `${t(`activity.pumpSide.${p.side}`)}${amount}`,
+    )
   }
 
   // A session still running stays in Today even if it began before

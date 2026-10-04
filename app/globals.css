@@ -1264,6 +1264,99 @@ select.input {
   opacity: 0.45;
   cursor: default;
 }
+
+/* El "⋯" de cada fila de /history (RowMenu en components/ui.tsx). Reemplaza
+   el par Edit / Delete que estaba siempre a la vista en cada entrada: con
+   varias entradas por día la lista se leía amontonada. Mismo lenguaje que el
+   botón del menú (.gear / .nav-menu): círculo de borde fino, y la lista flota
+   debajo, alineada a la derecha. El piso táctil es --tap-min en las dos
+   dimensiones, como todo control chico desde v0.10.3. */
+.row-menu {
+  position: relative;
+  margin-left: auto;
+  flex: none;
+  /* .feed-item alinea por baseline; un botón sin texto no tiene, y quedaría
+     colgando. Se centra contra la fila. */
+  align-self: center;
+}
+.kebab {
+  width: var(--tap-min);
+  height: var(--tap-min);
+  padding: 0;
+  border-radius: 999px;
+  background: none;
+  border: 1px solid transparent;
+  color: var(--c-muted);
+  font-family: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.kebab:hover,
+.kebab:focus-visible,
+.kebab[aria-expanded='true'] {
+  color: var(--c-text);
+  border-color: var(--c-line);
+}
+.kebab[aria-expanded='true'] {
+  border-color: var(--c-accent);
+}
+.kebab:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+/* Más específico que el `.nav-icon` suelto del teléfono (que lo dibuja a
+   4.4em para la barra de abajo): acá es un ícono de fila, del tamaño del texto. */
+.kebab .nav-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  height: auto;
+  background: none;
+}
+.kebab .nav-icon svg {
+  width: 1.4em;
+  height: 1.4em;
+}
+.row-menu-list {
+  position: absolute;
+  top: calc(100% + var(--s-1));
+  right: 0;
+  z-index: 10;
+  min-width: 9em;
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-control);
+  padding: var(--s-1);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  box-shadow: var(--shadow-menu);
+}
+.row-menu-item {
+  display: flex;
+  align-items: center;
+  min-height: var(--tap);
+  padding: var(--s-2) var(--s-3);
+  border: none;
+  border-radius: var(--r-control);
+  background: none;
+  color: var(--c-text);
+  font-size: var(--t-body);
+  font-weight: 600;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.row-menu-item:hover,
+.row-menu-item:focus-visible {
+  background: var(--c-surface);
+}
+.row-menu-item.is-danger {
+  color: var(--c-danger);
+}
 .edit-panel {
   display: flex;
   flex-direction: column;

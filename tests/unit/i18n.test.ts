@@ -246,6 +246,7 @@ describe('buildActivity en español', () => {
     [{ id: 'n1', side: 'left', started_at: at, ended_at: at }],
     [{ id: 'd1', changed_at: at, diaper_type: 'wet', pending: true }],
     [{ id: 's1', started_at: at, ended_at: at, source: 'nuc_derived' }],
+    [{ id: 'p1', pumped_at: at, side: 'both', amount_ml: 60, notes: null }],
     0,
     'ml',
     'es',
@@ -259,5 +260,7 @@ describe('buildActivity en español', () => {
     expect(byId('d1').what).toBe('Pañal · mojado · sin sincronizar')
     expect(byId('d1').detail).toBe('Mojado · sin sincronizar')
     expect(byId('s1').what).toBe('Se despertó (detectado)')
+    expect(byId('p1').what).toBe('Extracción · ambos · 60 ml')
+    expect(byId('p1').detail).toBe('Los dos lados · 60 ml')
   })
 })

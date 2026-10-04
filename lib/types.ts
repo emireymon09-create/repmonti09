@@ -140,7 +140,7 @@ export type WithPending<T> = T & { pending?: boolean }
 export type ActivityEntry = {
   id: string
   at: string
-  kind: 'feeding' | 'nursing' | 'diaper' | 'sleep' | 'growth'
+  kind: 'feeding' | 'nursing' | 'diaper' | 'sleep' | 'pumping' | 'growth'
   /** Stands on its own: "Diaper · wet". */
   what: string
   /** For a view that already labels the kind: "Wet". */

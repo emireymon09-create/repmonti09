@@ -94,6 +94,10 @@ export const es: Dictionary = {
   'activity.nursingNow': 'Lactancia · {side}',
   'activity.asleep': 'Dormida',
   'activity.asleepDetected': 'Dormida (detectada)',
+  'activity.pumped': 'Extracción · {side}',
+  'activity.pumpSide.left': 'Lado izquierdo',
+  'activity.pumpSide.right': 'Lado derecho',
+  'activity.pumpSide.both': 'Los dos lados',
 
   // ------------------------------------------------------------ nav + settings
   'nav.today': 'Hoy',
@@ -324,6 +328,8 @@ export const es: Dictionary = {
   'milk.empty': 'Todavía no hay sesiones registradas.',
   'milk.editSession': 'Editar sesión',
   'milk.noAmount': 'Sin cantidad',
+  'milk.editInHistory': 'Corregí o borrá una extracción en el Historial',
+  'milk.sessions': 'Extracciones',
 
   // ------------------------------------------------------------ growth
   'growth.title': 'Crecimiento',
@@ -393,6 +399,8 @@ export const es: Dictionary = {
   'history.kind.nursing': 'Lactancia',
   'history.kind.diaper': 'Pañal',
   'history.kind.sleep': 'Sueño',
+  'history.kind.pumping': 'Extracción',
+  'history.rowOptions': 'Opciones: {kind}, {time}',
   'history.kind.growth': 'Crecimiento',
 
   // ------------------------------------------------------------ version

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useBaby } from '@/lib/useBaby'
 import { NoBaby } from '@/components/NoBaby'
-import { Banner, Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
+import { Banner, Btn, Card, Grid, Label, Nav, Page, RowMenu } from '@/components/ui'
 import { SeenNote, SyncBar, SyncErrorBanner } from '@/components/SyncStatus'
 import { lastGood, seenKey, type LastGood, type SeenState } from '@/lib/lastSeen'
 import {
@@ -14,14 +14,17 @@ import {
   recentDiapers,
   recentFeedings,
   recentNursing,
+  recentPumping,
   recentSleep,
   updateDiaper,
   updateFeeding,
   updateNursing,
+  updatePumping,
   updateSleep,
   voidDiaper,
   voidFeeding,
   voidNursing,
+  voidPumping,
   voidSleep,
 } from '@/lib/db'
 import { useSync } from '@/lib/useSync'
@@ -36,6 +39,8 @@ import type {
   Feeding,
   FeedingType,
   NursingSession,
+  PumpingSession,
+  PumpSide,
   Side,
   SleepSession,
   WithPending,
@@ -59,8 +64,9 @@ type ServerRows = {
   diapers: DiaperChange[]
   nursing: NursingSession[]
   sleep: SleepSession[]
+  pumping: PumpingSession[]
 }
-const NO_ROWS: ServerRows = { feedings: [], diapers: [], nursing: [], sleep: [] }
+const NO_ROWS: ServerRows = { feedings: [], diapers: [], nursing: [], sleep: [], pumping: [] }
 
 /** One calendar day's worth of entries, household timezone. */
 type Day = { key: string; label: string; entries: ActivityEntry[] }
@@ -89,13 +95,25 @@ function groupByHouseholdDay(entries: ActivityEntry[], lang: Lang): Day[] {
   return days
 }
 
-/** Only these four kinds have a raw row + edit/void functions behind them. */
-type EditKind = 'feeding' | 'diaper' | 'nursing' | 'sleep'
+/**
+ * The kinds with a raw row + edit/void functions behind them. Pumping joined
+ * them so that /pumping can stay a plain log: History is the one place where
+ * any entry gets corrected or removed.
+ */
+type EditKind = 'feeding' | 'diaper' | 'nursing' | 'sleep' | 'pumping'
 type EditTarget = { kind: EditKind; id: string }
 
 function isEditable(kind: ActivityEntry['kind']): kind is EditKind {
-  return kind === 'feeding' || kind === 'diaper' || kind === 'nursing' || kind === 'sleep'
+  return (
+    kind === 'feeding' ||
+    kind === 'diaper' ||
+    kind === 'nursing' ||
+    kind === 'sleep' ||
+    kind === 'pumping'
+  )
 }
+
+const PUMP_SIDES: PumpSide[] = ['left', 'right', 'both']
 
 export default function HistoryPage() {
   const { baby, loading, unreachable } = useBaby()
@@ -106,6 +124,7 @@ export default function HistoryPage() {
   const [diapers, setDiapers] = useState<WithPending<DiaperChange>[]>([])
   const [nursing, setNursing] = useState<WithPending<NursingSession>[]>([])
   const [sleep, setSleep] = useState<WithPending<SleepSession>[]>([])
+  const [pumping, setPumping] = useState<WithPending<PumpingSession>[]>([])
   const [err, setErr] = useState<string | null>(null)
   const [loadErr, setLoadErr] = useState<string | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
@@ -127,6 +146,10 @@ export default function HistoryPage() {
   const [nEnd, setNEnd] = useState('')
   const [sStart, setSStart] = useState('')
   const [sEnd, setSEnd] = useState('')
+  const [pSide, setPSide] = useState<PumpSide>('both')
+  const [pAmount, setPAmount] = useState('')
+  const [pNotes, setPNotes] = useState('')
+  const [pAt, setPAt] = useState('')
 
   useEffect(
     () => () => {
@@ -158,11 +181,13 @@ export default function HistoryPage() {
       const mDiapers = mergePending(rows.diapers, 'diaper_changes', queued)
       const mNursing = mergePending(rows.nursing, 'nursing_sessions', queued)
       const mSleep = mergePending(rows.sleep, 'sleep_sessions', queued)
+      const mPumping = mergePending(rows.pumping, 'pumping_sessions', queued)
 
       setFeedings(mFeedings)
       setDiapers(mDiapers)
       setNursing(mNursing)
       setSleep(mSleep)
+      setPumping(mPumping)
 
       // 0 = the start of time, i.e. no "since today" cutoff — the same
       // merge dashboard uses for Today, just unfiltered. buildActivity
@@ -175,6 +200,7 @@ export default function HistoryPage() {
         mNursing,
         mDiapers,
         mSleep,
+        mPumping,
         0,
         DISPLAY_UNIT,
         lang,
@@ -204,13 +230,15 @@ export default function HistoryPage() {
         setSeen(last.state(offline))
       }
 
-      const [feedingsRead, diapersRead, nursingRead, sleepRead, queued] = await Promise.all([
-        recentFeedings(babyId, HISTORY_LIMIT),
-        recentDiapers(babyId, HISTORY_LIMIT),
-        recentNursing(babyId, HISTORY_LIMIT),
-        recentSleep(babyId, HISTORY_LIMIT),
-        pendingWrites(),
-      ])
+      const [feedingsRead, diapersRead, nursingRead, sleepRead, pumpingRead, queued] =
+        await Promise.all([
+          recentFeedings(babyId, HISTORY_LIMIT),
+          recentDiapers(babyId, HISTORY_LIMIT),
+          recentNursing(babyId, HISTORY_LIMIT),
+          recentSleep(babyId, HISTORY_LIMIT),
+          recentPumping(babyId, HISTORY_LIMIT),
+          pendingWrites(),
+        ])
       if (read !== latestRead.current) return
 
       const { rows, error } = keepLastGood(last.rows, {
@@ -218,6 +246,7 @@ export default function HistoryPage() {
         diapers: diapersRead,
         nursing: nursingRead,
         sleep: sleepRead,
+        pumping: pumpingRead,
       })
       setSeen(last.settle(rows, error))
       // A read that failed for lack of network is not an error to shout:
@@ -262,11 +291,18 @@ export default function HistoryPage() {
       setNSide(row.side)
       setNStart(toHouseholdInputValue(new Date(row.started_at)))
       setNEnd(toHouseholdInputValue(new Date(row.ended_at)))
-    } else {
+    } else if (entry.kind === 'sleep') {
       const row = sleep.find((r) => r.id === entry.id)
       if (!row || !row.ended_at) return
       setSStart(toHouseholdInputValue(new Date(row.started_at)))
       setSEnd(toHouseholdInputValue(new Date(row.ended_at)))
+    } else {
+      const row = pumping.find((r) => r.id === entry.id)
+      if (!row) return
+      setPSide(row.side)
+      setPAmount(row.amount_ml != null ? String(mlToUnit(row.amount_ml, DISPLAY_UNIT)) : '')
+      setPNotes(row.notes ?? '')
+      setPAt(toHouseholdInputValue(new Date(row.pumped_at)))
     }
 
     setEditing({ kind: entry.kind, id: entry.id })
@@ -302,10 +338,25 @@ export default function HistoryPage() {
         started_at: fromHouseholdInputValue(nStart),
         ended_at: fromHouseholdInputValue(nEnd),
       })
-    } else {
+    } else if (editing.kind === 'sleep') {
       result = await updateSleep(editing.id, {
         started_at: fromHouseholdInputValue(sStart),
         ended_at: fromHouseholdInputValue(sEnd),
+      })
+    } else {
+      // Same parsing as the log form on /pumping: blank means "no amount".
+      const trimmed = pAmount.trim()
+      const amount = trimmed === '' ? null : Number(trimmed)
+      if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
+        setErr(t('history.amountNotNumber', { unit: t(`unit.${DISPLAY_UNIT}`) }))
+        setBusy(false)
+        return
+      }
+      result = await updatePumping(editing.id, {
+        side: pSide,
+        amount_ml: amount === null ? null : Number(unitToMl(amount, DISPLAY_UNIT).toFixed(1)),
+        notes: pNotes.trim() || null,
+        pumped_at: fromHouseholdInputValue(pAt),
       })
     }
 
@@ -322,7 +373,10 @@ export default function HistoryPage() {
 
   async function deleteEntry(entry: ActivityEntry) {
     if (!baby || busy || !isEditable(entry.kind)) return
-    if (!window.confirm(t('history.removeConfirm'))) return
+    // A pumping session also comes out of the stash total on /pumping, and
+    // the confirmation says so — "nothing else changes" would be false there.
+    const question = entry.kind === 'pumping' ? t('milk.removeConfirm') : t('history.removeConfirm')
+    if (!window.confirm(question)) return
 
     const { kind, id } = entry
     setBusy(true)
@@ -335,7 +389,9 @@ export default function HistoryPage() {
           ? await voidDiaper(id)
           : kind === 'nursing'
             ? await voidNursing(id)
-            : await voidSleep(id)
+            : kind === 'sleep'
+              ? await voidSleep(id)
+              : await voidPumping(id)
 
     if (result.error) {
       setErr(t('common.couldNotDelete', { error: result.error }))
@@ -403,29 +459,18 @@ export default function HistoryPage() {
                           {entry.detail}
                         </span>
                         {isEditable(entry.kind) && !isEditing && (
-                          <span className="feed-actions">
-                            {/* A session still running has no end to
-                                correct yet; it is stopped from Today. */}
-                            {!entry.ongoing && (
-                              <button
-                                type="button"
-                                className="linkish"
-                                data-edit-for={`${entry.kind}-${entry.id}`}
-                                disabled={busy || editing !== null}
-                                onClick={() => startEdit(entry)}
-                              >
-                                {t('common.edit')}
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              className="linkish"
-                              disabled={busy || editing !== null}
-                              onClick={() => deleteEntry(entry)}
-                            >
-                              {t('common.delete')}
-                            </button>
-                          </span>
+                          <RowMenu
+                            label={t('history.rowOptions', {
+                              kind: t(`history.kind.${entry.kind}`),
+                              time: clockTime(entry.at, lang),
+                            })}
+                            editFor={`${entry.kind}-${entry.id}`}
+                            disabled={busy || editing !== null}
+                            // A session still running has no end to correct
+                            // yet; it is stopped from Today. Delete only.
+                            onEdit={entry.ongoing ? undefined : () => startEdit(entry)}
+                            onDelete={() => deleteEntry(entry)}
+                          />
                         )}
                       </div>
 
@@ -574,6 +619,59 @@ export default function HistoryPage() {
                             value={sEnd}
                             onChange={(e) => setSEnd(e.target.value)}
                             max={toHouseholdInputValue()}
+                          />
+                          <div className="row-tight">
+                            <Btn disabled={busy} onClick={saveEdit}>
+                              {t('common.save')}
+                            </Btn>
+                            <Btn variant="quiet" onClick={() => setEditing(null)}>
+                              {t('common.cancel')}
+                            </Btn>
+                          </div>
+                        </div>
+                      )}
+
+                      {isEditing && editing.kind === 'pumping' && (
+                        <div className="edit-panel">
+                          {/* row-wrap: "Izquierdo / Derecho / Ambos" no entra
+                              en una línea en la pared — lo mismo que /pumping. */}
+                          <div className="row row-wrap">
+                            {PUMP_SIDES.map((s) => (
+                              <Btn
+                                key={s}
+                                variant={pSide === s ? 'action' : 'quiet'}
+                                onClick={() => setPSide(s)}
+                              >
+                                {t(`sideButton.${s}`)}
+                              </Btn>
+                            ))}
+                          </div>
+                          <input
+                            className="input narrow"
+                            value={pAmount}
+                            onChange={(e) => setPAmount(e.target.value)}
+                            inputMode="decimal"
+                            placeholder={t('common.unitOptional', {
+                              unit: t(`unit.${DISPLAY_UNIT}`),
+                            })}
+                            aria-label={t('history.amountIn', {
+                              unit: t(`unit.${DISPLAY_UNIT}`),
+                            })}
+                          />
+                          <input
+                            className="input"
+                            value={pNotes}
+                            onChange={(e) => setPNotes(e.target.value)}
+                            placeholder={t('common.notesOptional')}
+                            aria-label={t('common.notes')}
+                          />
+                          <input
+                            type="datetime-local"
+                            className="input"
+                            value={pAt}
+                            onChange={(e) => setPAt(e.target.value)}
+                            max={toHouseholdInputValue()}
+                            aria-label={t('common.timeItHappened')}
                           />
                           <div className="row-tight">
                             <Btn disabled={busy} onClick={saveEdit}>

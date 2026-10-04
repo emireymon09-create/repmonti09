@@ -100,6 +100,10 @@ export const en = {
   'activity.nursingNow': 'Nursing · {side}',
   'activity.asleep': 'Asleep',
   'activity.asleepDetected': 'Asleep (detected)',
+  'activity.pumped': 'Pumped · {side}',
+  'activity.pumpSide.left': 'Left side',
+  'activity.pumpSide.right': 'Right side',
+  'activity.pumpSide.both': 'Both sides',
 
   // ------------------------------------------------------------ nav + settings
   'nav.today': 'Today',
@@ -332,6 +336,8 @@ export const en = {
   'milk.empty': 'No sessions logged yet.',
   'milk.editSession': 'Edit session',
   'milk.noAmount': 'No amount',
+  'milk.editInHistory': 'Fix or delete a session in History',
+  'milk.sessions': 'Sessions',
 
   // ------------------------------------------------------------ growth
   'growth.title': 'Growth',
@@ -402,6 +408,8 @@ export const en = {
   'history.kind.nursing': 'Nursing',
   'history.kind.diaper': 'Diaper',
   'history.kind.sleep': 'Sleep',
+  'history.kind.pumping': 'Pumping',
+  'history.rowOptions': 'Options: {kind}, {time}',
   'history.kind.growth': 'Growth',
 
   // ------------------------------------------------------------ version

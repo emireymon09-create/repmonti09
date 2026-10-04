@@ -5,9 +5,8 @@ import { useBaby } from '@/lib/useBaby'
 import { NoBaby } from '@/components/NoBaby'
 import { Banner, Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
 import { SyncStatus } from '@/components/SyncStatus'
-import { logPumping, recentPumping, totalPumped, updatePumping, voidPumping } from '@/lib/db'
+import { logPumping, recentPumping, totalPumped } from '@/lib/db'
 import { useT } from '@/lib/i18n/react'
-import { useReturnFocus } from '@/lib/useReturnFocus'
 import type { MessageKey } from '@/lib/i18n'
 import type { PumpingSession, PumpSide } from '@/lib/types'
 import {
@@ -16,7 +15,6 @@ import {
   formatVolume,
   fromHouseholdInputValue,
   longDate,
-  mlToUnit,
   toHouseholdInputValue,
   unitToMl,
 } from '@/lib/format'
@@ -41,14 +39,6 @@ export default function PumpingPage() {
   const [err, setErr] = useState<string | null>(null)
   const [saved, setSaved] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-
-  // Editing an already-logged session — separate from the log form above.
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [eSide, setESide] = useState<PumpSide>('both')
-  const [eAmount, setEAmount] = useState('')
-  const [eNotes, setENotes] = useState('')
-  const [eAt, setEAt] = useState('')
-  useReturnFocus(editingId, !busy)
 
   const refresh = useCallback(
     async (babyId: string) => {
@@ -101,66 +91,6 @@ export default function PumpingPage() {
     setNotes('')
     setAt(toHouseholdInputValue(new Date()))
     refresh(baby.id)
-  }
-
-  function startEdit(row: PumpingSession) {
-    setErr(null)
-    setESide(row.side)
-    setEAmount(row.amount_ml != null ? String(mlToUnit(row.amount_ml, DISPLAY_UNIT)) : '')
-    setENotes(row.notes ?? '')
-    setEAt(toHouseholdInputValue(new Date(row.pumped_at)))
-    setEditingId(row.id)
-  }
-
-  async function saveEdit() {
-    if (!editingId || busy) return
-    setErr(null)
-
-    const trimmed = eAmount.trim()
-    let amountMl: number | null = null
-    if (trimmed !== '') {
-      const parsed = Number(trimmed)
-      if (!Number.isFinite(parsed)) {
-        setErr(t('milk.amountNotNumber'))
-        return
-      }
-      amountMl = Number(unitToMl(parsed, DISPLAY_UNIT).toFixed(1))
-    }
-
-    setBusy(true)
-    const { error } = await updatePumping(editingId, {
-      side: eSide,
-      amount_ml: amountMl,
-      notes: eNotes.trim() || null,
-      pumped_at: fromHouseholdInputValue(eAt),
-    })
-    setBusy(false)
-
-    if (error) {
-      setErr(t('common.couldNotSave', { error }))
-      return
-    }
-    setSaved(t('common.saved'))
-    setEditingId(null)
-    if (baby) refresh(baby.id)
-  }
-
-  async function deleteRow(id: string) {
-    if (busy) return
-    if (!window.confirm(t('milk.removeConfirm'))) return
-
-    setBusy(true)
-    setErr(null)
-    const { error } = await voidPumping(id)
-    setBusy(false)
-
-    if (error) {
-      setErr(t('common.couldNotDelete', { error }))
-      return
-    }
-    if (editingId === id) setEditingId(null)
-    setSaved(t('common.deleted'))
-    if (baby) refresh(baby.id)
   }
 
   if (loading)
@@ -268,99 +198,33 @@ export default function PumpingPage() {
           </div>
         </Card>
 
-        {rows.length === 0 ? (
-          <Card>
+        {/* Solo para registrar y mirar. Corregir o borrar una extracción se
+            hace en el Historial, con el resto de las entradas (el ⋯ de cada
+            fila): así esta pantalla queda como en el momento de registrar,
+            sin un Edit / Delete al lado de cada sesión. La esquina lleva ahí. */}
+        <Card spanAll quickLink={{ href: '/history', label: t('milk.editInHistory') }}>
+          <Label>{t('milk.sessions')}</Label>
+          {rows.length === 0 ? (
             <div className="empty">{t('milk.empty')}</div>
-          </Card>
-        ) : (
-          rows.map((row) => (
-            <Card key={row.id}>
-              {editingId === row.id ? (
-                <div className="stack">
-                  <Label>{t('milk.editSession')}</Label>
-                  {/* Misma fila, mismo motivo que arriba. */}
-                  <div className="row row-wrap">
-                    {SIDES.map((s) => (
-                      <Btn
-                        key={s.value}
-                        variant={eSide === s.value ? 'action' : 'quiet'}
-                        onClick={() => setESide(s.value)}
-                      >
-                        {t(s.label)}
-                      </Btn>
-                    ))}
-                  </div>
-                  <input
-                    className="input"
-                    value={eAmount}
-                    onChange={(e) => setEAmount(e.target.value)}
-                    inputMode="decimal"
-                    placeholder={t('common.unitOptional', { unit: t(`unit.${DISPLAY_UNIT}`) })}
-                    aria-label={t('milk.amount', { unit: t(`unit.${DISPLAY_UNIT}`) })}
-                  />
-                  <input
-                    className="input"
-                    value={eNotes}
-                    onChange={(e) => setENotes(e.target.value)}
-                    placeholder={t('common.notesOptional')}
-                    aria-label={t('common.notes')}
-                  />
-                  <input
-                    type="datetime-local"
-                    className="input"
-                    value={eAt}
-                    onChange={(e) => setEAt(e.target.value)}
-                    max={toHouseholdInputValue(new Date())}
-                    aria-label={t('common.timeItHappened')}
-                  />
-                  <div className="row">
-                    <Btn disabled={busy} onClick={saveEdit}>
-                      {t('common.save')}
-                    </Btn>
-                    <Btn variant="quiet" onClick={() => setEditingId(null)}>
-                      {t('common.cancel')}
-                    </Btn>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="between">
-                    <Label>
-                      {longDate(row.pumped_at, lang)} · {clockTime(row.pumped_at, lang)}
-                    </Label>
-                    <span className="feed-actions">
-                      <button
-                        type="button"
-                        className="linkish"
-                        data-edit-for={row.id}
-                        disabled={busy || editingId !== null}
-                        onClick={() => startEdit(row)}
-                      >
-                        {t('common.edit')}
-                      </button>
-                      <button
-                        type="button"
-                        className="linkish"
-                        disabled={busy || editingId !== null}
-                        onClick={() => deleteRow(row.id)}
-                      >
-                        {t('common.delete')}
-                      </button>
-                    </span>
-                  </div>
-                  <div className="value">
+          ) : (
+            <div className="feed">
+              {rows.map((row) => (
+                <div className="feed-item" key={row.id}>
+                  <span className="feed-time">{clockTime(row.pumped_at, lang)}</span>
+                  <span className="feed-what">
+                    <span className="meta">{longDate(row.pumped_at, lang)} · </span>
                     {row.amount_ml != null
                       ? formatVolume(row.amount_ml, DISPLAY_UNIT)
                       : t('milk.noAmount')}
                     {' · '}
                     {t(`sideButton.${row.side}`)}
-                  </div>
-                  {row.notes && <div className="meta">{row.notes}</div>}
-                </>
-              )}
-            </Card>
-          ))
-        )}
+                    {row.notes && ` · ${row.notes}`}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
       </Grid>
     </Page>
   )
