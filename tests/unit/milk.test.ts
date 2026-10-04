@@ -8,6 +8,9 @@ import {
   isInventoryBottleFeed,
   isUsable,
   nextContainerLabel,
+  keepMl,
+  ozText,
+  parseAmountMl,
   portionMl,
   stashMl,
   suggestPlan,
@@ -620,5 +623,28 @@ describe('validateMilkRules', () => {
       problem: 'whole',
       field: 'freezer',
     })
+  })
+})
+
+describe('parseAmountMl / ozText / keepMl', () => {
+  it('empty is nothing, never 0; a comma works as a decimal point', () => {
+    expect(parseAmountMl('', 'oz')).toEqual({ ml: null })
+    expect(parseAmountMl('  ', 'ml')).toEqual({ ml: null })
+    expect(parseAmountMl('2', 'oz').ml).toBeCloseTo(2 * OZ, 9)
+    expect(parseAmountMl('1,5', 'oz').ml).toBeCloseTo(1.5 * OZ, 9)
+    expect(parseAmountMl('120', 'ml')).toEqual({ ml: 120 })
+    expect(parseAmountMl('0', 'oz')).toEqual({ ml: 0 })
+  })
+  it('letters and negatives are a problem', () => {
+    expect(parseAmountMl('abc', 'oz')).toEqual({ problem: 'number' })
+    expect(parseAmountMl('-1', 'oz')).toEqual({ problem: 'number' })
+    expect(parseAmountMl('Infinity', 'oz')).toEqual({ problem: 'number' })
+  })
+  it('an edit field left as prefilled keeps the exact stored ml', () => {
+    expect(ozText(150)).toBe('5.07')
+    expect(ozText(null)).toBe('')
+    expect(keepMl('5.07', '5.07', 150)).toEqual({ ml: 150 })
+    expect(keepMl('5', '5.07', 150).ml).toBeCloseTo(5 * OZ, 9)
+    expect(keepMl('', '', null)).toEqual({ ml: null })
   })
 })

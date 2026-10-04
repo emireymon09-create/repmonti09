@@ -325,22 +325,68 @@ export const en = {
   'milk.couldNotLoad': 'Couldn’t load sessions — {error}',
   'milk.amountNotNumber': 'Amount has to be a number.',
   'milk.logged': 'Session logged',
-  'milk.removeConfirm': 'Remove this session? It comes out of the stash total too.',
+  'milk.removeConfirm': 'Remove this session? Its milk comes out of what there is too.',
   'milk.logTitle': 'Log a pumping session',
   'milk.amount': 'Amount, {unit}',
   'milk.when': 'When (defaults to now)',
   'milk.logSession': 'Log session',
-  'milk.inStash': 'In the stash',
-  'milk.counted': { one: '{count} session counted', other: '{count} sessions counted' },
-  'milk.since': ' since {date}',
+  'milk.inStash': 'What there is',
   'milk.empty': 'No sessions logged yet.',
   'milk.editSession': 'Edit session',
   'milk.noAmount': 'No amount',
   'milk.editInHistory': 'Fix or delete a session in History',
   'milk.sessions': 'Sessions',
+  'milk.live.title': 'Pump now',
+  'milk.live.start': 'Start',
+  'milk.live.running': 'Since {time}',
+  'milk.live.finish': 'Finish and log',
+  'milk.live.cancel': 'Discard timer',
+  'milk.live.cancelConfirm': 'Stop the timer without logging anything?',
+  'milk.live.hint':
+    'The timer keeps running on this device even if you reload. The other phone doesn’t see it.',
+  'milk.sidesHint': 'Each breast on its own. Leave a side empty if it gave nothing.',
+  'milk.left': 'Left, {unit}',
+  'milk.right': 'Right, {unit}',
+  'milk.sidesLine': 'Left {left} · Right {right}',
+  'milk.loggedLabel': 'Session logged — write {label} on the tape.',
+  'milk.queuedLabel': 'Saved on this device, not synced yet — write {label} on the tape.',
+  'milk.stashNote': 'Breast milk only, from containers that can still be used.',
+  'milk.stashPending': 'This includes entries not synced yet.',
+  'milk.noContainers': 'No milk stored yet.',
+  'milk.containerLine': '{label} · {amount} left',
+  'milk.expires': 'Use by {when}',
+  'milk.expired': 'Expired — not counted',
+  'milk.rulesHint': 'How long milk lasts is set in Settings → Milk storage.',
+  'milk.sessionsTitle': 'Sessions',
+  'milk.nothingSaved': 'Offline, and nothing saved on this device yet.',
+  'milk.servedNote': '{amount} already served from it',
+  'milk.deletedPending': 'Deleted on this device — not synced yet.',
 
   // ------------------------------------------------------------ bottle (0013)
   'bottle.formulaPart': 'formula {amount}',
+
+  // ------------------------------------------------------------ milk errors (0013)
+  'milkError.overdraw':
+    '{label} doesn’t have that much milk left — someone may have just served from it. Choose again.',
+  'milkError.containerUnusable':
+    '{label} can’t be used for this bottle: it was deleted, it ran out, or it had expired by then. Choose another.',
+  'milkError.containerUnknown':
+    'One of the containers in this bottle no longer exists or isn’t this baby’s. Choose again.',
+  'milkError.labelTaken':
+    'Another phone already used the tape {label}. Delete this session and log it again to get a new number.',
+  'milkError.alreadyServed':
+    'Milk from {label} was already served. Delete those bottles first; then this session can be changed.',
+  'milkError.servedExceedsAmount':
+    'More than that was already served from {label}. The amount can’t go below what was served.',
+  'milkError.idempotencyConflict':
+    'This entry was already saved with different details. Delete it and log it again.',
+  'milkError.rpcOnly':
+    'This change has to be made from the latest version of the app. Reload and try again.',
+  'milkError.badInput': 'Something in this entry isn’t valid. Check the amounts and try again.',
+  'milkError.babyNotFound': 'This baby isn’t in your family on the server.',
+  'milkError.notSignedIn': 'You’re signed out. Sign in again and try again.',
+  'milkError.sessionGone':
+    'That session no longer exists — it may have been deleted on another phone.',
 
   // ------------------------------------------------------------ growth
   'growth.title': 'Growth',

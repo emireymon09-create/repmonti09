@@ -10,7 +10,7 @@ correr o comprobar.
 |---|---|---|
 | 0 · Lectura, exploración, plan, spec | Hecho (4 oct 2026) | — |
 | 1 · Migración 0013 + `lib/milk.ts` + tests | Hecho | `vitest run tests/unit/milk.test.ts` 45/45; `tsc --noEmit` limpio; SQL en Postgres efímero (ver abajo) |
-| 2 · Datos y cola + tests | Pendiente | — |
+| 2 · Datos y cola + tests (+ página Leche) | Hecho | `pnpm test` 350/350; `tsc --noEmit` limpio; `pnpm test:integration` 107 pasan + 8 saltados (suite de leche: la base local no tiene 0013) |
 | 3 · Interfaz + i18n | Pendiente | — |
 | 4 · Documentación y documento familiar | Pendiente | — |
 | Revisión independiente (3 agentes) | Pendiente | — |
@@ -41,3 +41,17 @@ correr o comprobar.
   `milk_overdraw:M1`; quedan 1 toma, 1 porción, 30 ml. Contenedor borrado
   (`docker rm -f`), 0 contenedores `amelia-milk-scratch` después.
 - El stack local `amelia-local-*` y la nube **no se tocaron**.
+
+- **Hito 2.** `lib/queue.ts` (op `rpc`, `isDeletion`, `dependentsOf`
+  transitivo con `creates`/`refs`), `lib/db.ts` (lecturas sin límite de
+  contenedores y porciones, `lastBottleFeeding`, reglas, las cinco escrituras
+  con `queueOnly`, `mergePending`/`describeWrite` con `rpc`, `milkErrorText`),
+  `lib/lastSeen.ts` (página `pumping`), `components/SyncStatus.tsx` (rechazo
+  legible). La página Leche se reescribió en este mismo hito porque era la
+  única consumidora de las funciones viejas que se borraron
+  (`logPumping`/`updatePumping`/`voidPumping`/`totalPumped`): sin eso el
+  commit no compilaba.
+- **Integración de la leche: NO VERIFICADA.** `tests/integration/milk.test.ts`
+  está escrita y se salta sola contra una base sin 0013 (sonda sobre
+  `milk_containers`). Las otras seis suites corren y pasan contra el stack
+  local sin 0013 [VERIFICADO, `pnpm test:integration`].

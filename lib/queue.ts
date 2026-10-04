@@ -365,17 +365,60 @@ export async function discardWrites(store: QueueStore, ids: string[]): Promise<P
   return gone
 }
 
-/** A queued soft delete: an update that sets `voided_at`. */
+/**
+ * A queued soft delete: an update that sets `voided_at`, or a milk function
+ * that voids its row (void_bottle_feed, void_pumping_session).
+ */
 export function isDeletion(write: PendingWrite): boolean {
-  return write.op.kind === 'update' && 'voided_at' in write.op.patch
+  const { op } = write
+  if (op.kind === 'rpc') return op.effect === 'delete'
+  return op.kind === 'update' && 'voided_at' in op.patch
 }
 
-/** Queued changes to the row an insert creates — they go if it is discarded. */
+/** The rows a queued entry brings into being: what later entries may build on. */
+function createdBy(op: PendingOp): { table: string; id: string }[] {
+  if (op.kind === 'insert') return [{ table: op.table, id: String(op.row.id) }]
+  if (op.kind === 'rpc') {
+    const own = op.effect === 'insert' ? [{ table: op.table, id: op.id }] : []
+    // A container is not a table the queue writes to by itself: whatever
+    // `refs` it is matched by id alone.
+    return [...own, ...(op.creates ?? []).map((id) => ({ table: '*', id }))]
+  }
+  return []
+}
+
+/** Does `op` change, void or serve from one of `rows`? */
+function buildsOn(op: PendingOp, rows: { table: string; id: string }[]): boolean {
+  const target =
+    op.kind === 'update' || (op.kind === 'rpc' && op.effect !== 'insert')
+      ? { table: op.table, id: op.id }
+      : null
+  if (target && rows.some((r) => r.table === target.table && r.id === target.id)) return true
+  const refs = op.kind === 'rpc' ? (op.refs ?? []) : []
+  return refs.some((ref) => rows.some((r) => r.id === ref))
+}
+
+/**
+ * What discarding `write` takes with it: every later entry that could never
+ * apply without the rows it creates — the edits and the void of that row, and
+ * (milk inventory) a bottle served from the container a queued pumping
+ * session fills, and in turn that bottle's own void. Transitive, in queue
+ * order. Empty for an entry that creates nothing.
+ */
 export function dependentsOf(write: PendingWrite, all: PendingWrite[]): PendingWrite[] {
-  if (write.op.kind !== 'insert') return []
-  const { table } = write.op
-  const rowId = write.op.row.id
-  return all.filter((w) => w.op.kind === 'update' && w.op.table === table && w.op.id === rowId)
+  const created = createdBy(write.op)
+  if (created.length === 0) return []
+  const out: PendingWrite[] = []
+  const ordered = all
+    .filter((w) => w.id !== write.id && w.queuedAt >= write.queuedAt)
+    .sort((a, b) => a.queuedAt.localeCompare(b.queuedAt))
+  for (const w of ordered) {
+    if (buildsOn(w.op, created)) {
+      out.push(w)
+      created.push(...createdBy(w.op))
+    }
+  }
+  return out
 }
 
 /** True for "the request never reached the server", false for a rejection. */

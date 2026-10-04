@@ -317,22 +317,70 @@ export const es: Dictionary = {
   'milk.couldNotLoad': 'No se pudieron cargar las sesiones — {error}',
   'milk.amountNotNumber': 'La cantidad tiene que ser un número.',
   'milk.logged': 'Sesión registrada',
-  'milk.removeConfirm': '¿Borrar esta sesión? También sale del total en reserva.',
+  'milk.removeConfirm': '¿Borrar esta sesión? Su leche también sale de lo que hay.',
   'milk.logTitle': 'Registrar una extracción',
   'milk.amount': 'Cantidad, {unit}',
   'milk.when': 'Cuándo (si no la cambiás, ahora)',
   'milk.logSession': 'Registrar sesión',
-  'milk.inStash': 'En reserva',
-  'milk.counted': { one: '{count} sesión contada', other: '{count} sesiones contadas' },
-  'milk.since': ' desde el {date}',
+  'milk.inStash': 'Lo que hay',
   'milk.empty': 'Todavía no hay sesiones registradas.',
   'milk.editSession': 'Editar sesión',
   'milk.noAmount': 'Sin cantidad',
   'milk.editInHistory': 'Corregí o borrá una extracción en el Historial',
   'milk.sessions': 'Extracciones',
+  'milk.live.title': 'Extraer ahora',
+  'milk.live.start': 'Empezar',
+  'milk.live.running': 'Desde las {time}',
+  'milk.live.finish': 'Terminar y registrar',
+  'milk.live.cancel': 'Descartar cronómetro',
+  'milk.live.cancelConfirm': '¿Parar el cronómetro sin registrar nada?',
+  'milk.live.hint':
+    'El cronómetro sigue corriendo en este dispositivo aunque recargues. El otro teléfono no lo ve.',
+  'milk.sidesHint': 'Cada pecho por separado. Si un lado no dio nada, dejalo vacío.',
+  'milk.left': 'Izquierdo, {unit}',
+  'milk.right': 'Derecho, {unit}',
+  'milk.sidesLine': 'Izquierdo {left} · Derecho {right}',
+  'milk.loggedLabel': 'Sesión registrada — escribí {label} en la cinta.',
+  'milk.queuedLabel':
+    'Guardada en este dispositivo, sin sincronizar todavía — escribí {label} en la cinta.',
+  'milk.stashNote': 'Solo leche materna, de extracciones que todavía se pueden usar.',
+  'milk.stashPending': 'Incluye registros que todavía no se sincronizaron.',
+  'milk.noContainers': 'Todavía no hay leche guardada.',
+  'milk.containerLine': '{label} · quedan {amount}',
+  'milk.expires': 'Usar antes del {when}',
+  'milk.expired': 'Caducada — no cuenta',
+  'milk.rulesHint': 'Cuánto dura la leche se cambia en Ajustes → Conservación de la leche.',
+  'milk.sessionsTitle': 'Sesiones',
+  'milk.nothingSaved': 'Sin conexión, y todavía no hay nada guardado en este dispositivo.',
+  'milk.servedNote': 'Ya se sirvieron {amount} de acá',
+  'milk.deletedPending': 'Borrada en este dispositivo — sin sincronizar todavía.',
 
   // ------------------------------------------------------------ bottle (0013)
   'bottle.formulaPart': 'fórmula {amount}',
+
+  // ------------------------------------------------------------ milk errors (0013)
+  'milkError.overdraw':
+    'A {label} no le queda tanta leche — puede que alguien acabe de servir de ahí. Elegí de nuevo.',
+  'milkError.containerUnusable':
+    '{label} no se puede usar para este biberón: se borró, se terminó o ya había caducado a esa hora. Elegí otra.',
+  'milkError.containerUnknown':
+    'Una de las extracciones de este biberón ya no existe o no es de este bebé. Elegí de nuevo.',
+  'milkError.labelTaken':
+    'Otro teléfono ya usó la cinta {label}. Borrá esta sesión y registrala de nuevo para que tenga otro número.',
+  'milkError.alreadyServed':
+    'De {label} ya se sirvió leche. Primero borrá esas tomas; después se puede cambiar esta sesión.',
+  'milkError.servedExceedsAmount':
+    'De {label} ya se sirvió más que eso. La cantidad no puede quedar por debajo de lo servido.',
+  'milkError.idempotencyConflict':
+    'Esto ya se guardó con otros datos. Borralo y registralo de nuevo.',
+  'milkError.rpcOnly':
+    'Este cambio se hace desde la versión nueva de la app. Recargá y probá de nuevo.',
+  'milkError.badInput':
+    'Algo de este registro no es válido. Revisá las cantidades y probá de nuevo.',
+  'milkError.babyNotFound': 'Este bebé no figura en tu familia en el servidor.',
+  'milkError.notSignedIn': 'Se cerró tu sesión. Volvé a entrar y probá de nuevo.',
+  'milkError.sessionGone':
+    'Esa sesión ya no existe; puede que se haya borrado desde otro teléfono.',
 
   // ------------------------------------------------------------ growth
   'growth.title': 'Crecimiento',

@@ -1,107 +1,378 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useBaby } from '@/lib/useBaby'
 import { NoBaby } from '@/components/NoBaby'
 import { Banner, Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
-import { SyncStatus } from '@/components/SyncStatus'
-import { logPumping, recentPumping, totalPumped } from '@/lib/db'
+import { SeenNote, SyncBar, SyncErrorBanner } from '@/components/SyncStatus'
+import { AmountUnit } from '@/components/AmountUnit'
+import {
+  keepLastGood,
+  listContainers,
+  listDrawdowns,
+  logPumpingSession,
+  mergePending,
+  milkErrorText,
+  milkRules,
+  pendingWrites,
+  recentPumping,
+  updatePumpingSession,
+  voidPumpingSession,
+  type PumpingInput,
+} from '@/lib/db'
+import { useSync } from '@/lib/useSync'
+import { lastGood, seenKey, type LastGood, type SeenState } from '@/lib/lastSeen'
+import { looksOffline, type PendingWrite } from '@/lib/queue'
+import {
+  DEFAULT_MILK_RULES,
+  activeContainers,
+  applyPendingInventory,
+  isUsable,
+  keepMl,
+  ozText,
+  parseAmountMl,
+  stashMl,
+} from '@/lib/milk'
 import { useT } from '@/lib/i18n/react'
-import type { MessageKey } from '@/lib/i18n'
-import type { PumpingSession, PumpSide } from '@/lib/types'
+import { useReturnFocus } from '@/lib/useReturnFocus'
+import type {
+  MilkContainer,
+  MilkDrawdown,
+  MilkRules,
+  PumpingSession,
+  VolumeUnit,
+  WithPending,
+} from '@/lib/types'
 import {
   clockTime,
   DISPLAY_UNIT,
-  formatVolume,
+  elapsed,
+  formatMilkOz,
   fromHouseholdInputValue,
   longDate,
   toHouseholdInputValue,
-  unitToMl,
 } from '@/lib/format'
 
-const SIDES: { value: PumpSide; label: MessageKey }[] = [
-  { value: 'left', label: 'sideButton.left' },
-  { value: 'right', label: 'sideButton.right' },
-  { value: 'both', label: 'sideButton.both' },
-]
+/** What the server last returned, before the queue is merged in. */
+type ServerRows = {
+  sessions: PumpingSession[]
+  containers: MilkContainer[]
+  drawdowns: MilkDrawdown[]
+}
+const NO_ROWS: ServerRows = { sessions: [], containers: [], drawdowns: [] }
+
+/** Only the keys this page reads (a copy saved by an older build may carry others, or miss some). */
+function ownRows(rows: ServerRows): ServerRows {
+  return {
+    sessions: rows.sessions ?? [],
+    containers: rows.containers ?? [],
+    drawdowns: rows.drawdowns ?? [],
+  }
+}
+
+/**
+ * The live timer's start, kept on THIS device (docs/spec-feeding-v3.md S-4):
+ * it survives a reload, and the other phone doesn't see it. Every access is
+ * guarded — a private window or a kiosk profile may refuse storage, and then
+ * the timer simply doesn't survive a reload.
+ */
+const timerKey = (babyId: string) => `amelia:pump-start:${babyId}`
+function readTimer(babyId: string): string | null {
+  try {
+    return localStorage.getItem(timerKey(babyId))
+  } catch {
+    return null
+  }
+}
+function writeTimer(babyId: string, value: string | null) {
+  try {
+    if (value) localStorage.setItem(timerKey(babyId), value)
+    else localStorage.removeItem(timerKey(babyId))
+  } catch {
+    /* the timer just won't survive a reload */
+  }
+}
+
+const SERVED_EPSILON_ML = 0.01
 
 export default function PumpingPage() {
   const { baby, userId, loading, unreachable } = useBaby()
   const { t, lang } = useT()
 
-  const [rows, setRows] = useState<PumpingSession[]>([])
-  const [side, setSide] = useState<PumpSide>('both')
-  const [amount, setAmount] = useState('')
+  const [sessions, setSessions] = useState<WithPending<PumpingSession>[]>([])
+  const [containers, setContainers] = useState<WithPending<MilkContainer>[]>([])
+  const [rules, setRules] = useState<MilkRules>(DEFAULT_MILK_RULES)
+  const [now, setNow] = useState(() => Date.now())
+
+  // Live: when the pump started, on this device.
+  const [startedAt, setStartedAt] = useState<string | null>(null)
+  // The amounts form serves both the live session (once stopped) and the
+  // manual one; `stopping` says which.
+  const [stopping, setStopping] = useState(false)
+  const [left, setLeft] = useState('')
+  const [right, setRight] = useState('')
+  // What the two numbers are in, for THIS session only — back to ounces after
+  // every save (components/AmountUnit.tsx, design.md §5.7).
+  const [unit, setUnit] = useState<VolumeUnit>(DISPLAY_UNIT)
   const [notes, setNotes] = useState('')
-  // Defaults to right now; only touch it to log a session you missed
-  // in the moment, e.g. catching up after the app was down.
   const [at, setAt] = useState(() => toHouseholdInputValue(new Date()))
+
+  // One edit panel at a time; focus goes back to its Edit button on close.
+  const [editing, setEditing] = useState<WithPending<PumpingSession> | null>(null)
+  const [eLeft, setELeft] = useState('')
+  const [eRight, setERight] = useState('')
+  const [eBase, setEBase] = useState({ left: '', right: '' })
+  const [eNotes, setENotes] = useState('')
+  const [eAt, setEAt] = useState('')
+
   const [err, setErr] = useState<string | null>(null)
+  const [loadErr, setLoadErr] = useState<string | null>(null)
   const [saved, setSaved] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  useReturnFocus(editing?.id ?? null, !busy)
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [])
+
+  useEffect(() => {
+    if (baby) setStartedAt(readTimer(baby.id))
+  }, [baby])
+
+  // Same pattern as /growth: the last good server rows (starting from this
+  // device's saved copy), the queue folded on top, a slow read never landing
+  // over a newer one.
+  const serverRows = useRef<LastGood<ServerRows> | null>(null)
+  const latestRead = useRef(0)
+  const [seen, setSeen] = useState<SeenState>({ kind: 'live' })
+
+  const show = useCallback((rows: ServerRows, queued: PendingWrite[]) => {
+    const merged = mergePending(rows.sessions, 'pumping_sessions', queued).sort((a, b) =>
+      b.pumped_at.localeCompare(a.pumped_at),
+    )
+    setSessions(merged)
+    setContainers(applyPendingInventory(rows.containers, rows.drawdowns, queued).containers)
+  }, [])
 
   const refresh = useCallback(
     async (babyId: string) => {
-      const { data, error } = await recentPumping(babyId, 100)
-      if (error) setErr(t('milk.couldNotLoad', { error }))
-      setRows(data)
+      const read = ++latestRead.current
+      const key = seenKey.page('pumping', babyId)
+      if (serverRows.current?.key !== key) serverRows.current = lastGood(key, NO_ROWS)
+      const last = serverRows.current
+
+      const queuedNow = await pendingWrites()
+      if (read !== latestRead.current) return
+      const offline = navigator.onLine === false
+      if (queuedNow.length > 0 || offline) {
+        show(ownRows(last.rows), queuedNow)
+        setSeen(last.state(offline))
+      }
+
+      const [s, c, d, queued] = await Promise.all([
+        recentPumping(babyId, 100),
+        listContainers(babyId),
+        listDrawdowns(babyId),
+        pendingWrites(),
+      ])
+      if (read !== latestRead.current) return
+      const { rows, error } = keepLastGood(ownRows(last.rows), {
+        sessions: s,
+        containers: c,
+        drawdowns: d,
+      })
+      setSeen(last.settle(rows, error))
+      setLoadErr(error && !looksOffline(error) ? t('milk.couldNotLoad', { error }) : null)
+      show(rows, queued)
     },
-    [t],
+    [show, t],
+  )
+
+  const { online, pending, syncing, syncError, syncFailed, discardFailed, reloadPending } = useSync(
+    () => {
+      if (baby) refresh(baby.id)
+    },
   )
 
   useEffect(() => {
     if (baby) refresh(baby.id)
   }, [baby, refresh])
 
+  // The family's storage rules: only for the expiry this screen shows while
+  // offline — the server computes the real one. Defaults until they arrive.
+  useEffect(() => {
+    if (!baby) return
+    let cancelled = false
+    milkRules(baby.id).then((res) => {
+      if (!cancelled && res.data) setRules(res.data)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [baby])
+
+  const live = containers.filter((c) => !c.voided_at)
+  const ctx = { containers: live, rules }
+  const containerOf = (sessionId: string) => live.find((c) => c.source_session_id === sessionId)
+  const servedFrom = (c: MilkContainer | undefined) =>
+    c ? Math.max(0, c.amount_ml - c.remaining_ml) : 0
+
+  function readSides(l: string, r: string, u: VolumeUnit) {
+    const pl = parseAmountMl(l, u)
+    const pr = parseAmountMl(r, u)
+    if (pl.problem || pr.problem) return null
+    return { left_ml: pl.ml, right_ml: pr.ml }
+  }
+
+  function startLive() {
+    if (!baby) return
+    const start = new Date().toISOString()
+    writeTimer(baby.id, start)
+    setStartedAt(start)
+    setStopping(false)
+    setErr(null)
+  }
+
+  function cancelLive() {
+    if (!baby) return
+    if (!window.confirm(t('milk.live.cancelConfirm'))) return
+    writeTimer(baby.id, null)
+    setStartedAt(null)
+    setStopping(false)
+  }
+
   async function save(e: React.FormEvent) {
     e.preventDefault()
     if (!baby || busy) return
     setErr(null)
+    setSaved(null)
 
-    const trimmed = amount.trim()
-    let amountMl: number | null = null
-    if (trimmed !== '') {
-      const parsed = Number(trimmed)
-      if (!Number.isFinite(parsed)) {
-        setErr(t('milk.amountNotNumber'))
-        return
-      }
-      amountMl = Number(unitToMl(parsed, DISPLAY_UNIT).toFixed(1))
-    }
-
-    const atIso = fromHouseholdInputValue(at)
-
-    setBusy(true)
-    const { error, queued } = await logPumping(
-      baby.id,
-      userId,
-      side,
-      amountMl,
-      notes.trim() || null,
-      atIso,
-    )
-    setBusy(false)
-
-    if (error) {
-      setErr(t('common.couldNotSave', { error }))
+    const sides = readSides(left, right, unit)
+    if (!sides) {
+      setErr(t('milk.amountNotNumber'))
       return
     }
-    setSaved(queued ? t('common.queued') : t('milk.logged'))
-    setAmount('')
+    // A live session is dated when it started; a manual one, by the field.
+    const fromLive = stopping && startedAt
+    const pumpedAt = fromLive ? startedAt : fromHouseholdInputValue(at)
+    if (!fromLive && Date.parse(pumpedAt) > Date.now()) {
+      setErr(t('past.inFuture'))
+      return
+    }
+    const input: PumpingInput = { ...sides, notes: notes.trim() || null, pumped_at: pumpedAt }
+
+    setBusy(true)
+    const { data, error, queued } = await logPumpingSession(baby.id, userId, input, ctx)
+    setBusy(false)
+    if (error) {
+      setErr(t('common.couldNotSave', { error: milkErrorText(error, lang) }))
+      return
+    }
+    setSaved(
+      data.label
+        ? t(queued ? 'milk.queuedLabel' : 'milk.loggedLabel', { label: data.label })
+        : queued
+          ? t('common.queued')
+          : t('milk.logged'),
+    )
+    setLeft('')
+    setRight('')
     setNotes('')
+    setUnit(DISPLAY_UNIT)
     setAt(toHouseholdInputValue(new Date()))
+    if (fromLive) {
+      writeTimer(baby.id, null)
+      setStartedAt(null)
+      setStopping(false)
+    }
     refresh(baby.id)
+    reloadPending()
+  }
+
+  function startEdit(row: WithPending<PumpingSession>) {
+    setErr(null)
+    setSaved(null)
+    // Legacy sessions (before left/right existed) carry only a total: it
+    // goes in neither field, so nothing is split 50/50 behind anyone's back.
+    const base = { left: ozText(row.left_ml), right: ozText(row.right_ml) }
+    setEBase(base)
+    setELeft(base.left)
+    setERight(base.right)
+    setENotes(row.notes ?? '')
+    setEAt(toHouseholdInputValue(new Date(row.pumped_at)))
+    setEditing(row)
+  }
+
+  async function saveEdit() {
+    if (!baby || !editing || busy) return
+    setErr(null)
+    const l = keepMl(eLeft, eBase.left, editing.left_ml)
+    const r = keepMl(eRight, eBase.right, editing.right_ml)
+    if (l.problem || r.problem) {
+      setErr(t('milk.amountNotNumber'))
+      return
+    }
+    const pumpedAt = fromHouseholdInputValue(eAt)
+    if (Date.parse(pumpedAt) > Date.now()) {
+      setErr(t('past.inFuture'))
+      return
+    }
+    // Never below what was already served: the server refuses it too, but
+    // saying so here costs nothing and works offline.
+    const container = containerOf(editing.id)
+    const served = servedFrom(container)
+    const total = (l.ml ?? 0) + (r.ml ?? 0)
+    if (container && served > SERVED_EPSILON_ML && total < served) {
+      setErr(milkErrorText(`milk_served_exceeds_amount:${container.label}`, lang))
+      return
+    }
+
+    setBusy(true)
+    const { error, queued } = await updatePumpingSession(
+      editing.id,
+      { left_ml: l.ml, right_ml: r.ml, notes: eNotes.trim() || null, pumped_at: pumpedAt },
+      ctx,
+      { pending: !!editing.pending },
+    )
+    setBusy(false)
+    if (error) {
+      setErr(t('common.couldNotSave', { error: milkErrorText(error, lang) }))
+      return
+    }
+    setSaved(queued ? t('common.queued') : t('common.saved'))
+    setEditing(null)
+    refresh(baby.id)
+    reloadPending()
+  }
+
+  async function remove(row: WithPending<PumpingSession>) {
+    if (!baby || busy) return
+    const container = containerOf(row.id)
+    if (container && servedFrom(container) > SERVED_EPSILON_ML) {
+      setErr(milkErrorText(`milk_already_served:${container.label}`, lang))
+      return
+    }
+    if (!window.confirm(t('milk.removeConfirm'))) return
+
+    setBusy(true)
+    setErr(null)
+    const { error, queued } = await voidPumpingSession(row.id, { pending: !!row.pending })
+    setBusy(false)
+    if (error) {
+      setErr(t('common.couldNotDelete', { error: milkErrorText(error, lang) }))
+      return
+    }
+    if (editing?.id === row.id) setEditing(null)
+    setSaved(queued ? t('common.queued') : t('common.deleted'))
+    refresh(baby.id)
+    reloadPending()
   }
 
   if (loading)
     return (
       <Page>
-        {/* El nav va también mientras carga. Sin él, cada navegación entre
-            pantallas dejaba la ventana ENTERA vacía —barra de abajo
-            incluida— hasta que useBaby() resolvía: eso era el "pantallazo"
-            entre pantallas. Medido con CDP: existía una ventana sin nav y
-            sin contenido, de 34 ms en este servidor y tanto más cuanto peor
-            esté la conexión. */}
+        {/* El nav va también mientras carga (design.md §5.13). */}
         <Nav />
         <p className="empty loading-note">{t('common.loading')}</p>
       </Page>
@@ -114,117 +385,282 @@ export default function PumpingPage() {
       </Page>
     )
 
-  // Building the stash starts weeks before the due date, so this page
-  // works even on the "Expecting" screen — it never checks birth_date.
-  // A reset only changes what counts toward the total, never History.
-  const resetAt = baby.pumping_reset_at
-  const counted = resetAt ? rows.filter((r) => r.pumped_at > resetAt) : rows
-  const total = totalPumped(counted)
+  // Building the stash starts weeks before the due date, so this page works
+  // even on the "Expecting" screen — it never checks birth_date.
+  const unknown = seen.kind === 'nothing'
+  const shelf = activeContainers(live).filter((c) => c.remaining_ml > 0)
+  const stash = stashMl(live, now)
+  const stashPending = shelf.some((c) => c.pending)
+  const unitName = t(`unit.${unit}`)
+
+  const amountFields = (
+    <>
+      <p className="meta">{t('milk.sidesHint')}</p>
+      <div className="row-tight row-wrap">
+        <input
+          className="input narrow"
+          value={left}
+          onChange={(e) => setLeft(e.target.value)}
+          inputMode="decimal"
+          placeholder={t('milk.left', { unit: unitName })}
+          aria-label={t('milk.left', { unit: unitName })}
+        />
+        <input
+          className="input narrow"
+          value={right}
+          onChange={(e) => setRight(e.target.value)}
+          inputMode="decimal"
+          placeholder={t('milk.right', { unit: unitName })}
+          aria-label={t('milk.right', { unit: unitName })}
+        />
+        <AmountUnit value={unit} onChange={setUnit} disabled={busy} />
+      </div>
+      <input
+        className="input"
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        placeholder={t('common.notesOptional')}
+        aria-label={t('common.notes')}
+      />
+    </>
+  )
 
   return (
     <Page>
       <Nav />
       <h1 className="title">{t('milk.title')}</h1>
-      <SyncStatus />
+      <SyncBar online={online} pending={pending} syncing={syncing} />
+      <SeenNote state={seen} />
+      <SyncErrorBanner error={syncError} failed={syncFailed} onDiscard={discardFailed} />
+      {loadErr && <Banner kind="error">{loadErr}</Banner>}
       {err && <Banner kind="error">{err}</Banner>}
       {saved && !err && <Banner kind="ok">{saved}</Banner>}
 
       <Grid>
-        <Card>
-          <form onSubmit={save}>
-            <Label>{t('milk.logTitle')}</Label>
-            <div className="stack">
-              {/* `row-wrap`: en español los tres lados son "Izquierdo /
-                  Derecho / Ambos", y en la pared, con el tipo grande, no
-                  entran en la columna — medido el 25 sep 2026, la fila se
-                  salía 24 px de su caja a 1440px (no daba scroll horizontal
-                  de página, por eso un chequeo a nivel página no lo veía).
-                  Envuelve, no desborda; es el mismo recurso que ya usa la
-                  fila del biberón en /dashboard. */}
-              <div className="row row-wrap">
-                {SIDES.map((s) => (
-                  <Btn
-                    key={s.value}
-                    variant={side === s.value ? 'action' : 'quiet'}
-                    onClick={() => setSide(s.value)}
-                  >
-                    {t(s.label)}
-                  </Btn>
-                ))}
+        {/* ---------------- Live session ---------------- */}
+        <Card live={!!startedAt}>
+          <Label>{t('milk.live.title')}</Label>
+          {startedAt ? (
+            <form onSubmit={save}>
+              <div className="stopwatch">
+                <span className="clock">{elapsed(startedAt, now)}</span>
+                <span className="side">
+                  {t('milk.live.running', { time: clockTime(startedAt, lang) })}
+                </span>
               </div>
-              <input
-                className="input"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                inputMode="decimal"
-                placeholder={t('common.unitOptional', { unit: t(`unit.${DISPLAY_UNIT}`) })}
-                aria-label={t('milk.amount', { unit: t(`unit.${DISPLAY_UNIT}`) })}
-              />
-              <input
-                className="input"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder={t('common.notesOptional')}
-                aria-label={t('common.notes')}
-              />
-              <div>
-                <label className="label" htmlFor="pump-at">
-                  {t('milk.when')}
-                </label>
-                <input
-                  id="pump-at"
-                  type="datetime-local"
-                  className="input"
-                  value={at}
-                  onChange={(e) => setAt(e.target.value)}
-                  max={toHouseholdInputValue(new Date())}
-                />
-              </div>
-            </div>
-            <div className="row-tight">
-              <Btn type="submit" disabled={busy}>
-                {busy ? t('common.saving') : t('milk.logSession')}
-              </Btn>
-            </div>
-          </form>
-        </Card>
-
-        <Card>
-          <Label>{t('milk.inStash')}</Label>
-          <div className="value">{formatVolume(total, DISPLAY_UNIT)}</div>
-          <div className="meta">
-            {t('milk.counted', { count: counted.length })}
-            {resetAt && t('milk.since', { date: longDate(resetAt, lang) })}
-          </div>
-        </Card>
-
-        {/* Solo para registrar y mirar. Corregir o borrar una extracción se
-            hace en el Historial, con el resto de las entradas (el ⋯ de cada
-            fila): así esta pantalla queda como en el momento de registrar,
-            sin un Edit / Delete al lado de cada sesión. La esquina lleva ahí. */}
-        <Card spanAll quickLink={{ href: '/history', label: t('milk.editInHistory') }}>
-          <Label>{t('milk.sessions')}</Label>
-          {rows.length === 0 ? (
-            <div className="empty">{t('milk.empty')}</div>
-          ) : (
-            <div className="feed">
-              {rows.map((row) => (
-                <div className="feed-item" key={row.id}>
-                  <span className="feed-time">{clockTime(row.pumped_at, lang)}</span>
-                  <span className="feed-what">
-                    <span className="meta">{longDate(row.pumped_at, lang)} · </span>
-                    {row.amount_ml != null
-                      ? formatVolume(row.amount_ml, DISPLAY_UNIT)
-                      : t('milk.noAmount')}
-                    {' · '}
-                    {t(`sideButton.${row.side}`)}
-                    {row.notes && ` · ${row.notes}`}
-                  </span>
+              {stopping ? (
+                <div className="stack">
+                  {amountFields}
+                  <div className="row-tight">
+                    <Btn type="submit" disabled={busy}>
+                      {busy ? t('common.saving') : t('milk.logSession')}
+                    </Btn>
+                    <Btn variant="quiet" disabled={busy} onClick={() => setStopping(false)}>
+                      {t('common.cancel')}
+                    </Btn>
+                  </div>
                 </div>
-              ))}
-            </div>
+              ) : (
+                <div className="row-tight">
+                  <Btn variant="live" disabled={busy} onClick={() => setStopping(true)}>
+                    {t('milk.live.finish')}
+                  </Btn>
+                  <Btn variant="quiet" disabled={busy} onClick={cancelLive}>
+                    {t('milk.live.cancel')}
+                  </Btn>
+                </div>
+              )}
+            </form>
+          ) : (
+            <>
+              <p className="meta">{t('milk.live.hint')}</p>
+              <div className="row-tight">
+                <Btn disabled={busy} onClick={startLive}>
+                  {t('milk.live.start')}
+                </Btn>
+              </div>
+            </>
           )}
         </Card>
+
+        {/* ---------------- Manual, with a past time ---------------- */}
+        {!stopping && (
+          <Card>
+            <form onSubmit={save}>
+              <Label>{t('milk.logTitle')}</Label>
+              <div className="stack">
+                {amountFields}
+                <div>
+                  <label className="label" htmlFor="pump-at">
+                    {t('milk.when')}
+                  </label>
+                  <input
+                    id="pump-at"
+                    type="datetime-local"
+                    className="input"
+                    value={at}
+                    onChange={(e) => setAt(e.target.value)}
+                    max={toHouseholdInputValue(new Date(now))}
+                  />
+                </div>
+              </div>
+              <div className="row-tight">
+                <Btn type="submit" disabled={busy}>
+                  {busy ? t('common.saving') : t('milk.logSession')}
+                </Btn>
+              </div>
+            </form>
+          </Card>
+        )}
+
+        {/* ---------------- What there is ---------------- */}
+        <Card>
+          <Label>{t('milk.inStash')}</Label>
+          <div className="value">{unknown ? '—' : formatMilkOz(stash)}</div>
+          <div className="meta">{t('milk.stashNote')}</div>
+          {stashPending && <div className="pending-tag">{t('milk.stashPending')}</div>}
+          {!unknown && shelf.length === 0 && <div className="empty">{t('milk.noContainers')}</div>}
+          {shelf.length > 0 && (
+            <ul className="feed">
+              {shelf.map((c) => {
+                const usable = isUsable(c, now)
+                return (
+                  <li key={c.id} className="feed-item">
+                    <div className="feed-what">
+                      {t('milk.containerLine', {
+                        label: c.label,
+                        amount: formatMilkOz(c.remaining_ml),
+                      })}
+                    </div>
+                    <div className="meta">
+                      {usable
+                        ? t('milk.expires', {
+                            when: `${longDate(c.expires_at, lang)} · ${clockTime(c.expires_at, lang)}`,
+                          })
+                        : t('milk.expired')}
+                    </div>
+                    {c.pending && <div className="pending-tag">{t('common.notSyncedYet')}</div>}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+          <p className="meta">{t('milk.rulesHint')}</p>
+        </Card>
+      </Grid>
+
+      {/* ---------------- Sessions ---------------- */}
+      <h2 className="label">{t('milk.sessionsTitle')}</h2>
+      <Grid>
+        {sessions.length === 0 ? (
+          <Card>
+            <div className="empty">{unknown ? t('milk.nothingSaved') : t('milk.empty')}</div>
+          </Card>
+        ) : (
+          sessions.map((row) => {
+            const container = containerOf(row.id)
+            const voided = !!(row as { voided_at?: string | null }).voided_at
+            return (
+              <Card key={row.id}>
+                {editing?.id === row.id ? (
+                  <div className="stack">
+                    <Label>{t('milk.editSession')}</Label>
+                    <div className="row-tight row-wrap">
+                      <input
+                        className="input narrow"
+                        value={eLeft}
+                        onChange={(e) => setELeft(e.target.value)}
+                        inputMode="decimal"
+                        placeholder={t('milk.left', { unit: t('unit.oz') })}
+                        aria-label={t('milk.left', { unit: t('unit.oz') })}
+                      />
+                      <input
+                        className="input narrow"
+                        value={eRight}
+                        onChange={(e) => setERight(e.target.value)}
+                        inputMode="decimal"
+                        placeholder={t('milk.right', { unit: t('unit.oz') })}
+                        aria-label={t('milk.right', { unit: t('unit.oz') })}
+                      />
+                    </div>
+                    <input
+                      className="input"
+                      value={eNotes}
+                      onChange={(e) => setENotes(e.target.value)}
+                      placeholder={t('common.notesOptional')}
+                      aria-label={t('common.notes')}
+                    />
+                    <input
+                      type="datetime-local"
+                      className="input"
+                      value={eAt}
+                      onChange={(e) => setEAt(e.target.value)}
+                      max={toHouseholdInputValue(new Date(now))}
+                      aria-label={t('common.timeItHappened')}
+                    />
+                    <div className="row">
+                      <Btn disabled={busy} onClick={saveEdit}>
+                        {t('common.save')}
+                      </Btn>
+                      <Btn variant="quiet" onClick={() => setEditing(null)}>
+                        {t('common.cancel')}
+                      </Btn>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="between">
+                      <Label>
+                        {longDate(row.pumped_at, lang)} · {clockTime(row.pumped_at, lang)}
+                      </Label>
+                      {!voided && (
+                        <span className="feed-actions">
+                          <button
+                            type="button"
+                            className="linkish"
+                            data-edit-for={row.id}
+                            disabled={busy || editing !== null}
+                            onClick={() => startEdit(row)}
+                          >
+                            {t('common.edit')}
+                          </button>
+                          <button
+                            type="button"
+                            className="linkish"
+                            disabled={busy || editing !== null}
+                            onClick={() => remove(row)}
+                          >
+                            {t('common.delete')}
+                          </button>
+                        </span>
+                      )}
+                    </div>
+                    <div className="value">
+                      {row.amount_ml != null ? formatMilkOz(row.amount_ml) : t('milk.noAmount')}
+                      {container ? ` · ${container.label}` : ''}
+                    </div>
+                    {(row.left_ml != null || row.right_ml != null) && (
+                      <div className="meta">
+                        {t('milk.sidesLine', {
+                          left: row.left_ml != null ? formatMilkOz(row.left_ml) : '—',
+                          right: row.right_ml != null ? formatMilkOz(row.right_ml) : '—',
+                        })}
+                      </div>
+                    )}
+                    {container && servedFrom(container) > SERVED_EPSILON_ML && (
+                      <div className="meta">
+                        {t('milk.servedNote', { amount: formatMilkOz(servedFrom(container)) })}
+                      </div>
+                    )}
+                    {row.notes && <div className="meta">{row.notes}</div>}
+                    {voided && <div className="meta">{t('milk.deletedPending')}</div>}
+                    {row.pending && <div className="pending-tag">{t('common.notSyncedYet')}</div>}
+                  </>
+                )}
+              </Card>
+            )
+          })
+        )}
       </Grid>
     </Page>
   )

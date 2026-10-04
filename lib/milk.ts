@@ -425,3 +425,39 @@ export function applyPendingInventory(
 
   return { containers: cs, drawdowns: ds }
 }
+
+// ------------------------------------------------------------- typing
+
+/**
+ * One amount field, as typed: empty is "nothing" (null), never 0; anything
+ * that isn't a finite number of zero or more is a problem the page shows.
+ */
+export function parseAmountMl(
+  raw: string,
+  unit: VolumeUnit,
+): { ml: number | null; problem?: undefined } | { ml?: undefined; problem: 'number' } {
+  const text = raw.trim().replace(',', '.')
+  if (text === '') return { ml: null }
+  const n = Number(text)
+  if (!Number.isFinite(n) || n < 0) return { problem: 'number' }
+  return { ml: unit === 'oz' ? n * ML_PER_FL_OZ : n }
+}
+
+/**
+ * An amount for an edit field: ounces with up to two decimals, as the page
+ * shows them. `keepMl` returns the exact stored ml when the field was left as
+ * it was prefilled — re-deriving it from the rounded text would move a
+ * stored 150 ml to 150.8 ml on a save that changed nothing.
+ */
+export function ozText(ml: number | null | undefined): string {
+  return ml == null ? '' : String(Number((ml / ML_PER_FL_OZ).toFixed(2)))
+}
+
+export function keepMl(
+  text: string,
+  prefilled: string,
+  storedMl: number | null | undefined,
+): ReturnType<typeof parseAmountMl> {
+  if (text.trim() === prefilled.trim()) return { ml: storedMl ?? null }
+  return parseAmountMl(text, 'oz')
+}

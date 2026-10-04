@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { describeWrite, keepLastGood, mergePending } from '@/lib/db'
+import { describeWrite, keepLastGood, mergePending, milkErrorText } from '@/lib/db'
 import type { PendingOp, PendingWrite } from '@/lib/queue'
 
 // What a page shows offline: the last rows the server gave, with the
@@ -115,5 +115,155 @@ describe('describeWrite (el nombre de una entrada encolada, para el aviso de des
     expect(describeWrite(d, 'es')).toBe('Pañal (borrado)')
     const o = queued({ kind: 'insert', table: 'nueva_tabla', row: { id: 'z' } })
     expect(describeWrite(o, 'es')).toBe('Registro (alta)')
+  })
+})
+
+// ------------------------------------------------------------- milk (0013)
+
+describe('mergePending con las funciones del inventario de leche', () => {
+  type Feed = { id: string; fed_at: string; amount_ml: number; voided_at?: string | null }
+  const feeds: Feed[] = [{ id: 'f-server', fed_at: '2026-10-04T08:00:00Z', amount_ml: 90 }]
+
+  it('una toma registrada sin conexión aparece, marcada; su anulación la marca anulada', () => {
+    const merged = mergePending(feeds, 'feedings', [
+      queued({
+        kind: 'rpc',
+        fn: 'log_bottle_feed',
+        args: {},
+        table: 'feedings',
+        id: 'f-new',
+        effect: 'insert',
+        row: { id: 'f-new', fed_at: '2026-10-04T10:00:00Z', amount_ml: 88.7 },
+        refs: ['c1'],
+      }),
+      queued({
+        kind: 'rpc',
+        fn: 'void_bottle_feed',
+        args: {},
+        table: 'feedings',
+        id: 'f-server',
+        effect: 'delete',
+        patch: { voided_at: '2026-10-04T10:05:00Z' },
+      }),
+    ])
+    expect(merged.find((r) => r.id === 'f-new')).toMatchObject({ amount_ml: 88.7, pending: true })
+    expect(merged.find((r) => r.id === 'f-server')).toMatchObject({
+      voided_at: '2026-10-04T10:05:00Z',
+      pending: true,
+    })
+    expect(feeds[0].voided_at).toBeUndefined()
+  })
+
+  it('una edición encolada de una extracción que también está en la cola se aplica sobre ella', () => {
+    const merged = mergePending(
+      [] as { id: string; amount_ml: number | null }[],
+      'pumping_sessions',
+      [
+        queued({
+          kind: 'rpc',
+          fn: 'log_pumping_session',
+          args: {},
+          table: 'pumping_sessions',
+          id: 's1',
+          effect: 'insert',
+          row: { id: 's1', amount_ml: null },
+        }),
+        queued({
+          kind: 'rpc',
+          fn: 'update_pumping_session',
+          args: {},
+          table: 'pumping_sessions',
+          id: 's1',
+          effect: 'update',
+          patch: { amount_ml: 120 },
+        }),
+      ],
+    )
+    expect(merged).toEqual([{ id: 's1', amount_ml: 120, pending: true }])
+  })
+
+  it('no toca otras tablas', () => {
+    const merged = mergePending(feeds, 'feedings', [
+      queued({
+        kind: 'rpc',
+        fn: 'log_pumping_session',
+        args: {},
+        table: 'pumping_sessions',
+        id: 's1',
+        effect: 'insert',
+        row: { id: 's1' },
+      }),
+    ])
+    expect(merged).toEqual([{ ...feeds[0] }])
+  })
+})
+
+describe('describeWrite con operaciones rpc', () => {
+  it('alta, edición y borrado, en inglés y en español', () => {
+    const add = queued({
+      kind: 'rpc',
+      fn: 'log_bottle_feed',
+      args: {},
+      table: 'feedings',
+      id: 'f',
+      effect: 'insert',
+    })
+    const edit = queued({
+      kind: 'rpc',
+      fn: 'update_pumping_session',
+      args: {},
+      table: 'pumping_sessions',
+      id: 's',
+      effect: 'update',
+    })
+    const del = queued({
+      kind: 'rpc',
+      fn: 'void_bottle_feed',
+      args: {},
+      table: 'feedings',
+      id: 'f',
+      effect: 'delete',
+    })
+    expect(describeWrite(add, 'en')).toBe('Feeding (new)')
+    expect(describeWrite(add, 'es')).toBe('Toma (alta)')
+    expect(describeWrite(edit, 'en')).toBe('Pumping (edit)')
+    expect(describeWrite(edit, 'es')).toBe('Extracción (edición)')
+    expect(describeWrite(del, 'en')).toBe('Feeding (deletion)')
+    expect(describeWrite(del, 'es')).toBe('Toma (borrado)')
+  })
+})
+
+describe('milkErrorText', () => {
+  it('traduce cada código, con la cinta cuando viene', () => {
+    expect(milkErrorText('milk_overdraw:M3', 'en')).toMatch(/^M3 doesn’t have that much milk left/)
+    expect(milkErrorText('milk_overdraw:M3', 'es')).toMatch(/^A M3 no le queda tanta leche/)
+    expect(milkErrorText('milk_already_served:M1', 'es')).toMatch(/De M1 ya se sirvió leche/)
+    expect(milkErrorText('milk_container_unusable:M2', 'en')).toMatch(/^M2 can’t be used/)
+    // Sin cinta no queda una frase con un hueco.
+    expect(milkErrorText('milk_container_unusable', 'en')).toMatch(/^One of the containers/)
+    for (const code of [
+      'milk_label_taken:M4',
+      'milk_served_exceeds_amount:M4',
+      'milk_idempotency_conflict',
+      'milk_rpc_only',
+      'milk_bad_input',
+      'milk_baby_not_found',
+      'milk_not_signed_in',
+      'milk_session_gone',
+    ]) {
+      for (const lang of ['en', 'es'] as const) {
+        const text = milkErrorText(code, lang)
+        expect(text, `${code} ${lang}`).not.toMatch(/milk_|\{label\}/)
+        expect(text.length, `${code} ${lang}`).toBeGreaterThan(10)
+      }
+    }
+  })
+
+  it('un mensaje que no es de la leche pasa tal cual', () => {
+    expect(milkErrorText('new row violates row-level security policy', 'es')).toBe(
+      'new row violates row-level security policy',
+    )
+    expect(milkErrorText('milk_unknown_code', 'en')).toBe('milk_unknown_code')
+    expect(milkErrorText(null, 'en')).toBe('')
   })
 })

@@ -108,10 +108,12 @@ describe('translate', () => {
   })
 
   it('elige singular o plural por count', () => {
-    expect(translate('en', 'milk.counted', { count: 1 })).toBe('1 session counted')
-    expect(translate('en', 'milk.counted', { count: 0 })).toBe('0 sessions counted')
-    expect(translate('es', 'milk.counted', { count: 1 })).toBe('1 sesión contada')
-    expect(translate('es', 'milk.counted', { count: 3 })).toBe('3 sesiones contadas')
+    // (Usaba 'milk.counted', que se fue con el total de sesiones de Leche el
+    // 4 oct 2026: lo que hay ahora se cuenta en onzas, no en sesiones.)
+    expect(translate('en', 'age.days', { count: 1 })).toBe('1 day old')
+    expect(translate('en', 'age.days', { count: 0 })).toBe('0 days old')
+    expect(translate('es', 'age.days', { count: 1 })).toBe('1 día')
+    expect(translate('es', 'age.days', { count: 3 })).toBe('3 días')
     expect(translate('es', 'sync.offlinePending', { count: 2 })).toBe(
       'Sin conexión · 2 registros guardados en este dispositivo, todavía sin sincronizar.',
     )
