@@ -331,6 +331,9 @@ export const es: Dictionary = {
   'milk.editInHistory': 'Corregí o borrá una extracción en el Historial',
   'milk.sessions': 'Extracciones',
 
+  // ------------------------------------------------------------ bottle (0013)
+  'bottle.formulaPart': 'fórmula {amount}',
+
   // ------------------------------------------------------------ growth
   'growth.title': 'Crecimiento',
   'growth.couldNotLoad': 'No se pudieron cargar las medidas — {error}',

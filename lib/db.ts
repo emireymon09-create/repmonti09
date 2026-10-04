@@ -66,8 +66,11 @@ function data() {
   return createClient().schema(DATA_SCHEMA)
 }
 
-/** Something to run a query on: the app's client, or a signed-in test client. */
-type Db = Pick<ReturnType<typeof data>, 'from'>
+/**
+ * Something to run a query on: the app's client, or a signed-in test client.
+ * `rpc` is for the milk-inventory functions of 0013 (log_bottle_feed…).
+ */
+type Db = Pick<ReturnType<typeof data>, 'from' | 'rpc'>
 
 /**
  * The columns that say who a row belongs to. One definition, so adding
@@ -117,6 +120,14 @@ export async function sendOpWith(
   mode: 'write' | 'replay',
   signal?: AbortSignal,
 ): Promise<{ error: string | null }> {
+  if (op.kind === 'rpc') {
+    // The milk functions are idempotent by the id the device made (same id and
+    // same payload = no-op), so the replay sends exactly what the first try
+    // did: there is no ON CONFLICT to add.
+    const call = db.rpc(op.fn, op.args)
+    const { error } = await (signal ? call.abortSignal(signal) : call)
+    return { error: error ? error.message : null }
+  }
   const table = db.from(op.table)
   const query =
     op.kind === 'update'

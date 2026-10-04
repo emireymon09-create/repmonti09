@@ -35,6 +35,38 @@
 export type PendingOp =
   | { kind: 'insert'; table: string; row: Record<string, unknown> }
   | { kind: 'update'; table: string; id: string; patch: Record<string, unknown> }
+  | RpcOp
+
+/**
+ * A call to one of the milk-inventory functions of 0013 (log_bottle_feed and
+ * friends). Those writes touch several rows in one transaction — a bottle,
+ * its portions and the containers they come out of — so they cannot be a
+ * plain insert or update. The function is idempotent by the client-made id
+ * (same id and same payload = no-op), which is what makes replaying it safe.
+ *
+ * The rest describes the call for the parts of the app that only know rows:
+ *   · `table` + `id`: the main row it creates, changes or voids;
+ *   · `effect`: what it does to that row — mergePending, isDeletion and
+ *     describeWrite read it; `row` (insert) and `patch` (update, delete) are
+ *     what mergePending folds into the page;
+ *   · `creates`: other rows it brings into being (the container a pumping
+ *     session fills);
+ *   · `refs`: rows it needs to exist (the containers a bottle is served
+ *     from). dependentsOf follows both, so discarding a pumping session that
+ *     never reached the server also discards the bottle served from it.
+ */
+export type RpcOp = {
+  kind: 'rpc'
+  fn: string
+  args: Record<string, unknown>
+  table: string
+  id: string
+  effect: 'insert' | 'update' | 'delete'
+  row?: Record<string, unknown>
+  patch?: Record<string, unknown>
+  creates?: string[]
+  refs?: string[]
+}
 
 export type PendingWrite = {
   id: string

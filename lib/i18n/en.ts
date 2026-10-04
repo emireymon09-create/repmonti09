@@ -339,6 +339,9 @@ export const en = {
   'milk.editInHistory': 'Fix or delete a session in History',
   'milk.sessions': 'Sessions',
 
+  // ------------------------------------------------------------ bottle (0013)
+  'bottle.formulaPart': 'formula {amount}',
+
   // ------------------------------------------------------------ growth
   'growth.title': 'Growth',
   'growth.couldNotLoad': 'Couldn’t load measurements — {error}',

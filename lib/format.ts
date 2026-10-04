@@ -318,6 +318,16 @@ export function flOzToMl(oz: number): number {
 }
 
 /**
+ * Ounces with up to two decimals and no trailing zeros — "1.75 oz", "0.5 oz",
+ * "3 oz". For the milk inventory (containers, portions, the stash), where a
+ * pump reads 1.75 and rounding it to 1.8 would show more milk than there is.
+ * Everything else keeps the one decimal of mlToFlOz.
+ */
+export function formatMilkOz(ml: number): string {
+  return `${Number((ml / ML_PER_FL_OZ).toFixed(2))} oz`
+}
+
+/**
  * The unit every amount is SHOWN in, app-wide (23 sep 2026). There is no
  * per-device preference any more: the bottle and the pump are read in
  * ounces in this house, so the app speaks ounces and stops asking.
