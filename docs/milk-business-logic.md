@@ -45,6 +45,10 @@ describe lo implementado, con dónde vive cada cosa y su estado:
   terminar se registra con esa hora. El otro teléfono no ve el cronómetro.
   **A mano**: con la hora que se elija (no futura). [NO VERIFICADO en un
   navegador — ver §8]
+- **Sesiones anteriores a 0013** (solo un total, sin lados): corregirles la
+  hora o la nota no toca el total; recién si se escriben los lados nace su
+  contenedor (S-22). La pantalla de edición lo avisa. [VERIFICADO: SQL "editing
+  only the note/time of a pre-0013 session keeps its total"]
 - **Editar** (`update_pumping_session`): el contenedor sigue la cantidad,
   **nunca por debajo de lo servido** (`milk_served_exceeds_amount:M#`); si la
   sesión no tenía cantidad y se le da una, el contenedor nace ahí; si se le
@@ -97,11 +101,15 @@ describe lo implementado, con dónde vive cada cosa y su estado:
   faltante, fórmula; sin leche utilizable, todo fórmula. Ejemplo del pedido:
   3 oz con M3 en 1.75 → "M3 1.75 oz + 1.25 oz de fórmula = 3 oz".
   [VERIFICADO: unit, con 1, 2 y 4 contenedores]
+- En `/feeding` ("Registrar uno pasado") solo se ofrecen extracciones que ya
+  existían y no estaban caducadas **a la hora elegida**.
 - Se puede cambiar todo en el constructor: otra extracción, otra cantidad,
   más o menos filas, otra fórmula. Si se tipea exactamente lo que la
   extracción muestra que le queda, se toma **todo** en ml exactos
   (`portionMl`), para que el redondeo de pantalla no deje restos ni provoque
   un rechazo. [VERIFICADO: unit]
+- Toda cantidad tiene un tope finito (`< 100 000 ml`): `"NaN"` o `"Infinity"`
+  mandados a mano se rechazan (`milk_bad_input`). [VERIFICADO: SQL]
 - **Sobregiro**: el servidor bloquea los contenedores (`FOR UPDATE`, en orden
   de id) y rechaza pedir más de lo que hay (`milk_overdraw:M#`), sin recortar.
   Dos teléfonos a la vez sobre el mismo contenedor: entra uno, el otro recibe
@@ -144,9 +152,14 @@ la mamila. El botón abre un panel **inline** de ancho completo debajo de las
 tres tarjetas (la app no tiene modales con overlay): la sugerencia desglosada,
 la leche materna que queda, **Registrar tal cual** (un toque) y el
 constructor de filas con **Registrar con cambios** (habilitado solo si algo
-cambió) y **Cerrar**; Escape también cierra. El foco entra al panel y vuelve
-al botón. Durante una lactancia en curso la fila del biberón no está (como
-antes). [NO VERIFICADO en pantalla — ver §8]
+cambió de verdad: una fila sin tocar vale los ml exactos de la sugerencia) y
+**Cerrar**; Escape también cierra (salvo dentro de una lista desplegable). El
+foco entra al panel y vuelve al botón. Si lo que hay cambia mientras alguien
+edita las filas, no se le borra lo tipeado: aparece "La sugerencia cambió
+mientras editabas" con "Empezar de nuevo desde ahí". Durante una lactancia en
+curso la fila del biberón no está (como antes). [VERIFICADO en un navegador:
+el panel abre, no entra en bucle (10 ms de CPU en 4 s), lo tipeado sobrevive;
+NO VERIFICADO con extracciones reales — ver §8]
 
 ## 7. Sin conexión
 
@@ -157,7 +170,12 @@ antes). [NO VERIFICADO en pantalla — ver §8]
   el servidor ya tiene. [VERIFICADO: unit]
 - Se reenvían en orden; un reenvío no duplica (ids del dispositivo + funciones
   idempotentes: mismo id y misma carga = no-op; distinta = excepción
-  `milk_idempotency_conflict`). [VERIFICADO: SQL y unit de la cola]
+  `milk_idempotency_conflict`). Un reintento que llega mientras la primera
+  llamada todavía corre espera un lock por id y termina en no-op.
+  [VERIFICADO: SQL, unit de la cola, y concurrencia en el Postgres efímero]
+- Una toma nueva se encola detrás de cualquier operación de leche que ya
+  esté en la cola (una anulación que devuelve leche, por ejemplo), para no
+  ser rechazada por un sobregiro que el reenvío en orden habría resuelto.
 - Una edición o un borrado de algo que todavía es un alta en la cola, o una
   toma que sirve de un contenedor que todavía está en la cola, se encola
   detrás (`queueOnly`) en vez de mandarse directo a un servidor que todavía no
@@ -168,9 +186,11 @@ antes). [NO VERIFICADO en pantalla — ver §8]
 
 ## 8. Lo que NO se verificó
 
-- **Las pantallas en un navegador** (Leche, Hoy con el panel, `/feeding`,
-  Historial, Ajustes): necesitan 0013 en la base, y aplicarla estaba prohibido.
-  Compilan, pasan lint y build; no se vieron funcionando.
+- **Las pantallas con datos reales de leche** (Leche, el panel con
+  extracciones, `/feeding`, Historial, Ajustes): necesitan 0013 en la base, y
+  aplicarla estaba prohibido. Compilan, pasan lint y build, y el panel se vio
+  abrir sin bucle; no se vio una toma con porciones registrada desde la
+  pantalla.
 - **`tests/integration/milk.test.ts`**: escrita, se salta sola sin 0013.
 - **Barrido de layout** (390/1440, temas, idiomas) de las pantallas nuevas.
 - **El cronómetro en vivo** al recargar, y en un iPhone.

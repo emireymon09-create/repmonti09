@@ -425,20 +425,26 @@ export default function HistoryPage() {
 
   async function deleteEntry(entry: ActivityEntry) {
     if (!baby || busy || !isEditable(entry.kind)) return
-    // A pumping session also comes out of the stash total on /pumping, and
-    // the confirmation says so — "nothing else changes" would be false there.
-    const question = entry.kind === 'pumping' ? t('milk.removeConfirm') : t('history.removeConfirm')
+    const { kind, id } = entry
+    const feed = kind === 'feeding' ? feedings.find((r) => r.id === id) : undefined
+    const inventory = !!feed && isInventoryBottleFeed(feed)
+    // A pumping session also comes out of the stash total on /pumping, and a
+    // bottle with a breakdown gives its milk back: each confirmation says so —
+    // "nothing else changes" would be false there.
+    const question = inventory
+      ? t('bottle.removeConfirm')
+      : kind === 'pumping'
+        ? t('milk.removeConfirm')
+        : t('history.removeConfirm')
     if (!window.confirm(question)) return
 
-    const { kind, id } = entry
     setBusy(true)
     setErr(null)
 
-    const feed = kind === 'feeding' ? feedings.find((r) => r.id === id) : undefined
     // A bottle with a breakdown goes through the function that also gives its
     // milk back to each container (0013).
     const result =
-      feed && isInventoryBottleFeed(feed)
+      feed && inventory
         ? await voidBottleFeed(id, { pending: !!feed.pending })
         : kind === 'feeding'
           ? await voidFeeding(id)

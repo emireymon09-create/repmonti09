@@ -46,6 +46,11 @@ hueco con una suposición presentada como hecho.
 | [`aplicar-en-la-nube-0012.md`](aplicar-en-la-nube-0012.md) | **Para Luis, a mano, una sola vez, DESPUÉS del anterior.** Aplicar 0012 (umbrales de familia, recordatorio de cita, feed de calendario). Es un solo paso: no hay secretos de Vault ni cron nuevo. |
 | [`handoff-metodologia.md`](handoff-metodologia.md) | El **proceso** con el que se construyó esto: dos sesiones con roles separados, dos mensajes por tarea, el flujo de 4 roles, las reglas de honestidad. No describe el producto. |
 | [`handoff-2026-09-25.md`](handoff-2026-09-25.md) | La auditoría de handoff del 25 sep 2026: 19 secciones, cada afirmación etiquetada como confirmada por test, por lectura o **no verificada**, y al final una lista única de todo lo que no se sabe. |
+| [`spec-feeding-v3.md`](spec-feeding-v3.md) | Especificación del inventario de leche y las tomas v3 (4 oct 2026): las reglas del dueño, los 22 supuestos elegidos donde el pedido no alcanzaba, y el plan por archivos. |
+| [`progreso-feeding-v3.md`](progreso-feeding-v3.md) | Estado por hitos de ese pase, con qué comando se verificó cada cosa, y la tabla de hallazgos de la revisión independiente con su resolución. |
+| [`milk-business-logic.md`](milk-business-logic.md) | Cómo funciona **de verdad** el inventario de leche (0013): extracciones, caducidad, tomas, lo que hay, sin conexión — cada afirmación etiquetada verificada o no. |
+| [`handoff-2026-10-04.md`](handoff-2026-10-04.md) | Handoff del pase del inventario: qué se hizo, qué se verificó y con qué, qué **no**, la propuesta de versión (0.11.0) y el orden para desplegar (**0013 no está aplicada en ningún lado**). |
+| [`reglas-de-uso-familia.md`](reglas-de-uso-familia.md) | Para papá y mamá, sin términos técnicos: cómo se usan la leche guardada y los biberones en la app. |
 
 ## Y además
 

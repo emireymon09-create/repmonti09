@@ -188,12 +188,25 @@ export function BottleBuilder({
       const parsed = parseAmountMl(text, unit)
       return parsed.ml == null ? text : amountText(parsed.ml, next)
     }
-    // The texts change, so they no longer stand for the plan's exact ml.
-    setRows((rs) => rs.map((r) => ({ ...r, text: convert(r.text), planMl: null })))
-    setFormula(convert)
-    setFormulaPlan({ ml: 0, text: null })
+    // A field still showing the plan's amount keeps meaning the plan's EXACT
+    // ml in the other unit too — switching back and forth changes nothing.
+    setRows((rs) =>
+      rs.map((r) => {
+        const untouched = r.planMl !== null && r.text === r.planText
+        if (!untouched) return { ...r, text: convert(r.text) }
+        const text = amountText(r.planMl!, next)
+        return { ...r, text, planText: text }
+      }),
+    )
+    const formulaUntouched = formulaPlan.text !== null && formula === formulaPlan.text
+    if (formulaUntouched) {
+      const text = amountText(formulaPlan.ml, next)
+      setFormula(text)
+      setFormulaPlan({ ml: formulaPlan.ml, text })
+    } else {
+      setFormula(convert)
+    }
     setUnit(next)
-    setDirty(true)
   }
 
   function addRow() {

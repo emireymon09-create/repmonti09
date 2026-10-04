@@ -650,10 +650,14 @@ describe('parseAmountMl / ozText / keepMl', () => {
 })
 
 describe('what float arithmetic leaves behind is not milk', () => {
-  it('a container with less than 0.01 ml is empty: not usable, not counted, not suggested', () => {
+  it('a container the screen would show as 0 oz is empty: not usable, not counted, not suggested', () => {
     const crumbs = container('M1', 0, { remaining_ml: 1e-10 })
     expect(isUsable(crumbs, NOW)).toBe(false)
     expect(stashMl([crumbs], NOW)).toBe(0)
     expect(suggestPlan(3 * OZ, [crumbs], NOW).portions).toEqual([])
+    const shownAsZero = container('M2', 0, { remaining_ml: 0.14 })
+    expect(isUsable(shownAsZero, NOW)).toBe(false)
+    expect(formatMilkOz(0.14)).toBe('0 oz')
+    expect(isUsable(container('M3', 0, { remaining_ml: 0.3 }), NOW)).toBe(true)
   })
 })

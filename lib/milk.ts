@@ -91,10 +91,11 @@ export function containerExpiresAt(
 
 /**
  * Below this a container is empty: what float arithmetic leaves behind after
- * a portion is taken offline (1e-10 ml is not milk, and must not be offered
- * or end up as a portion).
+ * a portion is taken offline, and anything the screen would show as "0 oz"
+ * (two decimals of an ounce are ~0.3 ml; half of that rounds to 0). It must
+ * not be offered, counted, or end up as a portion.
  */
-export const EMPTY_ML = 0.01
+export const EMPTY_ML = 0.15
 
 /** Not voided, milk left, and not expired at `atMs` (expiry is exclusive). */
 export function isUsable(c: MilkContainer, atMs: number): boolean {

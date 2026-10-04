@@ -377,6 +377,8 @@ export const es: Dictionary = {
   'bottle.amountAria': 'Fila de leche {n}: cantidad, {unit}',
   'bottle.planChanged': 'La sugerencia cambió mientras editabas.',
   'bottle.startOver': 'Empezar de nuevo desde ahí',
+  'bottle.removeConfirm':
+    '¿Borrar esta toma? La leche que salió vuelve a cada extracción; la fórmula simplemente deja de contar.',
   'bottle.removeRow': 'Quitar',
   'bottle.addRow': '+ Agregar fila',
   'bottle.formula': 'Fórmula',

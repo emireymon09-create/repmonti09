@@ -270,8 +270,13 @@ begin
   if milk_in_rpc() then
     return new;
   end if;
+  -- Solo cuando lo dispara la FK (una acción referencial corre anidada:
+  -- pg_trigger_depth() > 1) y la sesión de verdad ya no existe. Un PATCH a mano
+  -- que intente desatar el contenedor de su sesión no cumple ninguna de las dos.
   if tg_op = 'UPDATE'
+     and pg_trigger_depth() > 1
      and old.source_session_id is not null and new.source_session_id is null
+     and not exists (select 1 from pumping_sessions where id = old.source_session_id)
      and (to_jsonb(new) - 'source_session_id') = (to_jsonb(old) - 'source_session_id') then
     return new;
   end if;
@@ -446,6 +451,9 @@ begin
   end if;
 
   v_total := coalesce(p_left_ml, 0) + coalesce(p_right_ml, 0);
+  if v_total >= 100000 then
+    raise exception 'milk_bad_input';
+  end if;
 
   insert into pumping_sessions (
     id, baby_id, pumped_at, side, amount_ml, left_ml, right_ml, notes, logged_by
@@ -519,12 +527,16 @@ begin
     and v_session.left_ml is null and v_session.right_ml is null
     and v_session.amount_ml is not null;
   if v_legacy then
+    -- `p_side` también se ignora: el lado viejo va con el total viejo.
     update pumping_sessions set notes = p_notes, pumped_at = p_pumped_at where id = p_id;
     perform set_config('amelia.milk_rpc', '', true);
     return;
   end if;
 
   v_total := coalesce(p_left_ml, 0) + coalesce(p_right_ml, 0);
+  if v_total >= 100000 then
+    raise exception 'milk_bad_input';
+  end if;
 
   select * into v_container from milk_containers
     where source_session_id = p_id and voided_at is null
@@ -643,6 +655,18 @@ begin
   if p_id is null or p_baby_id is null or p_fed_at is null
      or not (v_formula >= 0 and v_formula < 100000)
      or jsonb_typeof(v_portions) <> 'array' then
+    raise exception 'milk_bad_input';
+  end if;
+
+  -- La forma de cada porción, ANTES de cualquier cast: un texto que no es un
+  -- número o un uuid daría un error crudo de Postgres en vez de un código.
+  if exists (
+    select 1 from jsonb_array_elements(v_portions) e
+    where jsonb_typeof(e) <> 'object'
+       or jsonb_typeof(e->'amount_ml') is distinct from 'number'
+       or coalesce(e->>'container_id', '')
+          !~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+  ) then
     raise exception 'milk_bad_input';
   end if;
 

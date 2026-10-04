@@ -998,11 +998,6 @@ export async function logBottleFeed(
   input: BottleInput,
   opts?: { containersPending?: boolean },
 ): Promise<Result<null>> {
-  // Behind any milk change still in the queue, too: a queued void gives milk
-  // back and a queued edit can raise a container. Sent straight to the server
-  // ahead of them, this bottle could be refused as an overdraw that the
-  // replay, in order, would have let through.
-  const milkQueued = (await store.all()).some((w) => w.op.kind === 'rpc')
   const id = newId()
   const breast = input.portions.reduce((sum, p) => sum + p.amount_ml, 0)
   const args: BottleFeedArgs = {
@@ -1034,7 +1029,7 @@ export async function logBottleFeed(
       },
       refs: input.portions.map((p) => p.container_id),
     },
-    { queueOnly: !!opts?.containersPending || milkQueued },
+    { queueOnly: !!opts?.containersPending },
   )
 }
 

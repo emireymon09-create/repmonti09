@@ -137,3 +137,22 @@ Postgres efímero nuevo, 0001–0013 + **58** chequeos en una transacción con
 contenedor descartable: dos tomas distintas → una entra, otra
 `milk_overdraw:M1`; la MISMA toma dos veces a la vez → una toma, una porción,
 sin error. Contenedor borrado.
+
+## Segunda vuelta de revisión (sobre `e7fc8f5`)
+
+Dos subagentes nuevos, solo lectura, sobre los arreglos.
+
+| Origen | Sev. | Hallazgo | Resolución |
+|---|---|---|---|
+| Migración | IMPORTANTE | La excepción de la guarda para el DELETE real también dejaba pasar un PATCH a mano que desataba el contenedor | **Corregido**: solo con `pg_trigger_depth() > 1` (acción de la FK) y la sesión ya inexistente. Verificado: el PATCH ahora da `milk_rpc_only`; el borrado de sesión y de familia siguen andando |
+| Migración | MENOR | Izquierda y derecha bajo el tope pero la suma no → error crudo de CHECK | **Corregido**: `v_total < 100000`. Verificado |
+| Migración | MENOR | Una porción con un texto en vez de número/uuid → error crudo de cast | **Corregido**: se valida la forma antes del cast. Verificado |
+| Migración | MENOR | La rama de sesión vieja ignora `p_side` | **Comentado** (es lo que hace el cliente también) |
+| Código | IMPORTANTE | "Registrar uno pasado" no se reiniciaba tras guardar si se había editado (posible toma duplicada) | **Corregido**: `key={pPlanKey}` remonta el constructor después de cada guardado |
+| Código | IMPORTANTE | Encolar TODA toma con cualquier operación de leche en la cola (atascaba tomas detrás de un rechazo) | **Corregido revirtiéndolo**: solo se encola detrás si una porción sale de un contenedor que todavía está en la cola. El caso que motivó la regla (una anulación encolada que todavía no devolvió la leche) queda como rechazo visible `milk_overdraw`, que es honesto; se reintenta al sincronizar |
+| Código | MENOR | Cambiar oz↔ml perdía la exactitud de la sugerencia | **Corregido**: un campo sin tocar sigue valiendo los ml exactos en la otra unidad |
+| Código | MENOR | Contenedores con 0,01–0,15 ml se ofrecían como "0 oz" | **Corregido**: `EMPTY_ML = 0.15` (lo que la pantalla mostraría como 0), con test |
+| Código | MENOR | La leche extraída en el minuto en curso no aparece en "Registrar uno pasado" hasta cambiar la hora | **Aceptado**: es correcto para una toma pasada; el formulario de Hoy no tiene ese límite |
+
+Revalidación de 0013 en un Postgres efímero nuevo: **61** chequeos en una
+transacción con `ROLLBACK` [VERIFICADO], contenedor borrado.

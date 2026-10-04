@@ -574,17 +574,19 @@ export function SectionPage({ section }: { section: Section }) {
 
   async function deleteEntry(entry: ActivityEntry) {
     if (!baby || busy || !isEditable(entry.kind)) return
-    if (!window.confirm(t('category.removeConfirm'))) return
-
     const { kind, id } = entry
+    const feed = kind === 'feeding' ? shown.feedings.find((r) => r.id === id) : undefined
+    // A bottle with a breakdown gives its milk back: the confirm says so.
+    const inventory = !!feed && isInventoryBottleFeed(feed)
+    if (!window.confirm(t(inventory ? 'bottle.removeConfirm' : 'category.removeConfirm'))) return
+
     setBusy(true)
     setErr(null)
 
-    const feed = kind === 'feeding' ? shown.feedings.find((r) => r.id === id) : undefined
     // A bottle with a breakdown is deleted by the function that also gives its
     // milk back to each container (0013).
     const result =
-      feed && isInventoryBottleFeed(feed)
+      feed && inventory
         ? await voidBottleFeed(id, { pending: !!feed.pending })
         : kind === 'feeding'
           ? await voidFeeding(id)
@@ -901,6 +903,9 @@ export function SectionPage({ section }: { section: Section }) {
             )}
             {section === 'feeding' && pKind === 'bottle' && (
               <BottleBuilder
+                // A new key after each save: the form starts over even if the
+                // person had edited the rows (which otherwise survive a new plan).
+                key={pPlanKey}
                 usable={pUsable}
                 plan={pPlan}
                 disabled={busy}

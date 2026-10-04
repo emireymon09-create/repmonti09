@@ -383,6 +383,8 @@ export const en = {
   'bottle.amountAria': 'Milk row {n}: amount, {unit}',
   'bottle.planChanged': 'The suggestion changed while you were editing.',
   'bottle.startOver': 'Start over from it',
+  'bottle.removeConfirm':
+    'Delete this bottle? The milk it took goes back to each container; the formula is just not counted anymore.',
   'bottle.removeRow': 'Remove',
   'bottle.addRow': '+ Add row',
   'bottle.formula': 'Formula',
