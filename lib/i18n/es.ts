@@ -343,7 +343,7 @@ export const es: Dictionary = {
   'milk.tape': 'Cinta',
   'milk.tapeEmpty': 'Escribí el número de la cinta, por ejemplo {label}.',
   'milk.tapeFormat': 'La cinta es una M y un número desde 1, por ejemplo {label}.',
-  'milk.tapeInUse': '{label} ya está en un biberón que sigue en uso. Elegí otro número.',
+  'milk.tapeInUse': '{label} ya lo tiene una extracción que sigue guardada. Elegí otro número.',
   'milk.stashNote': 'Solo leche materna, de extracciones que todavía se pueden usar.',
   'milk.stashPending': 'Incluye registros que todavía no se sincronizaron.',
   'milk.noContainers': 'Todavía no hay leche guardada.',

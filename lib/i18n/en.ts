@@ -350,7 +350,7 @@ export const en = {
   'milk.tape': 'Tape',
   'milk.tapeEmpty': 'Write the tape number, for example {label}.',
   'milk.tapeFormat': 'A tape is an M and a number from 1 up, for example {label}.',
-  'milk.tapeInUse': '{label} is already on a bottle that is still in use. Pick another number.',
+  'milk.tapeInUse': '{label} is already on a container that is still in use. Pick another number.',
   'milk.stashNote': 'Breast milk only, from containers that can still be used.',
   'milk.stashPending': 'This includes entries not synced yet.',
   'milk.noContainers': 'No milk stored yet.',

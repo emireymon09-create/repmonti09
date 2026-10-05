@@ -293,7 +293,7 @@ describe.skipIf(!ready)('cinta elegida (5 oct 2026) — necesita 0013', () => {
     expect(all!.filter((c) => c.voided_at !== null)).toHaveLength(1)
   })
 
-  it('una sesión sin cantidad con una cinta escrita no falla y no crea contenedor', async () => {
+  it('el servidor tolera una sesión sin cantidad con una cinta escrita: no falla y no crea contenedor', async () => {
     // Incluso con una cinta repetida o inválida: sin leche no hay contenedor.
     for (const label of ['M9', 'M1', 'basura']) {
       const empty = pump(f, null, null, label)

@@ -30,12 +30,13 @@ import {
   applyPendingInventory,
   isUsable,
   keepMl,
+  nextContainerLabel,
   normalizeTapeLabel,
   ozText,
   parseAmountMl,
   stashMl,
-  suggestContainerLabel,
   tapeInUse,
+  type TapeCheck,
 } from '@/lib/milk'
 import { useT } from '@/lib/i18n/react'
 import { useReturnFocus } from '@/lib/useReturnFocus'
@@ -127,6 +128,9 @@ export default function PumpingPage() {
   // The tape the person typed; null = untouched, so the field shows the
   // current suggestion (and follows it when the list changes).
   const [tape, setTape] = useState<string | null>(null)
+  // The tape just saved online, until the re-read brings its container: without
+  // it, the field would offer that same number again for a moment.
+  const [justSaved, setJustSaved] = useState<string | null>(null)
   const [at, setAt] = useState(() => toHouseholdInputValue(new Date()))
 
   // One edit panel at a time; focus goes back to its Edit button on close.
@@ -164,7 +168,11 @@ export default function PumpingPage() {
       b.pumped_at.localeCompare(a.pumped_at),
     )
     setSessions(merged)
-    setContainers(applyPendingInventory(rows.containers, rows.drawdowns, queued).containers)
+    const view = applyPendingInventory(rows.containers, rows.drawdowns, queued).containers
+    setContainers(view)
+    setJustSaved((prev) =>
+      prev && view.some((c) => c.label === prev && !c.voided_at) ? null : prev,
+    )
   }, [])
 
   const refresh = useCallback(
@@ -226,7 +234,9 @@ export default function PumpingPage() {
 
   const live = containers.filter((c) => !c.voided_at)
   const ctx = { containers: live, rules }
-  const suggestedTape = suggestContainerLabel(live)
+  // `live` is already the non-voided list (queued ones included).
+  const suggestedTape = nextContainerLabel([...live.map((c) => c.label), justSaved])
+  const tapeTaken = (label: string) => tapeInUse(label, live) || label === justSaved
   const tapeText = tape ?? suggestedTape
   const containerOf = (sessionId: string) => live.find((c) => c.source_session_id === sessionId)
   const servedFrom = (c: MilkContainer | undefined) =>
@@ -254,6 +264,7 @@ export default function PumpingPage() {
     writeTimer(baby.id, null)
     setStartedAt(null)
     setStopping(false)
+    setTape(null)
   }
 
   async function save(e: React.FormEvent) {
@@ -282,13 +293,16 @@ export default function PumpingPage() {
     // renumbered — the server refuses it as well.
     let label: string | undefined
     if ((sides.left_ml ?? 0) + (sides.right_ml ?? 0) > 0) {
-      const check = normalizeTapeLabel(tapeText)
+      // Untouched, the field holds the suggestion, which is always valid —
+      // even past the six digits a typed tape is limited to.
+      const check: TapeCheck =
+        tape === null ? { ok: true, label: suggestedTape } : normalizeTapeLabel(tape)
       if (!check.ok) {
         const key = check.problem === 'empty' ? 'milk.tapeEmpty' : 'milk.tapeFormat'
         setErr(t(key, { label: suggestedTape }))
         return
       }
-      if (tapeInUse(check.label, live)) {
+      if (tapeTaken(check.label)) {
         setErr(t('milk.tapeInUse', { label: check.label }))
         return
       }
@@ -299,9 +313,19 @@ export default function PumpingPage() {
     const { data, error, queued } = await logPumpingSession(baby.id, userId, input, ctx, label)
     setBusy(false)
     if (error) {
+      // Saved directly, nothing was stored: the other phone just took this
+      // tape. Say "pick another" (not the queued-sync "delete this session")
+      // and re-read so the suggestion moves past it.
+      const taken = /^milk_label_taken:(M[0-9]+)$/.exec(error)
+      if (taken) {
+        setErr(t('milk.tapeInUse', { label: taken[1] }))
+        refresh(baby.id)
+        return
+      }
       setErr(t('common.couldNotSave', { error: milkErrorText(error, lang) }))
       return
     }
+    if (data.label && !queued) setJustSaved(data.label)
     setSaved(
       data.label
         ? t(queued ? 'milk.queuedLabel' : 'milk.loggedLabel', { label: data.label })
@@ -398,6 +422,7 @@ export default function PumpingPage() {
       return
     }
     if (editing?.id === row.id) setEditing(null)
+    setJustSaved(null)
     setSaved(queued ? t('common.queued') : t('common.deleted'))
     refresh(baby.id)
     reloadPending()
