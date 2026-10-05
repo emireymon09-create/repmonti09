@@ -30,9 +30,12 @@ import {
   applyPendingInventory,
   isUsable,
   keepMl,
+  normalizeTapeLabel,
   ozText,
   parseAmountMl,
   stashMl,
+  suggestContainerLabel,
+  tapeInUse,
 } from '@/lib/milk'
 import { useT } from '@/lib/i18n/react'
 import { useReturnFocus } from '@/lib/useReturnFocus'
@@ -121,6 +124,9 @@ export default function PumpingPage() {
   // every save (components/AmountUnit.tsx, design.md §5.7).
   const [unit, setUnit] = useState<VolumeUnit>(DISPLAY_UNIT)
   const [notes, setNotes] = useState('')
+  // The tape the person typed; null = untouched, so the field shows the
+  // current suggestion (and follows it when the list changes).
+  const [tape, setTape] = useState<string | null>(null)
   const [at, setAt] = useState(() => toHouseholdInputValue(new Date()))
 
   // One edit panel at a time; focus goes back to its Edit button on close.
@@ -220,6 +226,8 @@ export default function PumpingPage() {
 
   const live = containers.filter((c) => !c.voided_at)
   const ctx = { containers: live, rules }
+  const suggestedTape = suggestContainerLabel(live)
+  const tapeText = tape ?? suggestedTape
   const containerOf = (sessionId: string) => live.find((c) => c.source_session_id === sessionId)
   const servedFrom = (c: MilkContainer | undefined) =>
     c ? Math.max(0, c.amount_ml - c.remaining_ml) : 0
@@ -268,8 +276,27 @@ export default function PumpingPage() {
     }
     const input: PumpingInput = { ...sides, notes: notes.trim() || null, pumped_at: pumpedAt }
 
+    // The tape only matters when there is milk: without an amount there is
+    // no container, and the field never blocks the session. A tape a live
+    // container (queued ones too) already has is refused here, never
+    // renumbered — the server refuses it as well.
+    let label: string | undefined
+    if ((sides.left_ml ?? 0) + (sides.right_ml ?? 0) > 0) {
+      const check = normalizeTapeLabel(tapeText)
+      if (!check.ok) {
+        const key = check.problem === 'empty' ? 'milk.tapeEmpty' : 'milk.tapeFormat'
+        setErr(t(key, { label: suggestedTape }))
+        return
+      }
+      if (tapeInUse(check.label, live)) {
+        setErr(t('milk.tapeInUse', { label: check.label }))
+        return
+      }
+      label = check.label
+    }
+
     setBusy(true)
-    const { data, error, queued } = await logPumpingSession(baby.id, userId, input, ctx)
+    const { data, error, queued } = await logPumpingSession(baby.id, userId, input, ctx, label)
     setBusy(false)
     if (error) {
       setErr(t('common.couldNotSave', { error: milkErrorText(error, lang) }))
@@ -285,6 +312,7 @@ export default function PumpingPage() {
     setLeft('')
     setRight('')
     setNotes('')
+    setTape(null)
     setUnit(DISPLAY_UNIT)
     setAt(toHouseholdInputValue(new Date()))
     if (fromLive) {
@@ -435,6 +463,20 @@ export default function PumpingPage() {
           />
         </div>
         <AmountUnit value={unit} onChange={setUnit} disabled={busy} />
+      </div>
+      <div>
+        <label className="label" htmlFor={`${idPrefix}-tape`}>
+          {t('milk.tape')}
+        </label>
+        <input
+          id={`${idPrefix}-tape`}
+          className="input narrow"
+          value={tapeText}
+          onChange={(e) => setTape(e.target.value)}
+          autoCapitalize="characters"
+          autoComplete="off"
+          spellCheck={false}
+        />
       </div>
       <input
         className="input"

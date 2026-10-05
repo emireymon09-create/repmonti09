@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { listContainers, listDrawdowns, sendOpWith } from '@/lib/db'
 import type { PendingOp } from '@/lib/queue'
+import { suggestContainerLabel } from '@/lib/milk'
 import { adminClient, anonClient, seedTwoFamilies, type SeededFamily } from '../helpers/supabase'
 
 // El inventario de leche (0013) por el camino real: PostgREST + JWT de un padre,
@@ -219,6 +220,92 @@ describe.skipIf(!ready)('inventario de leche (0013) — necesita la migración a
       (await anon.rpc('void_bottle_feed', { p_feeding_id: randomUUID() })).error,
     ).not.toBeNull()
     expect((await anon.from('milk_containers').select('id')).error).not.toBeNull()
+  })
+})
+
+// Pedido del dueño (5 oct 2026): la cinta se puede elegir, aunque se salte la
+// secuencia. El servidor sigue siendo la autoridad: rechaza una cinta viva
+// repetida y un formato inválido, y deja reusar la de un contenedor anulado.
+// Familias propias, para no depender del orden de la suite de arriba.
+describe.skipIf(!ready)('cinta elegida (5 oct 2026) — necesita 0013', () => {
+  let f: SeededFamily
+  let done: () => Promise<void>
+  beforeAll(async () => {
+    ;({ a: f, cleanup: done } = await seedTwoFamilies('milk-tape'))
+  })
+  afterAll(async () => {
+    await done()
+  })
+  const liveLabels = async () =>
+    (await listContainers(f.babyId, f.client)).data.map((c) => c.label).sort()
+
+  it('una cinta elegida que se salta la secuencia se registra tal cual (M1 → M5)', async () => {
+    expect(await sendOpWith(f.client, pump(f, 30, null, 'M1').op, 'write')).toEqual({ error: null })
+    const m5 = pump(f, 20, 25, 'M5')
+    expect(await sendOpWith(f.client, m5.op, 'write')).toEqual({ error: null })
+    const { data } = await listContainers(f.babyId, f.client)
+    expect(data.map((c) => [c.label, c.amount_ml]).sort()).toEqual([
+      ['M1', 30],
+      ['M5', 45],
+    ])
+    // La sugerencia siguiente no rellena el hueco.
+    expect(suggestContainerLabel(data)).toBe('M6')
+  })
+
+  it('una cinta que tiene un contenedor vivo se rechaza con el código legible, sin renumerar', async () => {
+    const dup = pump(f, 10, null, 'M5')
+    expect((await sendOpWith(f.client, dup.op, 'write')).error).toBe('milk_label_taken:M5')
+    const { data: session } = await f.client.from('pumping_sessions').select('id').eq('id', dup.id)
+    expect(session).toEqual([])
+    expect(await liveLabels()).toEqual(['M1', 'M5'])
+  })
+
+  it('un formato inválido lo rechaza también el servidor', async () => {
+    for (const bad of ['M0', 'm6', 'X6', 'M 6']) {
+      expect((await sendOpWith(f.client, pump(f, 10, null, bad).op, 'write')).error, bad).toBe(
+        'milk_bad_input',
+      )
+    }
+    expect(await liveLabels()).toEqual(['M1', 'M5'])
+  })
+
+  it('la cinta de una extracción anulada se puede volver a usar', async () => {
+    const { data: m5 } = await f.client
+      .from('milk_containers')
+      .select('source_session_id')
+      .eq('baby_id', f.babyId)
+      .eq('label', 'M5')
+      .is('voided_at', null)
+      .single()
+    const { error: voidErr } = await f.client.rpc('void_pumping_session', {
+      p_id: m5!.source_session_id,
+    })
+    expect(voidErr).toBeNull()
+    expect(await liveLabels()).toEqual(['M1'])
+    const again = pump(f, 15, null, 'M5')
+    expect(await sendOpWith(f.client, again.op, 'write')).toEqual({ error: null })
+    const { data: all } = await adminClient()
+      .from('milk_containers')
+      .select('label, amount_ml, voided_at')
+      .eq('baby_id', f.babyId)
+      .eq('label', 'M5')
+    expect(all!.filter((c) => c.voided_at === null).map((c) => c.amount_ml)).toEqual([15])
+    expect(all!.filter((c) => c.voided_at !== null)).toHaveLength(1)
+  })
+
+  it('una sesión sin cantidad con una cinta escrita no falla y no crea contenedor', async () => {
+    // Incluso con una cinta repetida o inválida: sin leche no hay contenedor.
+    for (const label of ['M9', 'M1', 'basura']) {
+      const empty = pump(f, null, null, label)
+      expect(await sendOpWith(f.client, empty.op, 'write'), label).toEqual({ error: null })
+      const { data: row } = await f.client
+        .from('pumping_sessions')
+        .select('amount_ml')
+        .eq('id', empty.id)
+        .single()
+      expect(row).toEqual({ amount_ml: null })
+    }
+    expect(await liveLabels()).toEqual(['M1', 'M5'])
   })
 })
 

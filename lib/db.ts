@@ -23,7 +23,7 @@ import { createClient } from '@/lib/supabaseClient'
 import { formatVolume } from '@/lib/format'
 import {
   containerExpiresAt,
-  nextContainerLabel,
+  suggestContainerLabel,
   type BottleFeedArgs,
   type PumpingArgs,
 } from '@/lib/milk'
@@ -764,10 +764,10 @@ function totalOf(input: PumpingInput): number {
  * server will also compute (it recomputes it with the family's rules as
  * they are then — this one is what the screen shows until it syncs).
  */
-function newContainer(ctx: MilkContext, pumpedAt: string) {
+function newContainer(ctx: MilkContext, pumpedAt: string, label?: string) {
   return {
     id: newId(),
-    label: nextContainerLabel(ctx.containers.filter((c) => !c.voided_at).map((c) => c.label)),
+    label: label ?? suggestContainerLabel(ctx.containers),
     expires_at: containerExpiresAt(pumpedAt, 'fridge', ctx.rules),
   }
 }
@@ -777,16 +777,22 @@ function newContainer(ctx: MilkContext, pumpedAt: string) {
  * server fills a new container (M1, M2…) in the same transaction; with none,
  * it is a session and nothing else. Returns the container's label, so the
  * page can say which number to write on the tape.
+ *
+ * `label` is the tape the person chose (already normalized and checked by
+ * the page with `normalizeTapeLabel`/`tapeInUse`); without one it is the
+ * suggestion. The server still has the last word: a tape a live container
+ * holds comes back as `milk_label_taken:M#`, never renumbered.
  */
 export async function logPumpingSession(
   babyId: string,
   userId: string | null,
   input: PumpingInput,
   ctx: MilkContext,
+  label?: string,
 ): Promise<Result<{ label: string | null }>> {
   const id = newId()
   const total = totalOf(input)
-  const container = total > 0 ? newContainer(ctx, input.pumped_at) : null
+  const container = total > 0 ? newContainer(ctx, input.pumped_at, label) : null
   const args: PumpingArgs = {
     p_id: id,
     p_baby_id: babyId,
