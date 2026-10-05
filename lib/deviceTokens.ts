@@ -13,7 +13,13 @@ import { createHash, randomBytes } from 'node:crypto'
  * rápido alcanza y permite buscar por índice.
  */
 
-export const DEVICE_SCOPES = ['ingest', 'quick_nurse', 'push_check'] as const
+export const DEVICE_SCOPES = [
+  'ingest',
+  'quick_nurse',
+  'push_check',
+  'quick_diaper',
+  'read_status',
+] as const
 export type DeviceScope = (typeof DEVICE_SCOPES)[number]
 
 const PREFIX = 'amd_'

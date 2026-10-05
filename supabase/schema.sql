@@ -378,3 +378,12 @@ alter table device_tokens add constraint device_tokens_scopes_check
     cardinality(scopes) > 0
     and scopes <@ array['ingest', 'quick_nurse', 'push_check']::text[]
   );
+
+-- device_tokens suma quick_diaper y read_status (0013, pantalla del cambiador).
+alter table device_tokens drop constraint device_tokens_scopes_check;
+alter table device_tokens add constraint device_tokens_scopes_check
+  check (
+    cardinality(scopes) > 0
+    and scopes <@ array['ingest', 'quick_nurse', 'push_check',
+                        'quick_diaper', 'read_status']::text[]
+  );

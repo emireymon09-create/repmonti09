@@ -1,5 +1,13 @@
 # Propuesta — pantalla táctil del cambiador (ESP32)
 
+**Estado (5 oct 2026): §3–§5 IMPLEMENTADOS en la rama `changer-display-routes`
+(v0.12.0), a pedido de Emilio. Falta: revisión, `pnpm test:integration` contra el
+stack local, merge, y aplicar 0013 en la nube A MANO (§2.1).** El firmware (§7)
+vive en `AMELIA SOFTWARE/changer-display/` y la placa real es la ES3C28P
+(ESP32-S3, táctil capacitivo FT6336), no la CYD de la tabla de §7.
+
+Texto original de la propuesta:
+
 **Estado: PROPUESTA. Nada de esto está aplicado.** Emilio pidió el 5 oct 2026
 escribir el diseño antes de tocar código o schema (CLAUDE.md §5.2: un cambio de
 schema se propone primero). La migración de §3 va **sin numerar** a propósito.

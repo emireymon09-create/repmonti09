@@ -371,6 +371,11 @@ lib/viewportBoot.ts   Script inline del <head> (25 sep 2026): MIDE
                    `visualViewport.resize`. **No actualiza mientras hay un campo
                    con foco**: en Android Chrome el teclado achica `innerHeight`
                    y la barra treparía mientras se tipea. Ver design.md §5.20.
+lib/device/server.ts  SOLO server (5 oct 2026): las queries de la pantalla del
+                   cambiador — `logDiaper` (idempotente por id) y
+                   `readDeviceStatus`. Mismo motivo que lib/push/server.ts (§5.3).
+app/api/quick/diaper/route.ts  POST, scope `quick_diaper` (0013).
+app/api/quick/status/route.ts  GET, scope `read_status` (0013). Solo lectura.
 lib/deviceAuth.ts  Auth de los endpoints de dispositivo: token por hash + scope,
                    resolución del bebé dentro de la familia del token, techo de
                    intentos, validación de payload.

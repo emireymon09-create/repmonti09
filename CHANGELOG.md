@@ -4,6 +4,20 @@ Every version of Amelia, newest first. The current version is the `version`
 field in `package.json`; this file is the history. A test fails if the two
 disagree. Shown in the app under the settings gear → Version history.
 
+## [0.12.0] - 2026-10-05
+
+The touchscreen at the changing table can now talk to the app.
+
+- **Diapers can be logged from a device.** A small screen by the changing table
+  (or a Shortcut) can log a wet, dirty or both diaper with one tap, and it shows
+  up in History like any other entry. If the wifi drops in the middle and the
+  screen tries again, the diaper is still logged only once.
+- **A device can read what's going on.** The screen can ask what is running
+  right now, when the last feed ended, when the next one is due and when the
+  last diaper was, so it shows the same numbers as Today on the phone.
+- Each screen gets its own key that only allows what it needs, and it can be
+  switched off without touching anything else.
+
 ## [0.11.0] - 2026-10-04
 
 Editing moves to one place, so the screens you log from stay clean.
