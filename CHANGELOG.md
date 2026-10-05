@@ -4,6 +4,12 @@ Every version of Amelia, newest first. The current version is the `version`
 field in `package.json`; this file is the history. A test fails if the two
 disagree. Shown in the app under the settings gear → Version history.
 
+## [0.12.1] - 2026-10-05
+
+- **The changing-table screen can update itself.** Its new firmware is published here, and the
+  screen picks it up over WiFi within the hour, without being plugged into a computer. This
+  first one is a small test that the updates arrive.
+
 ## [0.12.0] - 2026-10-05
 
 The touchscreen at the changing table can now talk to the app.
