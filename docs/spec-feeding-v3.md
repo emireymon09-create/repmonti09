@@ -49,9 +49,11 @@ Estado de cada pieza: ver `docs/progreso-feeding-v3.md`.
 2. Cualquiera de los dos lados puede quedar vacío. Los dos vacíos es una
    sesión válida **sin cantidad** y sin contenedor.
 3. Si la sesión tiene cantidad, se crea en la **misma transacción** un
-   contenedor físico con etiqueta consecutiva **M1, M2, M3…** (la cinta del
-   biberón Medela): una más que la mayor etiqueta M que ya tenga el bebé.
-   Cantidad inicial = izquierda + derecha.
+   contenedor físico con etiqueta **M1, M2, M3…** (la cinta del biberón
+   Medela). El campo "Cinta" viene con la sugerida —una más que la mayor
+   etiqueta M viva del bebé— y **se puede cambiar**, aunque se salte la
+   secuencia (decisión del dueño, 5 oct 2026; ver S-5). Cantidad inicial =
+   izquierda + derecha.
 4. Se registra en vivo (cronómetro que sobrevive a recargar la página) o a
    mano con hora pasada.
 5. Se puede editar y anular. Al editar la cantidad, el contenedor la sigue,
@@ -159,12 +161,26 @@ Un rechazo del servidor es un error visible, nunca algo encolado en silencio.
   tiene inicio/fin. La hora de arranque se guarda en `localStorage` de ese
   dispositivo (sobrevive a recargar); el registro se crea al terminar, con la
   hora de inicio. El otro teléfono no ve el cronómetro corriendo.
-- **S-5 · La etiqueta M# la propone el dispositivo** (sin conexión tiene que
-  poder mostrarla para escribirla en la cinta) y el servidor la **verifica**:
-  si otro dispositivo ya usó esa etiqueta para el mismo bebé, la extracción se
-  **rechaza** con un mensaje legible en vez de renumerarla en silencio (la
-  cinta ya puede tener escrito el número). Es raro (dos extracciones sin
-  conexión a la vez) y es honesto.
+  **Aceptado por el dueño el 5 oct 2026.**
+- **S-5 · La cinta M# la elige la persona; el dispositivo la sugiere y el
+  servidor la verifica** (reescrito el 5 oct 2026 por decisión del dueño: "si
+  yo registro tales onzas en M5 y me salté la secuencia, lo registras;
+  trataremos de seguir el orden"). Los dos formularios de extracción de Leche
+  (terminar el cronómetro y registrar a mano) tienen un campo "Cinta"
+  prellenado con la sugerencia: una más que la mayor M de los contenedores
+  **vivos**, contando los que están en la cola sin conexión. Se acepta
+  cualquier número libre aunque salte la secuencia (M3 existe → M5 vale); la
+  sugerencia siguiente no rellena huecos (M1 + M5 → M6). Formato: M mayúscula
+  o minúscula y dígitos, normalizado (`m 5`, `M05` → `M5`); M0 o cualquier
+  otra cosa es inválido, con mensaje legible. Una cinta que tiene un
+  contenedor vivo se rechaza **antes de mandar** (también sin conexión, contra
+  lo que la página conoce, cola incluida) y, como autoridad, en el servidor
+  (`milk_label_taken:M#`, bajo un lock por bebé): **nunca se renumera en
+  silencio**, porque la cinta física ya puede estar escrita. Sin cantidad (los
+  dos lados vacíos) no hay contenedor y el campo se ignora: nunca bloquea el
+  registro. Al guardar, el campo vuelve a la sugerencia nueva y el aviso dice
+  qué número escribir. **No** se puede cambiar la cinta de una extracción ya
+  registrada (no se pidió; limitación anotada en el handoff).
 - **S-6 · Caducidad contra la hora de la toma.** Una porción es válida si la
   extracción no estaba caducada **a la hora en que se dio** (`fed_at`), no a
   la hora en que llega al servidor: una toma registrada sin conexión a las
@@ -224,29 +240,69 @@ Un rechazo del servidor es un error visible, nunca algo encolado en silencio.
 - **S-17 · Rechazado: "no servir leche antes de extraída"** (`stored_at <=
   fed_at`), propuesto por el plan. No lo pidió nadie y con dos teléfonos con
   relojes distintos rechazaría tomas reales. Se deja anotado.
+  **Aceptado por el dueño el 5 oct 2026** (el servidor no lo valida).
 - **S-19 · Cómo se validó 0013 sin aplicarla.** En un Postgres **efímero**
   (imagen de Supabase, sin puertos publicados, borrado al terminar), nunca en
   el stack local ni en la nube: primero dentro de una transacción con
   `ROLLBACK`, y la prueba de concurrencia (dos sesiones) en la base de ese
   mismo contenedor descartable. Es la lectura que respeta la prohibición (ningún
   entorno de la app tiene `0013`) sin entregar SQL sin correr.
-- **S-20 · La cinta de un contenedor anulado se puede volver a usar.** La
-  etiqueta siguiente es una más que la mayor de los contenedores **vivos**, y
-  el servidor solo rechaza una cinta que tenga un contenedor vivo. Si se anula
-  el M5 (una sesión cargada por error), la próxima vuelve a ser M5 — que es lo
-  que suele estar escrito en el biberón real. Señalado por el verificador de
-  reglas (M-1) y mantenido a propósito; está cubierto por el chequeo SQL "the
-  tape of a voided container can be used again".
+- **S-20 · La cinta de un contenedor anulado se puede volver a usar** (sin
+  cambios el 5 oct 2026; ahora también **eligiéndola** a mano). La sugerencia
+  es una más que la mayor de los contenedores **vivos**, y tanto la pantalla
+  como el servidor solo rechazan una cinta que tenga un contenedor vivo. Si se
+  anula el M5 (una sesión cargada por error), la sugerencia vuelve a bajar y se
+  puede escribir M5 otra vez — que es lo que suele estar escrito en el biberón
+  real. Cubierto por `tapeInUse`/`suggestContainerLabel` (unit) y por "la
+  cinta de una extracción anulada se puede volver a usar"
+  (`tests/integration/milk.test.ts`).
 - **S-21 · Las reglas de conservación viven en `babies`** (lo pide el pedido
   §4), así que técnicamente son "por bebé". Con un solo bebé por familia —
   el caso de esta app — es lo mismo que "de la familia": las ven y las cambian
   los dos padres, y no dependen del dispositivo. Señalado por el verificador
   (M-4); si algún día hay dos bebés, se mudan a `family_settings`.
+  **Aceptado por el dueño el 5 oct 2026.**
 - **S-22 · Una sesión anterior a 0013 recibe contenedor solo si se le
   escriben los lados a propósito.** Corregirle la hora o la nota no le toca el
   total (ni lo reparte 50/50, ni le crea contenedor); escribirle izquierda y
   derecha es decir "esta leche está en un biberón", y entonces sí nace su M#.
   La pantalla de edición lo avisa. Señalado por el auditor (#4).
+  **Aceptado por el dueño el 5 oct 2026.** El dueño además quiere poder
+  analizar tendencias por lado con esas sesiones: **hoy no existe y no se
+  construye** en este pase. Esa M# nueva sale de la sugerencia (el panel de
+  edición no tiene campo "Cinta": ver S-25).
+- **S-23 · Sin botón de biberón durante una lactancia en curso** (la fila
+  del biberón de Hoy no está mientras corre una toma de pecho, como antes de
+  esta rama). **Aceptado por el dueño el 5 oct 2026.**
+- **S-24 · Cinta: espacios y tope de dígitos** (5 oct 2026). El pedido dice
+  "sin espacios" y a la vez pide normalizar `m 5` → `M5`: gana el ejemplo
+  concreto, así que se aceptan espacios **alrededor** y **entre la M y el
+  número**, nunca dentro del número (`M 5 6` es inválido). Lo tipeado se
+  limita a **6 dígitos** después de quitar los ceros de adelante (`M999999`
+  vale, `M1000000` no): ninguna cinta real llega ahí y evita guardar números
+  absurdos. La sugerencia no pasa por ese tope (si alguien escribió M999999,
+  la siguiente sugerida, M1000000, se puede guardar sin tocar nada). Dígitos
+  no ASCII (`M٥`) son inválidos.
+- **S-25 · El panel de edición no tiene campo "Cinta"** (5 oct 2026). El
+  pedido nombra los dos formularios de **registro**, y prohíbe cambiar la
+  cinta de una extracción ya registrada. Cuando una edición le da cantidad a
+  una sesión que no tenía (o a una anterior a 0013), su contenedor nace con la
+  **sugerencia**, como antes. Lectura conservadora: no se agrega UI fuera de
+  lo pedido.
+- **S-26 · Lo que se tipeó en "Cinta" se conserva hasta guardar** (como los
+  demás campos del formulario): si alguien borra el campo, queda vacío y, con
+  cantidad, la pantalla pide el número ("Escribí el número de la cinta, por
+  ejemplo M6."). No hay botón para volver a la sugerencia: se escribe de
+  nuevo, o se recarga. Descartar el cronómetro sí devuelve el campo a la
+  sugerencia.
+- **S-27 · Choque en línea: "elegí otro número"** (5 oct 2026, hallazgo de
+  la revisión). Si al guardar **con conexión** el servidor contesta que otro
+  teléfono ya tiene esa cinta (la página no se relee sola), no se guardó nada:
+  se muestra "M6 ya lo tiene una extracción que sigue guardada. Elegí otro
+  número." y la página se relee para mover la sugerencia. El mensaje "Otro
+  teléfono ya usó la cinta… Borrá esta sesión" queda para el caso para el que
+  se escribió: una extracción **encolada** que choca al sincronizar (sigue con
+  "Descartar este registro").
 - **S-18 · Orden de despliegue.** La app nueva lee columnas de `0013`
   (`recentFeedings`, Leche, Ajustes): **`0013` tiene que estar aplicada en la
   nube antes de que esta rama llegue a `main`**. `currentBaby`,

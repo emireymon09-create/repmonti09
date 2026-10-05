@@ -255,3 +255,78 @@ rama `feat/milk-inventory-v3` limpia en `3fb9c27`, `main` =
    reutilizar tras anular, sesión sin cantidad con etiqueta escrita.
 5. Revisión independiente (código + reglas), verificación completa,
    navegador a–f, barrido de la pantalla Leche, documentos.
+
+### Estado por paso
+
+| Paso | Estado | Verificado con |
+|---|---|---|
+| Lógica pura + unit | Hecho (`ee6bdfa`) | `vitest run tests/unit/milk.test.ts` 64/64 (15 nuevas) |
+| Datos + UI + i18n + integración | Hecho (`393ade4`) | `tsc` limpio; `vitest run tests/integration/milk.test.ts` 14/14 contra 127.0.0.1 |
+| Arreglos de la revisión | Hecho (`d403718` + cierre) | recorrido y barrido repetidos sobre el código final |
+| Navegador a–h | Hecho | 35/35 (abajo) |
+| Barrido de Leche | Hecho | 40 combinaciones, 0 hallazgos |
+
+### Revisión independiente — hallazgos y resolución
+
+Tres subagentes con contexto limpio, solo lectura; ninguno escribió código.
+
+**Revisor de código** (sobre `ee6bdfa..393ade4`) — "sin bloqueantes, mergeable;
+arreglar el importante".
+
+| Sev. | Hallazgo | Resolución |
+|---|---|---|
+| IMPORTANTE | Guardando en línea con una sugerencia vieja (otro teléfono ya usó esa cinta; la página no se relee sola), el servidor rechaza y la pantalla mostraba "Otro teléfono ya usó la cinta… Borrá esta sesión", aunque no se guardó nada; y cada reintento mandaba la misma cinta | **Corregido**: ante `milk_label_taken` al guardar directo, "M6 ya lo tiene una extracción que sigue guardada. Elegí otro número." + relectura (S-27). Verificado en el navegador, paso (h) |
+| MENOR | `M999999` aceptado → la sugerencia `M1000000` la rechazaba el propio tope | **Corregido**: el tope de 6 dígitos solo para lo tipeado (S-24) |
+| MENOR | Justo después de guardar en línea el campo volvía a ofrecer la cinta recién usada hasta la relectura | **Corregido**: `justSaved` la cuenta como tomada hasta la próxima lectura buena |
+| MENOR | "bottle/biberón" en el mensaje: en la app biberón es una toma | **Corregido**: "container" / "extracción" |
+| MENOR | La cinta tipeada sobrevivía a "Descartar cronómetro" | **Corregido**: vuelve a la sugerencia |
+| MENOR | El caso de integración "sin cantidad" prueba la tolerancia del servidor, no la pantalla | **Corregido el nombre**; la pantalla lo cubre el recorrido (g). No hay tests de componentes en el repo |
+
+**Verificador de reglas** — reglas 1–5: **todas MET**. Confirmó que no se
+construyó editar la cinta de una registrada, renumerar ni tendencias, y que el
+camino de sincronización ("Otro teléfono ya usó la cinta…" + Descartar) sigue.
+
+| Sev. | Hallazgo | Resolución |
+|---|---|---|
+| IMPORTANTE (F1) | = el importante del revisor de código | **Corregido** |
+| MENOR (F2) | = la ventana justo después de guardar | **Corregido** |
+| MENOR (F3) | Un número de 7+ dígitos recibe el mismo mensaje de formato, que no explica el tope | **Aceptado**: ninguna cinta real llega ahí; el mensaje sigue siendo verdad ("por ejemplo M6") |
+| MENOR (F4) | Se aceptan espacios entre la M y el número aunque la regla dice "sin espacios" | **Aceptado a propósito**: el propio pedido normaliza `m 5` (S-24) |
+
+**Segunda vuelta** (sobre `d403718`) — los seis arreglos correctos; **0
+bloqueantes, 0 importantes**.
+
+| Sev. | Hallazgo | Resolución |
+|---|---|---|
+| MENOR | `justSaved` podía quedar trabado (relectura fallida y el otro teléfono anula esa extracción → esa cinta rechazada hasta recargar, contra S-20) | **Corregido**: se libera con cualquier lectura buena del servidor posterior al guardado |
+| MENOR | Borrar cualquier sesión liberaba `justSaved` | **Corregido**: esa línea se quitó (lo cubre la anterior) |
+| MENOR | Tras `milk_label_taken`, si la relectura fallaba la sugerencia volvía a ofrecer la misma cinta | **Corregido**: la cinta rechazada se marca como tomada enseguida |
+| MENOR | La sugerencia `M1000000` editada a mano pero igual se rechaza | **Aceptado**: inalcanzable en la práctica (haría falta haber escrito M999999); el mensaje lo dice |
+
+**Hallazgos bloqueantes abiertos al cierre: 0.**
+
+### Resultados
+
+- **Navegador** [VERIFICADO]: `pnpm build` + `pnpm start -p 3120` (solo
+  127.0.0.1), chrome-headless-shell por CDP a 390×844, inglés, familia
+  descartable borrada al final (0 familias, 0 contenedores). Pasos (a)
+  sugerencia tal cual, (b) `m 05` → M5 con M1, (c) repetir M5 / M0 / vacío,
+  (d) anular M5 y volver a usarlo, (h) otro teléfono toma M6 por detrás, (e)
+  cronómetro con M9, (f) sin conexión con M12 (enviado una sola vez), (g) sin
+  cantidad con basura en la cinta: **35/35**, cada uno contra la base. En la
+  primera corrida dieron FAIL dos aserciones **del script** (una medía la
+  sugerencia con el campo vaciado a mano en el paso anterior; otra contaba el
+  400 esperado de (h) como error de consola): se corrigieron las aserciones —
+  ahora se registra cada respuesta ≥ 400 con su URL y se exige que la única sea
+  `rpc/log_pumping_session` en (h)— no la app.
+- **Barrido de Leche** [VERIFICADO]: formulario a mano con el campo, error de
+  cinta a la vista, edición (sin el campo), cronómetro corriendo (el campo solo
+  en el formulario a mano), formulario del cronómetro con el campo × 390/1440 ×
+  claro/oscuro × EN/ES = **40, 0 hallazgos** (scroll horizontal, desborde por
+  elemento, placeholder cortado, targets < 44 px, consola). Repetido sobre el
+  código final: 40, 0 hallazgos.
+- Scripts y capturas en el scratchpad de la sesión, fuera del repo.
+- **Verificación final** [VERIFICADO], stack local en 127.0.0.1: `tsc
+  --noEmit` exit 0; `pnpm lint` sin advertencias; `pnpm format:check` limpio;
+  `pnpm build` compila; `pnpm test:all` 366/366 × 4 TZ + integración 120/120
+  (`milk.test.ts` 14/14).

@@ -128,8 +128,9 @@ export default function PumpingPage() {
   // The tape the person typed; null = untouched, so the field shows the
   // current suggestion (and follows it when the list changes).
   const [tape, setTape] = useState<string | null>(null)
-  // The tape just saved online, until the re-read brings its container: without
-  // it, the field would offer that same number again for a moment.
+  // A tape just taken online (saved here, or refused because another phone
+  // has it), until the next good read: without it, the field would offer that
+  // same number again for a moment.
   const [justSaved, setJustSaved] = useState<string | null>(null)
   const [at, setAt] = useState(() => toHouseholdInputValue(new Date()))
 
@@ -170,9 +171,6 @@ export default function PumpingPage() {
     setSessions(merged)
     const view = applyPendingInventory(rows.containers, rows.drawdowns, queued).containers
     setContainers(view)
-    setJustSaved((prev) =>
-      prev && view.some((c) => c.label === prev && !c.voided_at) ? null : prev,
-    )
   }, [])
 
   const refresh = useCallback(
@@ -203,6 +201,9 @@ export default function PumpingPage() {
         drawdowns: d,
       })
       setSeen(last.settle(rows, error))
+      // A good read made after the save has the real list (with that tape, or
+      // without it if another phone already voided it): the marker is done.
+      if (!error) setJustSaved(null)
       setLoadErr(error && !looksOffline(error) ? t('milk.couldNotLoad', { error }) : null)
       show(rows, queued)
     },
@@ -318,6 +319,8 @@ export default function PumpingPage() {
       // and re-read so the suggestion moves past it.
       const taken = /^milk_label_taken:(M[0-9]+)$/.exec(error)
       if (taken) {
+        // Counted as taken right away, even if the re-read fails on bad wifi.
+        setJustSaved(taken[1])
         setErr(t('milk.tapeInUse', { label: taken[1] }))
         refresh(baby.id)
         return
@@ -422,7 +425,6 @@ export default function PumpingPage() {
       return
     }
     if (editing?.id === row.id) setEditing(null)
-    setJustSaved(null)
     setSaved(queued ? t('common.queued') : t('common.deleted'))
     refresh(baby.id)
     reloadPending()

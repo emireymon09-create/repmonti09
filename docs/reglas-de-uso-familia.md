@@ -13,11 +13,24 @@ leche va a un biberón y la app le da un número: **M1**, **M2**, **M3**… El
 número es el que se escribe en la cinta del biberón Medela, para saber cuál es
 cuál en el refrigerador.
 
-- El número lo elige la app: siempre uno más que el último biberón que hay
-  guardado. Al registrar, la app avisa cuál escribir, por ejemplo: "Sesión
-  registrada — escribí M3 en la cinta."
-- Si un biberón se borró por error, su número puede volver a usarse para el
-  siguiente.
+- Al registrar, el campo **"Cinta"** ya trae un número propuesto: uno más que
+  el número más alto de los biberones que hay guardados. Lo normal es no
+  tocarlo.
+- **Se puede cambiar.** Si en la cinta ya se escribió otro número (por
+  ejemplo M5, aunque el último fue M3), se escribe ese en el campo y la app lo
+  registra tal cual. Se puede escribir con mayúscula o minúscula y con o sin
+  espacio: "m5", "M 5" y "M05" quedan como **M5**. Igual, conviene seguir el
+  orden.
+- El número tiene que ser una M seguida de un número desde 1. Si no, la app
+  avisa: "La cinta es una M y un número desde 1, por ejemplo M6." Si el campo
+  quedó vacío: "Escribí el número de la cinta, por ejemplo M6."
+- **Dos biberones guardados no pueden tener el mismo número.** Si el número ya
+  lo tiene un biberón que sigue guardado, la app no registra nada y avisa:
+  "M5 ya lo tiene una extracción que sigue guardada. Elegí otro número." Nunca
+  le cambia el número por su cuenta, porque la cinta ya puede estar escrita.
+- Al registrar, la app recuerda cuál escribir, por ejemplo: "Sesión registrada
+  — escribí M3 en la cinta." Después el campo vuelve a proponer el siguiente.
+- Si un biberón se borró por error, su número puede volver a usarse.
 
 ## 2. Cómo se registra una extracción
 
@@ -29,14 +42,15 @@ Todo se hace en la pantalla **"Leche"**.
 2. El cronómetro sigue corriendo aunque se cierre o se recargue la página en
    ese mismo teléfono. El otro teléfono no lo ve.
 3. Al terminar, tocar **"Terminar y registrar"**, escribir cuánto salió de cada
-   lado y tocar **"Registrar sesión"**. La hora que queda guardada es la hora
-   en que se empezó.
+   lado, revisar el número en **"Cinta"** (cambiarlo solo si en la cinta se
+   escribió otro) y tocar **"Registrar sesión"**. La hora que queda guardada
+   es la hora en que se empezó.
 4. Si se empezó sin querer: **"Descartar cronómetro"** lo apaga sin guardar
    nada.
 
 **A mano (si ya pasó):** en "Registrar una extracción", escribir las
-cantidades, elegir la hora en "Cuándo (si no la cambiás, ahora)" y tocar
-**"Registrar sesión"**.
+cantidades, revisar el número en **"Cinta"**, elegir la hora en "Cuándo (si no
+la cambiás, ahora)" y tocar **"Registrar sesión"**.
 
 **Izquierdo y derecho, siempre por separado.** Hay un campo "Izquierdo" y uno
 "Derecho". La app nunca reparte un total a la mitad: guarda lo que se escribe
@@ -44,7 +58,8 @@ en cada uno, y el biberón queda con la suma.
 
 - Si un lado no dio nada, se deja **vacío**.
 - Si se dejan **los dos vacíos**, la sesión igual queda registrada (sirve para
-  saber que se extrajo), pero **no recibe número** y no suma leche.
+  saber que se extrajo), pero **no recibe número** y no suma leche. En ese
+  caso lo que diga "Cinta" no importa: no impide registrar.
 - Las cantidades se escriben en onzas. Al lado de los campos hay un selector
   **oz / ml** por si el biberón se midió en mililitros; vuelve solo a onzas
   después de cada registro.
@@ -190,8 +205,10 @@ queda registrada. Si a la segunda ya no le alcanza, la app le avisa: "A M3 no
 le queda tanta leche — puede que alguien acabe de servir de ahí. Elegí de
 nuevo." y esa persona vuelve a elegir.
 
-**Dos extracciones sin internet a la vez:** si los dos teléfonos pusieron el
-mismo número (por ejemplo M5), al volver la conexión el segundo recibe:
+**El número de la cinta, con dos teléfonos:** sin internet, cada teléfono solo
+sabe de los biberones que ya conocía y de los que registró él mismo. Si los dos
+teléfonos pusieron el mismo número (por ejemplo M5), al volver la conexión el
+segundo recibe:
 "Otro teléfono ya usó la cinta M5. Borrá esta sesión y registrala de nuevo para
 que tenga otro número."
 
@@ -206,8 +223,11 @@ decida.
   usada (lo habitual es descartar lo que sobra). Si se sirvió de más, esa
   diferencia ya no aparece en "Lo que hay".
 - **Toda la leche está en el refrigerador**, con su regla de días.
-- **El número de cada biberón lo pone la app**; conviene escribirlo en la cinta
-  apenas se registra.
+- **El número de cada biberón lo propone la app** y se puede cambiar al
+  registrar; conviene que coincida con lo que dice la cinta. Una vez
+  registrado, **ya no se puede cambiar**: para corregirlo hay que borrar la
+  extracción y registrarla de nuevo, y eso no se puede si ya se dio leche de
+  ella.
 
 ## 13. Preguntas frecuentes
 
@@ -227,6 +247,19 @@ que se hizo después de esa hora, no aparece en la lista.
 
 **Me equivoqué en lo que tenía un biberón.** Borrarlo (la leche vuelve) y
 registrarlo de nuevo.
+
+**Me salté un número de cinta.** No pasa nada. Si el último biberón fue M3 y en
+la cinta se escribió M5, se escribe M5 en "Cinta" al registrar y queda M5. El
+siguiente que propone la app es M6 (no vuelve atrás a llenar M4); si se quiere
+usar M4 igual, se escribe a mano. Lo único que no se puede es repetir el número
+de un biberón que sigue guardado: la app avisa "M5 ya lo tiene una extracción
+que sigue guardada. Elegí otro número." y no registra nada hasta que se cambie.
+
+**Me equivoqué de número de cinta y ya registré.** El número no se puede
+cambiar después. Si todavía no se dio leche de ese biberón, se borra la
+extracción y se registra de nuevo con el número correcto. Si ya se dio leche,
+hay que dejarlo así (o primero borrar esos biberones dados, que devuelven la
+leche, y después corregir la extracción).
 
 **Una extracción dice "Caducada — no cuenta".** Ya pasó su fecha límite: no
 suma ni se ofrece. Si se tira esa leche, se puede borrar la extracción, siempre

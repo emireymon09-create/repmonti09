@@ -7,10 +7,10 @@ describe lo implementado, con dónde vive cada cosa y su estado:
 **[VERIFICADO]** = con un comando o una prueba que se corrió (citada);
 **[NO VERIFICADO]** = escrito pero no ejercitado en este pase.
 
-> **Ningún entorno tiene `0013` aplicada** — ni el stack local ni la nube.
-> Todo lo que depende de la base se probó en un Postgres efímero y descartable
-> (`docs/progreso-feeding-v3.md`). Antes de desplegar hay que aplicarla a mano
-> en la nube (`docs/handoff-2026-10-04.md`).
+> **`0013` está aplicada solo en el stack local** (desde el 4 oct 2026,
+> `docs/handoff-2026-10-04.md` §2.1); **en la nube, no**. Antes de desplegar
+> hay que aplicarla a mano allá. *(Hasta el 5 oct este recuadro decía que
+> ningún entorno la tenía: había quedado viejo.)*
 
 ---
 
@@ -35,11 +35,42 @@ describe lo implementado, con dónde vive cada cosa y su estado:
   [VERIFICADO: chequeos SQL "session total = left + right" y "session without
   amount: valid, no container"]
 - Con cantidad, `log_pumping_session` crea en la **misma transacción** un
-  contenedor con la cinta que propuso el dispositivo (`nextContainerLabel`:
-  una más que la mayor M viva del bebé). Si otro dispositivo ya usó esa cinta,
-  se **rechaza** (`milk_label_taken:M#`) en vez de renumerar: la cinta ya
-  puede estar escrita. [VERIFICADO: SQL `milk_label_taken:M2`; unit
-  `nextContainerLabel`]
+  contenedor con la cinta **que eligió la persona** (5 oct 2026, decisión del
+  dueño; spec S-5):
+  - Los dos formularios de Leche (terminar el cronómetro y registrar a mano)
+    tienen el campo **"Cinta"**, prellenado con la sugerencia
+    (`suggestContainerLabel`: una más que la mayor M de los contenedores
+    vivos, **cola incluida**; no rellena huecos: M1 + M5 → M6). El caso normal
+    es no tocarlo. [VERIFICADO: unit; navegador (a), (b), (f)]
+  - Se puede saltar la secuencia (M1 existe → M5 vale). Lo tipeado se
+    normaliza con `normalizeTapeLabel` (`m 5`, `M05` → `M5`; hasta 6 dígitos);
+    M0 u otro formato da "La cinta es una M y un número desde 1, por ejemplo
+    M6." sin llegar al servidor; vacío con cantidad, "Escribí el número de la
+    cinta…". [VERIFICADO: unit; navegador (b), (c)]
+  - Una cinta con contenedor **vivo** (también uno encolado) se rechaza en la
+    pantalla con "M5 ya lo tiene una extracción que sigue guardada. Elegí otro
+    número." (`tapeInUse`), y el servidor la rechaza igual
+    (`milk_label_taken:M#`, lock por bebé + índice único parcial): **nunca se
+    renumera**. Si el choque lo detecta el servidor al guardar en línea (otro
+    teléfono la usó y la página no se había releído), se muestra el mismo
+    "Elegí otro número" y la página se relee (S-27). [VERIFICADO: unit;
+    integración; navegador (c), (h)]
+  - La cinta de un contenedor **anulado** se puede volver a usar (S-20).
+    [VERIFICADO: unit, integración, navegador (d)]
+  - Sin cantidad (los dos lados vacíos) el campo se ignora: no hay
+    contenedor y nunca bloquea, aunque tenga basura. [VERIFICADO: integración
+    (tolerancia del servidor); navegador (g)]
+  - Al guardar, el campo vuelve a la sugerencia nueva — la cinta recién
+    guardada ya cuenta aunque la relectura no haya llegado — y el aviso dice
+    qué escribir: "Sesión registrada — escribí M5 en la cinta."
+    [VERIFICADO: navegador (a), (b)]
+  - El servidor no cambió: ya validaba `^M[1-9][0-9]*$` (`milk_bad_input`) y
+    la cinta viva repetida; `0013` **no se tocó** en este pase.
+  - **No se puede cambiar la cinta de una extracción ya registrada** (no se
+    pidió): la salida es borrarla y registrarla de nuevo, que no se puede si ya
+    se sirvió leche de ella. El panel de edición no tiene campo "Cinta"; si una
+    edición le da cantidad a una sesión sin contenedor, nace con la sugerencia
+    (S-25).
 - **En vivo**: la hora de arranque se guarda en `localStorage`
   (`amelia:pump-start:<bebé>`) de ese dispositivo y sobrevive a recargar; al
   terminar se registra con esa hora. El otro teléfono no ve el cronómetro.
@@ -187,6 +218,12 @@ NO VERIFICADO con extracciones reales — ver §8]
   encola. [VERIFICADO: unit]
 
 ## 8. Lo que NO se verificó
+
+*(Actualizado el 5 oct 2026: desde el pase de verificación local del 4 oct
+—`docs/handoff-2026-10-04.md` §2.1— 0013 está aplicada en el stack local,
+la integración corre y las pantallas se recorrieron con datos reales. Lo de
+abajo es la lista original del 4 oct; para el estado vigente manda el
+handoff §3.)*
 
 - **Las pantallas con datos reales de leche** (Leche, el panel con
   extracciones, `/feeding`, Historial, Ajustes): necesitan 0013 en la base, y
