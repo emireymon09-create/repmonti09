@@ -19,6 +19,9 @@ Editing moves to one place, so the screens you log from stay clean.
 - **Milk is just for logging and looking.** The session list there no longer has
   Edit and Delete beside every entry; the corner button on the list goes
   straight to History, where they live now.
+- **A plan for a small touchscreen at the changing table is written down.** It
+  would start and stop nursing and log diapers with one tap, and show what is
+  running. Nothing is built yet: the plan is there to be agreed on first.
 
 ## [0.10.7] - 2026-09-25
 
