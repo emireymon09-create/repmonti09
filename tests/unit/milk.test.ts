@@ -8,6 +8,9 @@ import {
   isInventoryBottleFeed,
   isUsable,
   nextContainerLabel,
+  normalizeTapeLabel,
+  suggestContainerLabel,
+  tapeInUse,
   keepMl,
   ozText,
   parseAmountMl,
@@ -227,6 +230,103 @@ describe('nextContainerLabel', () => {
   })
   it('ignores nulls and anything that is not an M label', () => {
     expect(nextContainerLabel([null, undefined, 'X7', 'M', 'M0x', 'M4'])).toBe('M5')
+  })
+})
+
+// ------------------------------------------------- cinta elegida (5 oct 2026)
+
+describe('normalizeTapeLabel', () => {
+  it('accepts M and digits in either case, with spaces around or after the M', () => {
+    expect(normalizeTapeLabel('m5')).toEqual({ ok: true, label: 'M5' })
+    expect(normalizeTapeLabel('M 5')).toEqual({ ok: true, label: 'M5' })
+    expect(normalizeTapeLabel('m 5')).toEqual({ ok: true, label: 'M5' })
+    expect(normalizeTapeLabel(' M5')).toEqual({ ok: true, label: 'M5' })
+    expect(normalizeTapeLabel('M5 ')).toEqual({ ok: true, label: 'M5' })
+    expect(normalizeTapeLabel('M12')).toEqual({ ok: true, label: 'M12' })
+  })
+  it('drops leading zeros, so the tape matches what the server stores', () => {
+    expect(normalizeTapeLabel('M05')).toEqual({ ok: true, label: 'M5' })
+    expect(normalizeTapeLabel('m007')).toEqual({ ok: true, label: 'M7' })
+    expect(normalizeTapeLabel('M10')).toEqual({ ok: true, label: 'M10' })
+  })
+  it('an empty field is its own problem, so the screen can say what is missing', () => {
+    expect(normalizeTapeLabel('')).toEqual({ ok: false, problem: 'empty' })
+    expect(normalizeTapeLabel('   ')).toEqual({ ok: false, problem: 'empty' })
+  })
+  it('refuses M0 and anything that is not M followed by digits', () => {
+    for (const bad of [
+      'M0',
+      'M00',
+      'X5',
+      'M',
+      'M-5',
+      '5',
+      'M5a',
+      'MM5',
+      'M 5 6',
+      'M5.5',
+      'M\u0665',
+    ]) {
+      expect(normalizeTapeLabel(bad), bad).toEqual({ ok: false, problem: 'format' })
+    }
+  })
+  it('refuses absurdly long numbers instead of storing them', () => {
+    expect(normalizeTapeLabel('M999999')).toEqual({ ok: true, label: 'M999999' })
+    expect(normalizeTapeLabel('M1000000')).toEqual({ ok: false, problem: 'format' })
+  })
+  it('every accepted label passes the same pattern the server checks', () => {
+    for (const ok of ['m5', 'M 05', ' m12 ', 'M999999']) {
+      const r = normalizeTapeLabel(ok)
+      expect(r.ok && /^M[1-9][0-9]*$/.test(r.label), ok).toBe(true)
+    }
+  })
+})
+
+describe('suggestContainerLabel', () => {
+  it('with a gap (M1 and M5) suggests M6, never the hole', () => {
+    expect(suggestContainerLabel([container('M1', 1), container('M5', 1)])).toBe('M6')
+  })
+  it('voided containers do not count', () => {
+    const voided = { voided_at: new Date(NOW).toISOString() }
+    expect(suggestContainerLabel([container('M1', 1), container('M5', 1, voided)])).toBe('M2')
+    expect(suggestContainerLabel([container('M3', 1, voided)])).toBe('M1')
+  })
+  it('an empty or expired container still holds its tape', () => {
+    const expired = { expires_at: new Date(NOW - DAY).toISOString() }
+    expect(suggestContainerLabel([container('M2', 0), container('M4', 1, expired)])).toBe('M5')
+  })
+  it('a queued (offline) container counts as soon as it is in the view', () => {
+    const { containers } = applyPendingInventory(
+      [container('M1', 1)],
+      [],
+      [queued(logPumpingOp(pumpingArgs('s-M5', 30, null, 'M5')))],
+    )
+    expect(suggestContainerLabel(containers)).toBe('M6')
+  })
+})
+
+describe('tapeInUse', () => {
+  const voided = { voided_at: new Date(NOW).toISOString() }
+  it('a tape on a live container is in use', () => {
+    expect(tapeInUse('M5', [container('M1', 1), container('M5', 1)])).toBe(true)
+  })
+  it('a live container with nothing left still holds its tape', () => {
+    expect(tapeInUse('M5', [container('M5', 0)])).toBe(true)
+  })
+  it('the tape of a voided container can be used again (S-20)', () => {
+    expect(tapeInUse('M5', [container('M1', 1), container('M5', 1, voided)])).toBe(false)
+  })
+  it('a free number above or in a gap is not in use', () => {
+    expect(tapeInUse('M3', [container('M1', 1), container('M5', 1)])).toBe(false)
+  })
+  it('a queued container with a chosen tape is in use right away', () => {
+    const { containers } = applyPendingInventory(
+      [container('M1', 1)],
+      [],
+      [queued(logPumpingOp(pumpingArgs('s-M5', 30, 20, 'M5')))],
+    )
+    expect(tapeInUse('M5', containers)).toBe(true)
+    expect(containers.find((c) => c.label === 'M5')).toMatchObject({ amount_ml: 50, pending: true })
   })
 })
 

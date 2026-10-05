@@ -216,3 +216,42 @@ Un subagente nuevo, contexto limpio, solo lectura, sobre el diff de
 | MENOR | El `margin-bottom` de un `<label>` inline no hace nada; ya pasaba con `pump-at` | Aceptado, no es nuevo |
 
 **Hallazgos bloqueantes abiertos al cierre: 0.**
+
+## Pase "cinta elegible" (5 oct 2026)
+
+Decisión del dueño (5 oct 2026): "si yo registro tales onzas en M5 y me salté
+la secuencia, lo registras; trataremos de seguir el orden." Al empezar:
+rama `feat/milk-inventory-v3` limpia en `3fb9c27`, `main` =
+`9824e26812b80f23d7aa94a122c722ede15046e0` [VERIFICADO, `git rev-parse main`].
+
+### Lo que encontró la exploración (subagente de solo lectura)
+
+- La etiqueta se calcula en un solo lugar: `newContainer` (`lib/db.ts`) con
+  `nextContainerLabel` sobre los contenedores vivos que la página conoce
+  (cola incluida, vía `applyPendingInventory`). Ningún campo deja tipearla.
+- El servidor **ya** es la autoridad completa sobre la etiqueta:
+  `milk_create_container` rechaza un formato fuera de `^M[1-9][0-9]*$`
+  (`milk_bad_input`) y una cinta con contenedor vivo (`milk_label_taken:M#`),
+  bajo un lock por bebé; el índice único parcial lo respalda. Una cinta de un
+  contenedor anulado se acepta (S-20). **Conclusión: 0013 no cambia.**
+- `update_pumping_session` nunca cambia la etiqueta de un contenedor existente
+  (y la guarda impide escribirla por fuera): no se puede renumerar, que es lo
+  que el dueño tampoco pide.
+
+### Plan
+
+1. `lib/milk.ts`: `normalizeTapeLabel` (normaliza y devuelve la etiqueta o un
+   motivo tipado `empty` | `format`), `suggestContainerLabel` (sobre los vivos,
+   reusa `nextContainerLabel`) y `tapeInUse`. Tests unitarios.
+2. `lib/db.ts`: `logPumpingSession` acepta la etiqueta elegida; sin ella usa la
+   sugerencia, como hasta hoy. La cola no cambia (la etiqueta ya viaja en
+   `p_container_label`, y `applyPendingInventory` ya la usa).
+3. `app/pumping/page.tsx`: campo "Cinta" dentro del bloque de cantidades que
+   comparten los dos formularios (cronómetro y a mano), prellenado con la
+   sugerencia; validación de formato y de cinta viva antes de guardar; con los
+   dos lados vacíos se ignora; tras guardar vuelve a la sugerencia nueva.
+   i18n EN + ES.
+4. `tests/integration/milk.test.ts`: saltar la secuencia, choque con viva,
+   reutilizar tras anular, sesión sin cantidad con etiqueta escrita.
+5. Revisión independiente (código + reglas), verificación completa,
+   navegador a–f, barrido de la pantalla Leche, documentos.

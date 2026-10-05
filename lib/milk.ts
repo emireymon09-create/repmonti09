@@ -138,6 +138,45 @@ export function nextContainerLabel(labels: (string | null | undefined)[]): strin
   return `M${highest + 1}`
 }
 
+/** The tapes that are taken: those of the containers that are not voided. */
+function liveLabels(containers: MilkContainer[]): string[] {
+  return containers.filter((c) => !c.voided_at).map((c) => c.label)
+}
+
+/** What the tape field starts with: the next number after the live ones. */
+export function suggestContainerLabel(containers: MilkContainer[]): string {
+  return nextContainerLabel(liveLabels(containers))
+}
+
+/**
+ * A tape someone typed (5 oct 2026: they can skip ahead — "if I wrote M5 and
+ * skipped the sequence, log it"). Upper or lower case M, spaces around or
+ * after it, leading zeros dropped: `m 5`, `M05` → `M5`. M0, anything else,
+ * or more than six digits is a `format` problem; nothing at all is `empty`.
+ * Every label it accepts matches the server's `^M[1-9][0-9]*$`.
+ */
+export type TapeCheck = { ok: true; label: string } | { ok: false; problem: 'empty' | 'format' }
+
+const TAPE_MAX_DIGITS = 6
+
+export function normalizeTapeLabel(text: string): TapeCheck {
+  const trimmed = text.trim()
+  if (!trimmed) return { ok: false, problem: 'empty' }
+  const match = /^[Mm]\s*([0-9]+)$/.exec(trimmed)
+  const digits = match?.[1].replace(/^0+/, '') ?? ''
+  if (!digits || digits.length > TAPE_MAX_DIGITS) return { ok: false, problem: 'format' }
+  return { ok: true, label: `M${digits}` }
+}
+
+/**
+ * A live container (queued ones included) already has this tape. The server
+ * refuses it too (`milk_label_taken`); checking here says so before sending,
+ * and offline. A voided container's tape is free again (S-20).
+ */
+export function tapeInUse(label: string, containers: MilkContainer[]): boolean {
+  return liveLabels(containers).includes(label)
+}
+
 /** Breast milk left in usable containers, in ml. The page shows it in oz. */
 export function stashMl(containers: MilkContainer[], atMs: number): number {
   return usableContainers(containers, atMs).reduce((sum, c) => sum + c.remaining_ml, 0)
