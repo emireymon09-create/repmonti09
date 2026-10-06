@@ -26,7 +26,7 @@ Ninguna rama remota tiene una migración 0015: se usa `0015_milk_phase1_2.sql`.
 | H2 migración 0015 + lógica pura | hecho | ver `git log` |
 | H3 capa de datos y cola | hecho | ver `git log` |
 | H4 interfaz | hecho | ver `git log` |
-| H5 QA | pendiente | |
+| H5 QA | hecho (navegador); compatibilidad y reversa en H5b/H7 | ver `git log` |
 | H6 auditorías | pendiente | |
 | H7 documentos y runbook | pendiente | |
 
@@ -119,3 +119,49 @@ subagentes a la vez (1 si hay build/integración/navegador); vitest
   `app/ components/ lib/` contra v3-release: 0 líneas.
 - Pendiente para QA: recorrido en navegador, barrido 390/1440, selector con
   N=30 en español a 390 px, duración del banner de "leche que no volvió".
+
+## H5 — QA en navegador [VERIFICADO]
+
+Build de producción en 127.0.0.1:3151, chrome-headless-shell por CDP 390×844,
+familias descartables `qa-v4-*` (43, borradas: conteo 0 en todas las tablas),
+reloj del teléfono sobrescrito y marcas de tiempo de la base corridas para
+vencer leche. Cada aserción con contraste SQL e invariante INV en 0 filas tras
+cada escenario. Scripts fuera del repo:
+`/tmp/claude-1001/-home-claude-proyectos-amelia-app/95ebf723-c290-4b71-8fd4-cd01c554691d/scratchpad/qa/`
+(`lib.mjs`, `e_*.mjs`, `cleanup.mjs`, `results.json`; reanudables).
+
+| Escenario | Aserciones |
+|---|---|
+| E-Ana (ES) | 55/55 |
+| E-Vence (EN; desechar, Ajustes e Historial también ES) | 43/43 |
+| E-Luis (ES) | 28/28 |
+| E-Corregir (EN) | 38/38 |
+| Recorridos cortos en el otro idioma | 14/14 |
+| Sin red y dos celulares (A en ES, B en EN) | 53/53 |
+| Regresión Hoy/Historial (6 tipos)/Crecimiento/Médico/Ajustes | 21/21 |
+| `/api/quick/*` (cambiador) con token de prueba | 7/7 |
+| Barrido de layout 80 combinaciones + N=30 ES 390 px | 3/3 |
+| Intentar romperlo | 15/15 |
+| E-50 2000 contenedores | 6/6 |
+| **Total** | **283/283, 0 FAIL** |
+
+Defectos de v4, corregidos con prueba que falla primero:
+- **QA-1 (grave):** `/feeding` → Registrar uno pasado → Biberón: `BottleBuilder`
+  y `LeftoverField` con la misma `key` → el DOM crecía sin parar. Corrección:
+  key distinta. Prueba `tests/unit/jsxKeys.test.ts`: el director la corrió con
+  el `SectionPage.tsx` sin corregir → `1 failed` (`SectionPage.tsx:949
+  key={pPlanKey} ×2`); con la corrección → pasa.
+- **QA-2 (menor):** el aviso de leche que no volvió (D-9) duraba 2,5 s.
+  `lib/flash.ts` (`flashMs`) lo alarga según el largo del texto (7,9 s medido).
+  Prueba `tests/unit/flash.test.ts`.
+
+Defecto que ya estaba en v0.12.1 (no se tocó): la hora por defecto de
+`/pumping` es la de abrir la página o del último guardado, no la de enviar
+(`0cbe798:app/pumping/page.tsx:38,92`). En v4 eso adelanta la caducidad (lado
+seguro) y puede alterar el orden "más vieja primero".
+
+Verificación del director tras QA: `tsc`/`lint`/`format:check`/`build` OK,
+unitarias **542/542** ×4 TZ, integración **293/293**.
+
+NO VERIFICADO: iPhone/WebKit, PWA instalada, red real; tope `max_rows` de la
+nube.

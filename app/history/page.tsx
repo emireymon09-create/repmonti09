@@ -49,6 +49,7 @@ import {
 } from '@/lib/milkBottles'
 import type { MessageKey } from '@/lib/i18n'
 import { useSync } from '@/lib/useSync'
+import { flashMs } from '@/lib/flash'
 import { useT } from '@/lib/i18n/react'
 import { useReturnFocus } from '@/lib/useReturnFocus'
 import type { Lang } from '@/lib/i18n'
@@ -251,7 +252,8 @@ export default function HistoryPage() {
   function confirm(message: string) {
     setFlash(message)
     if (flashTimer.current) clearTimeout(flashTimer.current)
-    flashTimer.current = setTimeout(() => setFlash(null), 2500)
+    // Long enough to read when it says milk didn't go back (D-9, lib/flash.ts).
+    flashTimer.current = setTimeout(() => setFlash(null), flashMs(message))
   }
 
   // Queued writes are folded in, so an entry added, corrected or deleted

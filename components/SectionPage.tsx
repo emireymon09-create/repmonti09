@@ -77,6 +77,7 @@ import {
   type PastRangeProblem,
 } from '@/lib/kpis'
 import { useSync } from '@/lib/useSync'
+import { flashMs } from '@/lib/flash'
 import { BottleBuilder, type BottleValue } from '@/components/BottleBuilder'
 import { BottleEditPanel, legacyBottleLine, notReturnedLines } from '@/components/BottleEditPanel'
 import { LeftoverField, type LeftoverValue } from '@/components/LeftoverField'
@@ -379,7 +380,8 @@ export function SectionPage({ section }: { section: Section }) {
   function confirm(message: string) {
     setFlash(message)
     if (flashTimer.current) clearTimeout(flashTimer.current)
-    flashTimer.current = setTimeout(() => setFlash(null), 2500)
+    // Long enough to read when it says milk didn't go back (D-9, lib/flash.ts).
+    flashTimer.current = setTimeout(() => setFlash(null), flashMs(message))
   }
 
   // Same as /history: queued writes are folded in and marked; a failed read
@@ -1000,7 +1002,10 @@ export function SectionPage({ section }: { section: Section }) {
             )}
             {section === 'feeding' && pKind === 'bottle' && (
               <LeftoverField
-                key={pPlanKey}
+                // Its own key: the same one as the BottleBuilder (a sibling)
+                // left orphan builders in the DOM on every render (QA H5,
+                // tests/unit/jsxKeys.test.ts).
+                key={`leftover-${pPlanKey}`}
                 id="past-bottle-leftover"
                 disabled={busy}
                 onChange={setPLeftover}

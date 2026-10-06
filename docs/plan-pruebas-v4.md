@@ -280,11 +280,20 @@ otra cosa, **INV = 0 filas al final**.
 | C-20 | cola v4 inyectada en v3 con la base en 0015 | `discard_container` y `edit_bottle_feed` se aplican | ARQ §9.2 | | |
 | C-21 | cola v4 inyectada en v3 con la base revertida | `PGRST202` → Descartar, nada escrito | ARQ §9.2 | | |
 | C-22 | v4 edita/borra lo de v0.12.1 (toma legada 2→2,5 oz + sobró; nota de extracción legada; borrar ambos) | entra; inventario igual | compat B6, D-11b | | |
-| C-23 | v4 da cantidad (lados) a una extracción legada eligiendo M2 | nace M2 ocupado | AJ-5, S-22 | | |
+| C-23 | v4 da cantidad (lados) a una extracción legada eligiendo M2 | nace M2 ocupado | AJ-5, S-22 | PASS | `e_corregir.mjs` E-38: extracción legada + izq 1 oz + M1 → nace M1 ocupado 29.5735 |
 | C-24 | `notify pgrst` tras 0015: RPC nueva 404 → 200 | medido en local; nube NO VERIFICADO | compat §3.3 | | |
-| C-25 | `/api/quick/*` y `/api/ingest` con 0015 | sin cambios (no escriben leche) | §1 compat | | |
+| C-25 | `/api/quick/*` y `/api/ingest` con 0015 | sin cambios (no escriben leche) | §1 compat | PASS | `e_regresion.mjs` E-Reg-quick-api: `/api/quick/nurse` ×2, `/api/quick/diaper`, `/api/quick/status` → 200; sin token 401; contenedores iguales |
 
 ## 4. Usuario real en navegador (E)
+
+> **QA H5 (6 oct 2026)** — evidencia de la sesión: scripts en el scratchpad de
+> la sesión de QA (`qa/e_*.mjs`, resultados en `qa/results.json`), fuera del
+> repo; build de producción en `127.0.0.1:3151`, chrome-headless-shell por
+> Playwright, familias `qa-v4-*` borradas al final. Defectos: **QA-1**
+> (`/feeding` → «Registrar uno pasado» → Biberón: dos hermanos con la misma
+> `key`, el DOM crecía sin parar; prueba `tests/unit/jsxKeys.test.ts`) y
+> **QA-2** (el aviso de D-9 duraba 2,5 s; prueba `tests/unit/flash.test.ts`),
+> los dos corregidos.
 
 Cada escenario: pantalla, paso, lo que se ve, y **SQL de contraste** (los
 valores esperados en la base). INV al final de cada uno. 390 y 1440; EN y ES
@@ -294,98 +303,98 @@ valores esperados en la base). INV al final de cada uno. 390 y 1440; EN y ES
 
 | ID | Escenario | Resultado esperado (pantalla + SQL) | Req/Dec | Resultado | Evidencia |
 |---|---|---|---|---|---|
-| E-01 | Izq 2 oz, der 60 ml (cambiando solo el selector derecho), elige M3 | "Sesión registrada en M3."; SQL `left_ml 59.147…, right_ml 60, amount 119.147`, contenedor M3 ocupado | V4-01 CA1–CA2, R-1 | | |
-| E-02 | Tipea 2 en izq con oz y pasa a ml | el campo muestra `59` (convierte); vuelve a oz → `2` | D-19, AJ-16 | | |
-| E-03 | Después de guardar, los dos selectores vuelven a oz | ambos `aria-checked` oz | V4-01 CA3 | | |
-| E-04 | Lado derecho vacío | `right_ml null`, `side left` | V4-04, CL-1 | | |
-| E-05 | Los dos vacíos | se guarda sin pedir biberón; 0 contenedores | V4-04, CL-2 | | |
-| E-06 | Cantidad sin elegir biberón | "Elegí en qué biberón quedó."; 0 filas nuevas | V4-11 CA1, CL-4 | | |
-| E-07 | Selector con M3 ocupado | M3 deshabilitado "M3 · 2.5 oz · 14:20"; vencido "M5 · Caducada" | V4-12 CA1 | | |
-| E-08 | M6 extraído el lunes, M1 el martes; Hoy → Biberón | sugerencia sirve M6 primero | V4-13, R-3 | | |
-| E-09 | Ajustes N 6 → 4 con M5 ocupado | guarda; aviso D-2; selector M1–M4; M5 en la lista "fuera de M1–M4" | D-2, CL-36 | | |
-| E-10 | Contenedor v3 M12 (sembrado por v3) | visible, utilizable, desechable; al vaciarse no aparece en el selector | D-1, CL-37 | | |
-| E-11 | Lectores de pantalla: dos `radiogroup` con nombres distintos | "Unidad izquierdo"/"Unidad derecho" | V4-01 CA5 | | |
-| E-12 | Layout 390 ES: dos pares campo+selector y el selector de biberón | `scrollWidth − clientWidth = 0` en la tarjeta y la fila; targets ≥ 44 px | V4-01 CA4, §8 CLAUDE | | |
+| E-01 | Izq 2 oz, der 60 ml (cambiando solo el selector derecho), elige M3 | "Sesión registrada en M3."; SQL `left_ml 59.147…, right_ml 60, amount 119.147`, contenedor M3 ocupado | V4-01 CA1–CA2, R-1 | PASS | `e_ana.mjs` (ES): banner «Sesión registrada en M3.»; SQL `left_ml 59.147, right_ml 60, amount_ml 119.147`, M3 ocupado 119.147. EN corto (`e_cortos.mjs`): «Session logged in M3.», mismo SQL. CA2: cambiar la unidad derecha deja la izquierda en oz y «2» |
+| E-02 | Tipea 2 en izq con oz y pasa a ml | el campo muestra `59` (convierte); vuelve a oz → `2` | D-19, AJ-16 | PASS | `e_ana.mjs`: 2 oz → ml muestra `59`; vuelve a oz → `2`; 150 ml → oz `5.07` |
+| E-03 | Después de guardar, los dos selectores vuelven a oz | ambos `aria-checked` oz | V4-01 CA3 | PASS | `e_ana.mjs`: tras guardar, los dos radiogroup con `aria-checked` en oz y los campos vacíos |
+| E-04 | Lado derecho vacío | `right_ml null`, `side left` | V4-04, CL-1 | PASS | `e_ana.mjs`: izq 1.5 oz, der vacío → SQL `left_ml 44.3603, right_ml null, side left` |
+| E-05 | Los dos vacíos | se guarda sin pedir biberón; 0 contenedores | V4-04, CL-2 | PASS | `e_ana.mjs`: sin cantidad el selector no se monta; sesión con `amount_ml null`, 0 contenedores nuevos. También 0 y 0 → sin selector ni contenedor |
+| E-06 | Cantidad sin elegir biberón | "Elegí en qué biberón quedó."; 0 filas nuevas | V4-11 CA1, CL-4 | PASS | `e_ana.mjs`: «Elegí en qué biberón quedó.», foco al selector, 0 filas; EN «Choose which bottle the milk went into.»; selector sin preselección (D-4) |
+| E-07 | Selector con M3 ocupado | M3 deshabilitado "M3 · 2.5 oz · 14:20"; vencido "M5 · Caducada" | V4-12 CA1 | PASS | `e_ana.mjs`: M3 `aria-disabled` «Tiene 4.03 oz · 9:24» y no se elige; M5 vencida (envejecida en la base) «Caducada» deshabilitada; EN «Has 4.03 oz · h:mm AM» |
+| E-08 | M6 extraído el lunes, M1 el martes; Hoy → Biberón | sugerencia sirve M6 primero | V4-13, R-3 | PASS | `e_ana.mjs`: M6 guardada hace 2 días por «Cuándo» → Hoy sugiere «M6 2.5 oz + M1 0.5 oz = 3 oz» (M1 y M3 del mismo minuto: desempata el número, V4-13). Lista «Lo que hay» M5, M6 primero |
+| E-09 | Ajustes N 6 → 4 con M5 ocupado | guarda; aviso D-2; selector M1–M4; M5 en la lista "fuera de M1–M4" | D-2, CL-36 | PASS | `e_ana.mjs`: N=8 → selector M1…M8; N=4 con M5/M6 llenos → «Guardado…» + aviso «M5, M6 todavía tienen leche…»; selector M1–M4 + M5/M6 «fuera de M1–M4» deshabilitados. V4-10 CA1: «», 0, 31, 2.5, abc → mensaje, base sigue en 4 |
+| E-10 | Contenedor v3 M12 (sembrado por v3) | visible, utilizable, desechable; al vaciarse no aparece en el selector | D-1, CL-37 | PASS | `e_ana.mjs`: M9 sembrado por la RPC (como v3) → «M9 · quedan 2.03 oz · fuera de M1–M6», no elegible; extraer en M2 con M9 presente entra; M9 vencida → «Desechar» (confirm «¿Desechar M9 (2.03 oz)?…») y desaparece del selector |
+| E-11 | Lectores de pantalla: dos `radiogroup` con nombres distintos | "Unidad izquierdo"/"Unidad derecho" | V4-01 CA5 | PASS | `e_ana.mjs`: radiogroups «Unidad del izquierdo» / «Unidad del derecho»; EN «Unit for the left/right side» |
+| E-12 | Layout 390 ES: dos pares campo+selector y el selector de biberón | `scrollWidth − clientWidth = 0` en la tarjeta y la fila; targets ≥ 44 px | V4-01 CA4, §8 CLAUDE | PASS | `e_ana.mjs`: 390 ES con 12.25 oz / 300 ml: `horiz 0`, 0 contenedores con `scrollWidth−clientWidth>1`, 0 targets < 44 px |
 
 ### 4.2 Vencimiento y desecho
 
 | ID | Escenario | Resultado esperado | Req/Dec | Resultado | Evidencia |
 |---|---|---|---|---|---|
-| E-13 | Contenedor con `stored_at` corrido 4 días + 1 min por SQL | "Caducada" + "Desechar"; no suma; no aparece en la sugerencia | V4-33, CL-11 | | |
-| E-14 | Desechar (confirm con número y cantidad) | M3 libre en el selector; "Leche desechada" +1,5 oz; Historial con la fila; SQL 1 fila `milk_discards` | V4-33, V4-34, V4-35, V4-37, CL-12 | | |
-| E-15 | Reloj del navegador adelantado (CDP `Emulation.setVirtualTimePolicy`/override de `Date`) con M3 vigente para la base | muestra "Desechar"; al tocar: "Todavía no venció según el servidor"; SQL sin cambios | D-15, CL-13 | | |
-| E-16 | Desechar sin internet (CDP offline) | M3 libre y desechado con "Todavía sin sincronizar"; al volver, 1 fila | V4-39, CL-14 | | |
-| E-17 | Dos navegadores desechan M3 | 1 fila; ninguno ve error | V4-34 CA3, CL-15 | | |
-| E-18 | Ajustes: ambiente y congelador "Todavía no se usa", editables; nota de refri | visible EN/ES | V4-32, D-12 | | |
+| E-13 | Contenedor con `stored_at` corrido 4 días + 1 min por SQL | "Caducada" + "Desechar"; no suma; no aparece en la sugerencia | V4-33, CL-11 | PASS | `e_vence.mjs` (EN): M3 envejecida 4 d + 1 min en la base → «Expired» + «Discard»; «What there is» 1 oz (solo M4); sugerencia «M4 1 oz + 2 oz of formula»; no se ofrece en el selector del biberón |
+| E-14 | Desechar (confirm con número y cantidad) | M3 libre en el selector; "Leche desechada" +1,5 oz; Historial con la fila; SQL 1 fila `milk_discards` | V4-33, V4-34, V4-35, V4-37, CL-12 | PASS | `e_vence.mjs`: confirm «Discard M3 (1.5 oz)? …»; banner «M3 discarded — the bottle is free.»; SQL 1 fila `milk_discards` 44.3603 `expired`, M3 `remaining 0` liberado; «Discarded milk» 1.5 oz; M3 «Free»; Historial «Discarded milk · M3 · 1.5 oz» sin ⋯. ES corto: «¿Desechar M3 (2.03 oz)?…» y «M3 desechada — el biberón quedó libre.» |
+| E-15 | Reloj del navegador adelantado (CDP `Emulation.setVirtualTimePolicy`/override de `Date`) con M3 vigente para la base | muestra "Desechar"; al tocar: "Todavía no venció según el servidor"; SQL sin cambios | D-15, CL-13 | PASS | `e_vence.mjs`: contexto con `Date` +5 días: se ofrece «Discard» en M4 (pinta con el reloj del teléfono); al tocar «By the server’s clock, the milk in M4 hasn’t expired yet. Nothing was thrown out.»; SQL igual, nada en cola. Reloj −5 días: M6 vencida en la base no ofrece «Discard» |
+| E-16 | Desechar sin internet (CDP offline) | M3 libre y desechado con "Todavía sin sincronizar"; al volver, 1 fila | V4-39, CL-14 | PASS | `e_vence.mjs`: offline → «Saved on this device…», M5 sale de «What there is», «Discarded milk» 5.25 oz con «This includes entries not synced yet.», M5 «Free», 1 `discard_container` en IndexedDB, base sin desecho; al volver cola vacía y 1 fila. Nota: el botón M5 libre no lleva «Not synced yet» (la marca está en la tarjeta) |
+| E-17 | Dos navegadores desechan M3 | 1 fila; ninguno ve error | V4-34 CA3, CL-15 | PASS | `e_vence.mjs`: dos contextos (EN y ES) desechan M6 a la vez → 1 fila; los dos ven «M6 discarded…» / «M6 desechada…», ningún error |
+| E-18 | Ajustes: ambiente y congelador "Todavía no se usa", editables; nota de refri | visible EN/ES | V4-32, D-12 | PASS | `e_vence.mjs`: EN «AT ROOM TEMPERATURE · NOT USED YET» / «IN THE FREEZER · NOT USED YET» + «only the fridge rule is used», editables; ES 2× «Todavía no se usa» + «solo se usa esa regla» |
 
 ### 4.3 Luis alimenta (Hoy, `/feeding`)
 
 | ID | Escenario | Resultado esperado | Req/Dec | Resultado | Evidencia |
 |---|---|---|---|---|---|
-| E-19 | "Registrar tal cual" sin sobró | descuenta; `leftover_ml null` | V4-41 | | |
-| E-20 | Con sobró 0,5 oz de 3 oz | inventario −3 oz; `leftover_ml 14.79`; desechada igual | V4-42, CL-19 | | |
-| E-21 | Sobró 4 oz de 3 | "Sobró más de lo que se sirvió."; nada | V4-43, CL-20 | | |
-| E-22 | Sugerencia v3: última toma 3,5 oz, M3 1,75 → "M3 1.75 oz + 1.75 oz fórmula" | igual que v3 | §7 spec | | |
-| E-23 | La toma vacía M3 → selector de `/pumping` ofrece M3 | M3 libre | V4-14 CA1 | | |
-| E-24 | "Registrar uno pasado" a una hora en que M3 no existía | M3 no se ofrece | D-18 | | |
-| E-25 | Lactancia en curso | sin biberón; sin efecto de leche | CL-40, V4-90 | | |
+| E-19 | "Registrar tal cual" sin sobró | descuenta; `leftover_ml null` | V4-41 | PASS | `e_luis.mjs` (ES): «Registrar tal cual» → toma 88.7205 leche, 0 fórmula, `leftover_ml null`; M3 vacía y liberada, M4 0.75 oz |
+| E-20 | Con sobró 0,5 oz de 3 oz | inventario −3 oz; `leftover_ml 14.79`; desechada igual | V4-42, CL-19 | PASS | `e_luis.mjs`: sobró «0,5» → `leftover_ml 14.787`, leche 22.18 (0.75 oz de M4) + 66.54 fórmula; M4 liberada; desechos sin cambio; Historial «sobró 0.5 oz». Sobró en ml «15» → 15 exactos |
+| E-21 | Sobró 4 oz de 3 | "Sobró más de lo que se sirvió."; nada | V4-43, CL-20 | PASS | `e_luis.mjs`: sobró 4 de 3 → «Sobró más de lo que se sirvió.», 0 filas; «-1» y «abc» → «Lo que sobró tiene que ser un número.»; EN «More was left over than was served.» |
+| E-22 | Sugerencia v3: última toma 3,5 oz, M3 1,75 → "M3 1.75 oz + 1.75 oz fórmula" | igual que v3 | §7 spec | PASS | `e_luis.mjs`: sin toma previa «M3 1.75 oz + M4 1.25 oz = 3 oz»; última toma 3.5 oz → «M3 1.75 oz + 1.75 oz de fórmula = 3.5 oz»; faltante a fórmula «M4 0.75 oz + 2.25 oz de fórmula = 3 oz» |
+| E-23 | La toma vacía M3 → selector de `/pumping` ofrece M3 | M3 libre | V4-14 CA1 | PASS | `e_luis.mjs`: tras la toma que vacía M3, /pumping ofrece M3 «Libre» |
+| E-24 | "Registrar uno pasado" a una hora en que M3 no existía | M3 no se ofrece | D-18 | PASS | `e_luis.mjs`: «Registrar uno pasado» a −3 h: M5 (de −20 min) no se ofrece; a −5 min sí. **Encontró el defecto QA-1** (abajo), corregido antes de esta corrida |
+| E-25 | Lactancia en curso | sin biberón; sin efecto de leche | CL-40, V4-90 | PASS | `e_luis.mjs`: con lactancia en curso no hay botón de biberón; 1 sesión abierta y el inventario igual; «Terminar la toma» la cierra |
 
 ### 4.4 Corregir (Historial ⋯ y `/feeding`)
 
 | ID | Escenario | Resultado esperado | Req/Dec | Resultado | Evidencia |
 |---|---|---|---|---|---|
-| E-26 | Baja leche 3→2 oz de M3 | "Vuelve 1 oz a M3"; SQL M3 +29,57 | V4-52, CL-21 | | |
-| E-27 | Toma de M3 + M4, baja 1 oz | vuelve a M4 | D-17, CL-22 | | |
-| E-28 | Sube 1 oz | sale de la más vieja a esa hora | D-18, CL-23 | | |
-| E-29 | Pide de más | "A esa hora había 1.25 oz de leche; no alcanza para 2 oz."; nada | V4-54, CL-24 | | |
-| E-30 | Solo fórmula 1→3 oz | guarda | CL-25 | | |
-| E-31 | Cambia la hora a una válida / a una con M3 vencida / futura | guarda / "A esa hora M3 ya estaba caducada." / rechazo | D-7, CL-26, CL-27 | | |
-| E-32 | Toma vieja (legada) | "≈ 2 oz leche + 1 oz fórmula (estimado)", solo lectura; editar total recalcula; no hay desglose en la base | V4-63, V4-64, CL-31–33 | | |
-| E-33 | El mismo panel en `/feeding` | idéntico a Historial | D-16 | | |
-| E-34 | Borrar extracción servida | "no se puede, ya se sirvió de M2"; SQL igual | V4-18, R-19 | | |
-| E-35 | Biberón equivocado: borrar extracción (no servida) y re-anotar en M4 | M3 libre, M4 ocupado | V4-17, R-18 | | |
-| E-36 | Anular toma con M3 reusado | "La leche no volvió a M3: ese biberón ya tiene otra extracción."; SQL `lost_ml` | D-9, CL-10 | | |
-| E-37 | Editar extracción en Historial sigue en oz sin toggle | sin `AmountUnit` en ese panel | V4-05, D-20 | | |
-| E-38 | Edición de extracción legada dando lados | aparece el selector de biberón | AJ-5 | | |
+| E-26 | Baja leche 3→2 oz de M3 | "Vuelve 1 oz a M3"; SQL M3 +29,57 | V4-52, CL-21 | PASS | `e_corregir.mjs` (EN): plan «1 oz goes back to M3»; SQL toma 59.147 leche, M3 59.147 (+29.57); banner «Saved». ES corto: «Vuelve 1 oz a M3» |
+| E-27 | Toma de M3 + M4, baja 1 oz | vuelve a M4 | D-17, CL-22 | PASS | `e_corregir.mjs`: toma M5 1.75 + M6 1.25, leche 3→2: plan «1 oz goes back to M6»; SQL porciones M5 51.7536, M6 7.3934 |
+| E-28 | Sube 1 oz | sale de la más vieja a esa hora | D-18, CL-23 | PASS | `e_corregir.mjs`: sube 1 oz a la hora de la toma: «0.25 oz comes out of M5» + «0.75 oz comes out of M6» (FIFO); SQL M4 29.57 + M5 7.39 + M6 22.18, M5 liberada |
+| E-29 | Pide de más | "A esa hora había 1.25 oz de leche; no alcanza para 2 oz."; nada | V4-54, CL-24 | PASS | `e_corregir.mjs`: leche 20 oz → «There isn’t that much breast milk that could be used at that time — only N oz…», Guardar deshabilitado, SQL igual. ES «A esa hora no había tanta leche materna… solo N oz.» |
+| E-30 | Solo fórmula 1→3 oz | guarda | CL-25 | PASS | `e_corregir.mjs`: fórmula 2→3 oz → «The breast milk doesn’t change.»; SQL fórmula 88.72, total 147.87, porciones iguales |
+| E-31 | Cambia la hora a una válida / a una con M3 vencida / futura | guarda / "A esa hora M3 ya estaba caducada." / rechazo | D-7, CL-26, CL-27 | PASS | `e_corregir.mjs`: hora válida guarda; a una hora con M2 vencida → «M2 can’t be used for this bottle: … or it had expired by then», Guardar deshabilitado; futura (sin `max`) → «That time is in the future.»; SQL igual. Texto genérico, no «ya estaba caducada» |
+| E-32 | Toma vieja (legada) | "≈ 2 oz leche + 1 oz fórmula (estimado)", solo lectura; editar total recalcula; no hay desglose en la base | V4-63, V4-64, CL-31–33 | PASS | `e_corregir.mjs`: toma legada (insert de v0.12.1) + extracción legada → «≈ 2 oz breast milk + 1 oz formula (estimated)»; panel sin campo de leche, con la estimación y el aviso; total 3→4 oz → «≈ 2 oz … + 2 oz formula», base `breast_milk_ml/formula_ml null` |
+| E-33 | El mismo panel en `/feeding` | idéntico a Historial | D-16 | PASS | `e_corregir.mjs`: /feeding abre el mismo panel (hora, leche, fórmula, sobró); 2→1.5 oz → «0.5 oz goes back to M4» (el más nuevo por `stored_at`, D-17); SQL M4 14.79 + M5 7.39 + M6 22.18 |
+| E-34 | Borrar extracción servida | "no se puede, ya se sirvió de M2"; SQL igual | V4-18, R-19 | PASS | `e_corregir.mjs`: borrar extracción M3 servida → «Milk from M3 was already served. Delete those bottles first…»; SQL igual |
+| E-35 | Biberón equivocado: borrar extracción (no servida) y re-anotar en M4 | M3 libre, M4 ocupado | V4-17, R-18 | PASS | `e_corregir.mjs`: borrar extracción no servida (M1) → «Deleted», contenedor anulado, M1 «Free»; re-anotada en M7 → «Session logged in M7.» |
+| E-36 | Anular toma con M3 reusado | "La leche no volvió a M3: ese biberón ya tiene otra extracción."; SQL `lost_ml` | D-9, CL-10 | PASS | `e_corregir.mjs`: M8 vaciado por una toma y reusado; borrar la toma → «Deleted 1 oz didn’t go back to M8: that bottle was discarded or already has another pumping session in it.»; SQL `lost_ml 29.5735`, un solo M8 ocupado. **QA-2**: ese aviso duraba 2,5 s (corregido) |
+| E-37 | Editar extracción en Historial sigue en oz sin toggle | sin `AmountUnit` en ese panel | V4-05, D-20 | PASS | `e_corregir.mjs`: panel de extracción en Historial sin radiogroup oz/ml; campos «Left, oz» / «Right, oz» |
+| E-38 | Edición de extracción legada dando lados | aparece el selector de biberón | AJ-5 | PASS | `e_corregir.mjs`: extracción legada + lados → aparece el selector; sin elegir «Choose which bottle…» y nada; con M1 → nace M1 ocupado 29.5735 (C-23) |
 
 ### 4.5 Sin internet y dos celulares
 
 | ID | Escenario | Resultado esperado | Req/Dec | Resultado | Evidencia |
 |---|---|---|---|---|---|
-| E-39 | Offline sin lista conocida | selector deja elegir con "no se sabe qué biberones están ocupados" | V4-11 CA3, R-20 | | |
-| E-40 | Offline con copia guardada de Hoy | usa la copia y dice de cuándo | V4-11 CA3 | | |
-| E-41 | Dos teléfonos offline eligen M3; sincronizan | el segundo: "Otro teléfono ya puso leche en M3…" + "Descartar este registro"; el resto de la cola sigue | V4-84, R-22, CL-7 | | |
-| E-42 | Dos teléfonos online compiten por el último 1 oz de M3 | uno guarda; el otro "milk_overdraw" en palabras y se relee | R-21 | | |
-| E-43 | A sirve M3 offline 7:50 (vencía 8:00); B desecha 8:05; A sincroniza | toma de A rechazada `milk_overdraw:M3` visible | D-22 | | |
-| E-44 | Edición offline encolada, reenviada dos veces (corte a mitad) | 1 efecto; `milk_feeding_edits` 1 fila | CL-29 | | |
-| E-45 | Dos teléfonos editan la misma toma | el segundo: "Otro teléfono cambió esta toma…" | CL-28 | | |
-| E-46 | Offline: extracción + toma de ella + desecho de otra + edición | todo "Todavía sin sincronizar"; "Lo que hay" y selector coherentes antes de sincronizar; después INV | V4-81 | | |
+| E-39 | Offline sin lista conocida | selector deja elegir con "no se sabe qué biberones están ocupados" | V4-11 CA3, R-20 | PASS | `e_offline.mjs` (ES): sin copias guardadas y sin red, /pumping (desde el SW) → «Sin conexión: no se sabe qué biberones están ocupados. Si elegís uno ocupado, te va a avisar al sincronizar.»; M2 (ocupado en el servidor) se puede elegir |
+| E-40 | Offline con copia guardada de Hoy | usa la copia y dice de cuándo | V4-11 CA3 | PASS | `e_offline.mjs`: con la copia de Hoy → «Sin conexión: los biberones como los vio este teléfono hace …»; M2 «Tiene 1 oz · 9:43» deshabilitado |
+| E-41 | Dos teléfonos offline eligen M3; sincronizan | el segundo: "Otro teléfono ya puso leche en M3…" + "Descartar este registro"; el resto de la cola sigue | V4-84, R-22, CL-7 | PASS | `e_offline.mjs`: A (ES) y B (EN) offline eligen M3; A sincroniza; B: «Couldn’t sync — Bottle M3 already has milk… tap “Discard this entry”…» con el botón; el pañal encolado detrás entra después de Descartar (replay ordenado, mecanismo v3); 1 sola sesión M3, nada renumerado |
+| E-42 | Dos teléfonos online compiten por el último 1 oz de M3 | uno guarda; el otro "milk_overdraw" en palabras y se relee | R-21 | PASS | `e_offline.mjs`: dos contextos online sirven el último 1 oz de M3 a la vez → 1 toma; el otro «M3 doesn’t have that much milk left — someone may have just served from it. Choose again.»; nada en cola |
+| E-43 | A sirve M3 offline 7:50 (vencía 8:00); B desecha 8:05; A sincroniza | toma de A rechazada `milk_overdraw:M3` visible | D-22 | PASS | `e_offline.mjs`: M3 vence en 75 s (base); A sirve offline antes; B desecha después; A sincroniza → «No se pudo sincronizar — A M3 no le queda tanta leche…» con Descartar; 0 tomas, 1 desecho |
+| E-44 | Edición offline encolada, reenviada dos veces (corte a mitad) | 1 efecto; `milk_feeding_edits` 1 fila | CL-29 | PASS | `e_offline.mjs`: edición offline («Guardado en este dispositivo…», «Todavía sin sincronizar»); al volver la 1.ª respuesta se pierde (`route.fetch` + `abort`) → 2 envíos, 1 efecto: `milk_feeding_edits` 1 fila, toma 59.147, M3 59.147 |
+| E-45 | Dos teléfonos editan la misma toma | el segundo: "Otro teléfono cambió esta toma…" | CL-28 | PASS | `e_offline.mjs`: dos contextos editan la misma toma → el segundo «This feeding was changed on another phone while you were editing it. Nothing was saved…»; queda la del primero; ES «Esta toma se cambió desde otro teléfono…» |
+| E-46 | Offline: extracción + toma de ella + desecho de otra + edición | todo "Todavía sin sincronizar"; "Lo que hay" y selector coherentes antes de sincronizar; después INV | V4-81 | PASS | `e_offline.mjs`: offline extracción M2 + desecho M5 + toma con sobró + edición de otra toma → «What there is» 3 oz con marca, M2 «Not synced yet» ocupado, M5 libre, 5 marcas en Historial, 4 ops en cola; al volver cola vacía, SQL 3 sesiones/1 desecho/2 tomas, sobró 14.79, sin marcas; INV 0. Además anular toma offline → al volver M3 re-ocupado con 3 oz |
 
 ### 4.6 Regresión
 
 | ID | Escenario | Resultado esperado | Req/Dec | Resultado | Evidencia |
 |---|---|---|---|---|---|
-| E-47 | Hoy, Historial, Crecimiento, Médico, Ajustes, cambiador (`/api/quick/*`), `/pumping`, `/feeding`, `/diapers`, `/sleep`, `/statistics` | 0 errores de consola; 0 de hidratación | §8 CLAUDE | | |
-| E-48 | Barrido de layout 390 y 1440 × 2 temas × 2 idiomas en las pantallas tocadas | 0 scroll horizontal, 0 desborde (`scrollWidth − clientWidth`), 0 texto cortado, targets ≥ 44 px | §8 CLAUDE | | |
-| E-49 | `pnpm exec tsc --noEmit`, `lint`, `format:check`, `build`, `test:all` | verdes | §8 CLAUDE | | |
-| E-50 | Rendimiento: `listContainers` con 2 000 contenedores (sembrados) | lectura < 1 s en local; pantalla usable | AJ-18 | | |
+| E-47 | Hoy, Historial, Crecimiento, Médico, Ajustes, cambiador (`/api/quick/*`), `/pumping`, `/feeding`, `/diapers`, `/sleep`, `/statistics` | 0 errores de consola; 0 de hidratación | §8 CLAUDE | PASS | `e_regresion.mjs`: Hoy (pecho izq/der y terminar, pañal, sueño y despertar, biberón), Historial (editar pañal/lactancia/sueño/extracción/toma legada/biberón; borrar los seis tipos), Crecimiento, Médico, Ajustes; `/api/quick/nurse\|diaper\|status` con token de dispositivo de prueba (200; sin token 401; inventario igual). 0 errores de consola (fuera de los 400 de rechazos provocados). No hay página del cambiador (solo firmware) |
+| E-48 | Barrido de layout 390 y 1440 × 2 temas × 2 idiomas en las pantallas tocadas | 0 scroll horizontal, 0 desborde (`scrollWidth − clientWidth`), 0 texto cortado, targets ≥ 44 px | §8 CLAUDE | PASS | `e_regresion.mjs` barrido 80 combinaciones (10 pantallas × 390/1440 × claro/oscuro × EN/ES, con el panel del biberón, el selector, el panel de edición y «Registrar uno pasado» abiertos): 0 scroll horizontal, 0 desborde de contenedores, 0 claves crudas, 0 targets < 44 px en las tocadas a 390, 0 errores de consola. N=30 ES 390: 30 botones, 0 desborde |
+| E-49 | `pnpm exec tsc --noEmit`, `lint`, `format:check`, `build`, `test:all` | verdes | §8 CLAUDE | PASS | tras las correcciones de QA: `tsc` OK, `lint` OK, `format:check` OK, `build` OK, `scripts/test-tz.sh` 542/542 ×4 TZ, `vitest run tests/integration --maxWorkers=2` 293/293 |
+| E-50 | Rendimiento: `listContainers` con 2 000 contenedores (sembrados) | lectura < 1 s en local; pantalla usable | AJ-18 | PASS | `e_perf.mjs`: 2 000 contenedores sembrados por SQL → lectura de `listContainers` 2000 filas en 48–74 ms; /pumping carga 1.4 s, selector 10 ms; /history 1 s; INV 0 |
 
 ## 5. Reversa (R)
 
 | ID | Caso | Resultado esperado | Req/Dec | Resultado | Evidencia |
 |---|---|---|---|---|---|
-| R-01 | Base A (0001–0014 de cero) vs base B (0001–0015 + datos E-xx + `rollback-leche-v4.sql`): `pg_dump --schema-only --schema=public --no-owner` | `diff` vacío | ARQ §10.3 | | |
-| R-02 | Rollback dos veces seguidas | sin error | ARQ §10.1 | | |
-| R-03 | Datos con números reusados (dos M3 no anulados) | índice `milk_containers_label_live` se recrea sin conflicto | ARQ §10.1 paso 3c | | |
-| R-04 | Contenedores desechados y liberados con `lost_ml` | anulados por el rollback; v3 `void_bottle_feed` de sus tomas no resucita leche en "Lo que hay" | ARQ §10.1 paso 3 | | |
-| R-05 | Pre-chequeo: ocupado con `lost_ml > 0` | `notice` lo lista; rollback sigue | ARQ §10.1 paso 1 | | |
-| R-06 | Después del rollback: `remaining = amount − servido` para todo no anulado (salvo R-05) | 0 filas | ARQ §10.3 | | |
-| R-07 | Suite de v3-release contra B | **151/151** | ARQ §10.3 | | |
-| R-08 | Suite de v0.12.1 contra B | **118/118** | ARQ §10.3 | | |
-| R-09 | Bloque opcional `milk_backup_v4`: conteos = lo perdido (desechos, sobró, N, released, lost, ediciones); no visible por PostgREST | coinciden; `anon`/`authenticated` sin acceso | ARQ §10.2 | | |
-| R-10 | Re-aplicar 0015 sobre B | entra; INV 0 filas | ARQ §10.3 | | |
-| R-11 | Tomas editadas por v4 sobreviven con su desglose final y porciones | INV-6 en B | ARQ §10.2 | | |
-| R-12 | `rollback-leche.sql` (0014) después de `rollback-leche-v4.sql` | deja 0001–0013 (encadenable) | docs/rollback-leche.sql | | |
+| R-01 | Base A (0001–0014 de cero) vs base B (0001–0015 + datos E-xx + `rollback-leche-v4.sql`): `pg_dump --schema-only --schema=public --no-owner` | `diff` vacío | ARQ §10.3 | NO VERIFICADO: `docs/rollback-leche-v4.sql` no existe en `ac3f77b` | — |
+| R-02 | Rollback dos veces seguidas | sin error | ARQ §10.1 | NO VERIFICADO: `docs/rollback-leche-v4.sql` no existe en `ac3f77b` | — |
+| R-03 | Datos con números reusados (dos M3 no anulados) | índice `milk_containers_label_live` se recrea sin conflicto | ARQ §10.1 paso 3c | NO VERIFICADO: `docs/rollback-leche-v4.sql` no existe en `ac3f77b` | — |
+| R-04 | Contenedores desechados y liberados con `lost_ml` | anulados por el rollback; v3 `void_bottle_feed` de sus tomas no resucita leche en "Lo que hay" | ARQ §10.1 paso 3 | NO VERIFICADO: `docs/rollback-leche-v4.sql` no existe en `ac3f77b` | — |
+| R-05 | Pre-chequeo: ocupado con `lost_ml > 0` | `notice` lo lista; rollback sigue | ARQ §10.1 paso 1 | NO VERIFICADO: `docs/rollback-leche-v4.sql` no existe en `ac3f77b` | — |
+| R-06 | Después del rollback: `remaining = amount − servido` para todo no anulado (salvo R-05) | 0 filas | ARQ §10.3 | NO VERIFICADO: `docs/rollback-leche-v4.sql` no existe en `ac3f77b` | — |
+| R-07 | Suite de v3-release contra B | **151/151** | ARQ §10.3 | NO VERIFICADO: `docs/rollback-leche-v4.sql` no existe en `ac3f77b` | — |
+| R-08 | Suite de v0.12.1 contra B | **118/118** | ARQ §10.3 | NO VERIFICADO: `docs/rollback-leche-v4.sql` no existe en `ac3f77b` | — |
+| R-09 | Bloque opcional `milk_backup_v4`: conteos = lo perdido (desechos, sobró, N, released, lost, ediciones); no visible por PostgREST | coinciden; `anon`/`authenticated` sin acceso | ARQ §10.2 | NO VERIFICADO: `docs/rollback-leche-v4.sql` no existe en `ac3f77b` | — |
+| R-10 | Re-aplicar 0015 sobre B | entra; INV 0 filas | ARQ §10.3 | NO VERIFICADO: `docs/rollback-leche-v4.sql` no existe en `ac3f77b` | — |
+| R-11 | Tomas editadas por v4 sobreviven con su desglose final y porciones | INV-6 en B | ARQ §10.2 | NO VERIFICADO: `docs/rollback-leche-v4.sql` no existe en `ac3f77b` | — |
+| R-12 | `rollback-leche.sql` (0014) después de `rollback-leche-v4.sql` | deja 0001–0013 (encadenable) | docs/rollback-leche.sql | NO VERIFICADO: `docs/rollback-leche-v4.sql` no existe en `ac3f77b` | — |
 
 ## 6. Conteo
 
