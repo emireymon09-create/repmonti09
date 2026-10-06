@@ -25,7 +25,7 @@ Ninguna rama remota tiene una migración 0015: se usa `0015_milk_phase1_2.sql`.
 | H1 spec + arquitectura + plan de pruebas | hecho | ver `git log` |
 | H2 migración 0015 + lógica pura | hecho | ver `git log` |
 | H3 capa de datos y cola | hecho | ver `git log` |
-| H4 interfaz | pendiente | |
+| H4 interfaz | hecho | ver `git log` |
 | H5 QA | pendiente | |
 | H6 auditorías | pendiente | |
 | H7 documentos y runbook | pendiente | |
@@ -106,3 +106,16 @@ subagentes a la vez (1 si hay build/integración/navegador); vitest
   cada lectura a 1000 filas (`max_rows`); en local no hay tope. Las lecturas
   "sin limit" (contenedores, desechos, tomas para la estimación) podrían
   cortarse en producción. Va al runbook como chequeo.
+
+## H4 [VERIFICADO por el director]
+
+- Componentes nuevos `BottleSlotPicker`, `LeftoverField`, `BottleEditPanel`;
+  cambios en `/pumping`, `/history`, `/dashboard`, `/settings`, `SectionPage`,
+  `BottleBuilder`, `AmountUnit`, `globals.css` (solo tokens), i18n (+48 / −11
+  claves).
+- Verificación (16:55): `tsc` OK, `lint` OK, `format:check` OK, `build` OK,
+  unitarias **537/537** ×4 TZ, integración **293/293**.
+- Alcance: `grep` de Similac/enfriado/combinar/receta en lo agregado a
+  `app/ components/ lib/` contra v3-release: 0 líneas.
+- Pendiente para QA: recorrido en navegador, barrido 390/1440, selector con
+  N=30 en español a 390 px, duración del banner de "leche que no volvió".

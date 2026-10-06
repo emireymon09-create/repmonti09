@@ -36,13 +36,17 @@ import {
   diapersSince,
   feedingsSince,
   keepLastGood,
+  estimateLegacySplits,
   lastBottleFeeding,
+  legacySplitInputs,
   listContainers,
+  listDiscards,
   listDrawdowns,
   logBottleFeed,
   logDiaper,
   mergePending,
   milkErrorText,
+  milkRules,
   nursingSince,
   pendingWrites,
   recentDiapers,
@@ -61,6 +65,7 @@ import {
   voidFeeding,
   voidNursing,
   voidSleep,
+  type LegacySplitInputs,
 } from '@/lib/db'
 import {
   checkPastRange,
@@ -73,7 +78,11 @@ import {
 } from '@/lib/kpis'
 import { useSync } from '@/lib/useSync'
 import { BottleBuilder, type BottleValue } from '@/components/BottleBuilder'
+import { BottleEditPanel, legacyBottleLine, notReturnedLines } from '@/components/BottleEditPanel'
+import { LeftoverField, type LeftoverValue } from '@/components/LeftoverField'
+import { validateLeftover } from '@/lib/milkBottles'
 import {
+  DEFAULT_MILK_RULES,
   applyPendingInventory,
   describeBottle,
   isInventoryBottleFeed,
@@ -94,6 +103,7 @@ import type {
   Feeding,
   FeedingType,
   MilkContainer,
+  MilkDiscard,
   MilkDrawdown,
   NursingSession,
   Result,
@@ -142,12 +152,19 @@ type ServerRows = {
   /** The milk inventory (0014), Feeding only: what a bottle can come from. */
   containers: MilkContainer[]
   drawdowns: MilkDrawdown[]
+  /** Discarded milk (0015): a discarded bottle is free, not something to serve from. */
+  discards: MilkDiscard[]
+  /** What the estimate of an old bottle's milk / formula is made from (2B). */
+  legacy: LegacySplitInputs
   /** The last bottle, which the log may not reach: what the suggestion starts from. */
   lastBottle: Feeding[]
 }
+const NO_LEGACY: LegacySplitInputs = { feedings: [], pumping: [], containerSessionIds: [] }
 const NO_ROWS: ServerRows = {
   containers: [],
   drawdowns: [],
+  discards: [],
+  legacy: NO_LEGACY,
   lastBottle: [],
   feedings: [],
   nursing: [],
@@ -175,6 +192,8 @@ function readSection(section: Section, babyId: string, sinceIso: string): Promis
     weekSleep: NOT_READ,
     containers: NOT_READ,
     drawdowns: NOT_READ,
+    discards: NOT_READ,
+    legacy: { data: NO_LEGACY, error: null },
     lastBottle: NOT_READ,
   }
   if (section === 'feeding') {
@@ -185,9 +204,21 @@ function readSection(section: Section, babyId: string, sinceIso: string): Promis
       nursingSince(babyId, sinceIso),
       listContainers(babyId),
       listDrawdowns(babyId),
+      listDiscards(babyId),
+      legacySplitInputs(babyId),
       lastBottleFeeding(babyId),
     ]).then(
-      ([feedings, nursing, weekFeedings, weekNursing, containers, drawdowns, lastBottle]) => ({
+      ([
+        feedings,
+        nursing,
+        weekFeedings,
+        weekNursing,
+        containers,
+        drawdowns,
+        discards,
+        legacy,
+        lastBottle,
+      ]) => ({
         ...none,
         feedings,
         nursing,
@@ -195,6 +226,8 @@ function readSection(section: Section, babyId: string, sinceIso: string): Promis
         weekNursing,
         containers,
         drawdowns,
+        discards,
+        legacy,
         lastBottle: { ...lastBottle, data: lastBottle.data ? [lastBottle.data] : [] },
       }),
     )
@@ -221,6 +254,8 @@ type Shown = {
   weekSleep: WithPending<SleepSession>[]
   containers: WithPending<MilkContainer>[]
   drawdowns: WithPending<MilkDrawdown>[]
+  discards: WithPending<MilkDiscard>[]
+  legacy: LegacySplitInputs
   lastBottle: Feeding[]
 }
 
@@ -289,6 +324,8 @@ export function SectionPage({ section }: { section: Section }) {
   const [fType, setFType] = useState<FeedingType>('bottle')
   const [fAmount, setFAmount] = useState('')
   const [fAt, setFAt] = useState('')
+  // "Sobró" of a bottle without a breakdown (D-11b), in the edit panel.
+  const [fLeftover, setFLeftover] = useState<LeftoverValue>({ ml: null, bad: false })
   const [dType, setDType] = useState<DiaperType>('both')
   const [dAt, setDAt] = useState('')
   const [nSide, setNSide] = useState<Side>('left')
@@ -302,6 +339,10 @@ export function SectionPage({ section }: { section: Section }) {
   const [pSide, setPSide] = useState<Side>('left')
   // A past bottle (0014): the same row builder as Today's bottle panel.
   const [pBuilt, setPBuilt] = useState<BottleValue | null>(null)
+  // "Sobró" of the past bottle (V4-41), started over with the builder.
+  const [pLeftover, setPLeftover] = useState<LeftoverValue>({ ml: null, bad: false })
+  // The fridge rule, only for the estimate of old bottles (2B). Default until read.
+  const [fridgeDays, setFridgeDays] = useState(DEFAULT_MILK_RULES.milk_fridge_days)
   // A new plan starts the builder over — after a save, or another time.
   const [pPlanKey, setPPlanKey] = useState(0)
   const [pDiaper, setPDiaper] = useState<DiaperType>('wet')
@@ -366,7 +407,13 @@ export function SectionPage({ section }: { section: Section }) {
         weekNursing: mergePending(rows.weekNursing, 'nursing_sessions', queued),
         weekDiapers: mergePending(rows.weekDiapers, 'diaper_changes', queued),
         weekSleep: mergePending(rows.weekSleep, 'sleep_sessions', queued),
-        ...applyPendingInventory(rows.containers ?? [], rows.drawdowns ?? [], queued),
+        ...applyPendingInventory(
+          rows.containers ?? [],
+          rows.drawdowns ?? [],
+          rows.discards ?? [],
+          queued,
+        ),
+        legacy: rows.legacy ?? NO_LEGACY,
         lastBottle: rows.lastBottle ?? [],
       }
       // Only this section's tables: the others were never read and stay empty.
@@ -374,6 +421,8 @@ export function SectionPage({ section }: { section: Section }) {
         next.feedings = next.nursing = next.weekFeedings = next.weekNursing = []
         next.containers = []
         next.drawdowns = []
+        next.discards = []
+        next.legacy = NO_LEGACY
         next.lastBottle = []
       }
       if (section !== 'diapers') next.diapers = next.weekDiapers = []
@@ -448,6 +497,17 @@ export function SectionPage({ section }: { section: Section }) {
     if (baby) refresh(baby.id)
   }, [baby, refresh])
 
+  useEffect(() => {
+    if (!baby || section !== 'feeding') return
+    let cancelled = false
+    milkRules(baby.id).then((res) => {
+      if (!cancelled && res.data) setFridgeDays(res.data.milk_fridge_days)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [baby, section])
+
   // Elegir otra semana de vida cambia la ventana de lectura (`weekSince`), así
   // que hay que volver a leer: una semana de hace dos meses no está entre las
   // filas que trajo la lectura anterior, y mostrar 0 sería mostrar un total
@@ -473,7 +533,8 @@ export function SectionPage({ section }: { section: Section }) {
       const row = shown.feedings.find((r) => r.id === entry.id)
       if (!row) return
       setFType(row.feeding_type)
-      // A bottle with a breakdown only shows its time (lib/milk.ts).
+      // A bottle with a breakdown opens BottleEditPanel, which reads the row itself.
+      setFLeftover({ ml: row.leftover_ml ?? null, bad: false })
       setFAmount(row.amount_ml != null ? String(mlToUnit(row.amount_ml, DISPLAY_UNIT)) : '')
       setFAt(toHouseholdInputValue(new Date(row.fed_at)))
     } else if (entry.kind === 'diaper') {
@@ -506,19 +567,23 @@ export function SectionPage({ section }: { section: Section }) {
 
     const editedFeed =
       editing.kind === 'feeding' ? shown.feedings.find((r) => r.id === editing.id) : undefined
-    if (editing.kind === 'feeding' && editedFeed && isInventoryBottleFeed(editedFeed)) {
-      // Time only: what was in it is fixed (delete and log again to change
-      // it — the milk goes back). Only `fed_at` is sent, so nothing else can
-      // drift, and behind its own insert when that is still queued.
-      const at = instant(fAt)
-      problem = checkPastRange(at, undefined, Date.now())
-      const id = editing.id
-      const queueOnly = !!editedFeed.pending
-      send = () => updateFeeding(id, { fed_at: at! }, { queueOnly })
-    } else if (editing.kind === 'feeding') {
+    // A bottle with a breakdown is saved by its own panel (BottleEditPanel).
+    if (editing.kind === 'feeding' && editedFeed && isInventoryBottleFeed(editedFeed)) return
+    if (editing.kind === 'feeding') {
       const amount = fAmount.trim() === '' ? null : Number(fAmount)
       if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
         setErr(t('history.amountNotNumber', { unit: t(`unit.${DISPLAY_UNIT}`) }))
+        return
+      }
+      const amountMl = fType === 'bottle' && amount !== null ? unitToMl(amount, DISPLAY_UNIT) : null
+      // "Sobró" is a bottle's (D-11b), never more than its total.
+      const leftoverMl = fType === 'bottle' ? fLeftover.ml : null
+      if (fType === 'bottle' && fLeftover.bad) {
+        setErr(t('bottle.leftoverNotNumber'))
+        return
+      }
+      if (validateLeftover(leftoverMl, amountMl ?? 0) === 'too_much') {
+        setErr(t('bottle.leftoverTooMuch'))
         return
       }
       const at = instant(fAt)
@@ -528,12 +593,7 @@ export function SectionPage({ section }: { section: Section }) {
       send = () =>
         updateFeeding(
           id,
-          {
-            feeding_type: fType,
-            amount_ml:
-              fType === 'bottle' && amount !== null ? unitToMl(amount, DISPLAY_UNIT) : null,
-            fed_at: at!,
-          },
+          { feeding_type: fType, amount_ml: amountMl, fed_at: at!, leftover_ml: leftoverMl },
           { queueOnly },
         )
     } else if (editing.kind === 'diaper') {
@@ -601,7 +661,12 @@ export function SectionPage({ section }: { section: Section }) {
       setErr(t('common.couldNotDelete', { error: milkErrorText(result.error, lang) }))
     } else {
       if (editing?.id === id) setEditing(null)
-      confirm(result.queued ? t('common.queued') : t('common.deleted'))
+      // Milk that could not go back to its bottle (D-9) is said, not hidden.
+      const lost =
+        feed && inventory && result.data && typeof result.data === 'object'
+          ? notReturnedLines(result.data as { lost: { label: string; ml: number }[] }, t)
+          : []
+      confirm([result.queued ? t('common.queued') : t('common.deleted'), ...lost].join(' '))
       refresh(baby.id)
       reloadPending()
     }
@@ -641,6 +706,15 @@ export function SectionPage({ section }: { section: Section }) {
         setErr(built?.problem ?? t('bottle.empty'))
         return
       }
+      if (pLeftover.bad) {
+        setErr(t('bottle.leftoverNotNumber'))
+        return
+      }
+      if (validateLeftover(pLeftover.ml, built.totalMl) === 'too_much') {
+        setErr(t('bottle.leftoverTooMuch'))
+        return
+      }
+      const leftoverMl = pLeftover.ml
       label = t('dash.label.bottle')
       send = () =>
         logBottleFeed(
@@ -651,6 +725,7 @@ export function SectionPage({ section }: { section: Section }) {
             notes: null,
             formula_ml: built.formulaMl,
             portions: built.portions,
+            leftover_ml: leftoverMl,
           },
           { containersPending: built.containersPending },
         )
@@ -711,6 +786,12 @@ export function SectionPage({ section }: { section: Section }) {
     plan: suggestPlan(suggestedTotalMl([...shown.feedings, ...shown.lastBottle]), pUsable, pAtMs),
   })
   const pPlan = useMemo<BottlePlan>(() => JSON.parse(pPlanSig).plan, [pPlanSig])
+  // The estimated split of every old bottle without a breakdown (2B). Read-only:
+  // nothing is written and what there is doesn't move (V4-62).
+  const estimates = useMemo(
+    () => estimateLegacySplits(shown.legacy, fridgeDays),
+    [shown.legacy, fridgeDays],
+  )
 
   if (loading)
     return (
@@ -917,6 +998,14 @@ export function SectionPage({ section }: { section: Section }) {
                 idPrefix="past-bottle"
               />
             )}
+            {section === 'feeding' && pKind === 'bottle' && (
+              <LeftoverField
+                key={pPlanKey}
+                id="past-bottle-leftover"
+                disabled={busy}
+                onChange={setPLeftover}
+              />
+            )}
             {needsRange && (
               <div className="row">
                 {[false, true].map((ongoing) => (
@@ -1008,8 +1097,14 @@ export function SectionPage({ section }: { section: Section }) {
                       ? shown.feedings.find((r) => r.id === entry.id)
                       : undefined
                   const locked = !!feedRow && isInventoryBottleFeed(feedRow)
-                  // "M3 1.75 oz + M4 0.5 oz + formula 0.75 oz": where it came from.
-                  const breakdown = locked ? describeBottle(feedRow!, shown.drawdowns, lang) : null
+                  // "M3 1.75 oz + M4 0.5 oz + formula 0.75 oz": where it came
+                  // from. An old bottle without one gets its estimate, said as
+                  // such (2B, V4-63).
+                  const breakdown = locked
+                    ? describeBottle(feedRow!, shown.drawdowns, lang)
+                    : feedRow
+                      ? legacyBottleLine(feedRow, estimates.get(feedRow.id), lang)
+                      : null
                   return (
                     <div key={`${entry.kind}-${entry.id}`}>
                       <div className="feed-item">
@@ -1046,18 +1141,21 @@ export function SectionPage({ section }: { section: Section }) {
                       </div>
 
                       {isEditing && editing.kind === 'feeding' && locked && (
-                        <div className="edit-panel">
-                          <p className="meta">{t('bottle.timeOnly')}</p>
-                          <input
-                            type="datetime-local"
-                            className="input"
-                            value={fAt}
-                            onChange={(e) => setFAt(e.target.value)}
-                            max={maxInput}
-                            aria-label={t('common.timeItHappened')}
-                          />
-                          {editButtons}
-                        </div>
+                        // The full edit (2A), the same panel as History's (D-16).
+                        <BottleEditPanel
+                          feeding={feedRow!}
+                          inventory={shown}
+                          idPrefix={`edit-bottle-${entry.id}`}
+                          onCancel={() => setEditing(null)}
+                          onReread={() => refresh(baby.id)}
+                          onSaved={(message) => {
+                            setErr(null)
+                            setEditing(null)
+                            confirm(message)
+                            refresh(baby.id)
+                            reloadPending()
+                          }}
+                        />
                       )}
 
                       {isEditing && editing.kind === 'feeding' && !locked && (
@@ -1083,6 +1181,26 @@ export function SectionPage({ section }: { section: Section }) {
                               aria-label={t('history.amountIn', {
                                 unit: t(`unit.${DISPLAY_UNIT}`),
                               })}
+                            />
+                          )}
+                          {fType === 'bottle' && feedRow && estimates.get(feedRow.id) && (
+                            // The estimate is shown, never edited (D-14b).
+                            <p className="meta">
+                              {legacyBottleLine(
+                                { ...feedRow, leftover_ml: null },
+                                estimates.get(feedRow.id),
+                                lang,
+                              )}{' '}
+                              {t('bottle.estimatedHint')}
+                            </p>
+                          )}
+                          {fType === 'bottle' && (
+                            <LeftoverField
+                              key={entry.id}
+                              id={`edit-leftover-${entry.id}`}
+                              initialMl={feedRow?.leftover_ml ?? null}
+                              disabled={busy}
+                              onChange={setFLeftover}
                             />
                           )}
                           <input

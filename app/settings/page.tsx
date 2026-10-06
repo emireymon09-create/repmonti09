@@ -33,6 +33,7 @@ import { NursingAlerts } from '@/components/NursingAlerts'
 import {
   calendarFeed,
   familySettings,
+  listContainers,
   milkErrorText,
   milkRules,
   saveFamilySettings,
@@ -45,6 +46,14 @@ import {
   validateMilkRules,
   type MilkRulesField,
 } from '@/lib/milk'
+import {
+  DEFAULT_BOTTLE_COUNT,
+  MAX_BOTTLE_COUNT,
+  MIN_BOTTLE_COUNT,
+  isOccupied,
+  labelNumber,
+  validateBottleCount,
+} from '@/lib/milkBottles'
 import { timeAgo } from '@/lib/format'
 import {
   DEFAULT_FAMILY_SETTINGS,
@@ -321,14 +330,23 @@ function ScheduleSettings({ familyId }: { familyId: string | null }) {
  * cada extracción caducaría al guardarla), y el error se lee como una frase,
  * no como un CHECK de Postgres. Cambiarlas afecta a las extracciones que se
  * registren de acá en adelante: la caducidad se calcula al guardar cada una.
+ *
+ * v4 (0015): en la misma tarjeta y con el mismo botón (AJ-17), cuántos
+ * biberones físicos hay — N, 1 a 30, el selector de Leche ofrece M1…MN. Y
+ * ambiente y congelador quedan a la vista con "Todavía no se usa" (D-12): hoy
+ * toda la leche se cuenta en el refrigerador, pero esos valores son los que
+ * va a usar una fase siguiente, así que no se esconden ni se borran.
  */
 function MilkStorageSettings({ babyId }: { babyId: string | null }) {
   const { t, lang } = useT()
   const [room, setRoom] = useState(String(DEFAULT_MILK_RULES.milk_room_hours))
   const [fridge, setFridge] = useState(String(DEFAULT_MILK_RULES.milk_fridge_days))
   const [freezer, setFreezer] = useState(String(DEFAULT_MILK_RULES.milk_freezer_months))
+  const [bottles, setBottles] = useState(String(DEFAULT_BOTTLE_COUNT))
   const [err, setErr] = useState<string | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
+  // D-2: N lowered under bottles that still have milk — saved anyway, and said.
+  const [above, setAbove] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
@@ -344,6 +362,7 @@ function MilkStorageSettings({ babyId }: { babyId: string | null }) {
         setRoom(String(res.data.milk_room_hours))
         setFridge(String(res.data.milk_fridge_days))
         setFreezer(String(res.data.milk_freezer_months))
+        setBottles(String(res.data.milk_bottle_count))
       }
     })
     return () => {
@@ -362,6 +381,7 @@ function MilkStorageSettings({ babyId }: { babyId: string | null }) {
     if (!babyId || busy) return
     setErr(null)
     setFlash(null)
+    setAbove(null)
     const checked = validateMilkRules({ room, fridge, freezer })
     if (!checked.rules) {
       const field = t(NAMES[checked.field])
@@ -373,15 +393,52 @@ function MilkStorageSettings({ babyId }: { babyId: string | null }) {
       )
       return
     }
+    // N, checked with the rules, before anything is sent (V4-10 CA1).
+    const count = validateBottleCount(bottles)
+    if (count.problem) {
+      const field = t('milkRules.bottles')
+      setErr(
+        count.problem === 'empty'
+          ? t('milkRules.problem.empty', { field })
+          : t('milkRules.problem.bottles', {
+              field,
+              min: MIN_BOTTLE_COUNT,
+              max: MAX_BOTTLE_COUNT,
+            }),
+      )
+      return
+    }
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       setErr(t('milkRules.offline'))
       return
     }
     setBusy(true)
-    const res = await saveMilkRules(babyId, checked.rules)
+    const res = await saveMilkRules(babyId, {
+      ...checked.rules,
+      milk_bottle_count: count.n,
+    })
+    if (res.error) {
+      setBusy(false)
+      setErr(t('milkRules.couldNotSave', { error: milkErrorText(res.error, lang) }))
+      return
+    }
+    setFlash(t('milkRules.saved'))
+    // D-2: bottles above the new N that still have milk keep showing in Milk
+    // until they are used or discarded. Nothing is blocked or touched; it is
+    // just said. A failed read says nothing rather than guess.
+    const list = await listContainers(babyId)
     setBusy(false)
-    if (res.error) setErr(t('milkRules.couldNotSave', { error: milkErrorText(res.error, lang) }))
-    else setFlash(t('milkRules.saved'))
+    if (!list.error) {
+      const labels = list.data
+        .filter((c) => isOccupied(c))
+        .map((c) => c.label)
+        .filter((label) => {
+          const num = labelNumber(label)
+          return num === null || num > count.n
+        })
+        .sort((a, b) => (labelNumber(a) ?? Infinity) - (labelNumber(b) ?? Infinity))
+      if (labels.length > 0) setAbove(t('milkRules.bottlesAbove', { labels: labels.join(', ') }))
+    }
   }
 
   const field = (
@@ -390,10 +447,13 @@ function MilkStorageSettings({ babyId }: { babyId: string | null }) {
     value: string,
     set: (v: string) => void,
     unit: MessageKey,
+    notUsed = false,
   ) => (
     <div className="setting-group">
       <label className="label" htmlFor={id}>
         {t(NAMES[name])}
+        {/* D-12: kept, editable, and honest about doing nothing yet. */}
+        {notUsed && <span className="meta"> · {t('milkRules.notUsedYet')}</span>}
       </label>
       <div className="row-tight">
         <input
@@ -413,10 +473,31 @@ function MilkStorageSettings({ babyId }: { babyId: string | null }) {
     <Card>
       <Label>{t('milkRules.title')}</Label>
       <p className="setting-note">{t('milkRules.note')}</p>
+      <p className="setting-note">{t('milkRules.fridgeOnlyNote')}</p>
       <form onSubmit={save}>
-        {field('milk-room', 'room', room, setRoom, 'milkRules.hours')}
+        {field('milk-room', 'room', room, setRoom, 'milkRules.hours', true)}
         {field('milk-fridge', 'fridge', fridge, setFridge, 'milkRules.days')}
-        {field('milk-freezer', 'freezer', freezer, setFreezer, 'milkRules.months')}
+        {field('milk-freezer', 'freezer', freezer, setFreezer, 'milkRules.months', true)}
+        <div className="setting-group">
+          <label className="label" htmlFor="milk-bottles">
+            {t('milkRules.bottles')}
+          </label>
+          <div className="row-tight">
+            <input
+              id="milk-bottles"
+              className="input narrow"
+              inputMode="numeric"
+              value={bottles}
+              disabled={!babyId || busy}
+              aria-describedby="milk-bottles-hint"
+              onChange={(e) => setBottles(e.target.value)}
+            />
+            <span className="meta">{t('milkRules.bottlesUnit')}</span>
+          </div>
+          <p className="setting-note" id="milk-bottles-hint">
+            {t('milkRules.bottlesHint')}
+          </p>
+        </div>
         <div className="row-tight">
           <Btn type="submit" disabled={!babyId || busy}>
             {busy ? t('common.saving') : t('common.save')}
@@ -424,6 +505,7 @@ function MilkStorageSettings({ babyId }: { babyId: string | null }) {
         </div>
       </form>
       {flash && <Banner kind="ok">{flash}</Banner>}
+      {above && <Banner kind="warn">{above}</Banner>}
       {err && <Banner kind="error">{err}</Banner>}
     </Card>
   )

@@ -1042,6 +1042,57 @@ select.input {
   opacity: 0.45;
   cursor: default;
 }
+
+/* El selector de biberón de Leche (components/BottleSlotPicker.tsx, v4): los
+   biberones físicos M1…MN como un radiogroup, igual que .seg, pero en grilla
+   —pueden ser hasta 30— y con dos renglones por botón: el número y su estado
+   ("Libre", "Tiene 2.5 oz · 14:20", "Caducada"). Un biberón con leche no se
+   elige: queda sin fondo y en gris, con el motivo a la vista. Cada botón mide
+   --tap de alto, el tamaño cómodo de la fila de registro. */
+.slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8.5em, 1fr));
+  gap: var(--s-2);
+  margin-top: var(--s-2);
+}
+.slot {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  min-width: 0;
+  min-height: var(--tap);
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-control);
+  background: var(--c-field);
+  color: var(--c-text);
+  font-family: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.slot[aria-checked='true'] {
+  background: var(--c-accent);
+  border-color: var(--c-accent);
+  color: var(--c-on-accent);
+}
+.slot[aria-disabled='true'] {
+  background: none;
+  color: var(--c-muted);
+  cursor: default;
+}
+.slot:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.slot-name {
+  font-size: var(--t-body);
+  font-weight: 700;
+}
+.slot-state {
+  font-size: var(--t-meta);
+  overflow-wrap: anywhere;
+}
 /* La línea debajo de un ajuste: qué va a hacer, o por qué acá no puede.
    width 0 + min-width 100%: envuelve al ancho del contenedor en vez de
    estirarlo con una frase larga en español. */

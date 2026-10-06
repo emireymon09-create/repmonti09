@@ -17,6 +17,7 @@ import {
   lastBottleFeeding,
   listAppointments,
   listContainers,
+  listDiscards,
   listDrawdowns,
   logBottleFeed,
   milkErrorText,
@@ -35,6 +36,8 @@ import { useSync } from '@/lib/useSync'
 import { SeenNote, SyncBar, SyncErrorBanner } from '@/components/SyncStatus'
 import { lastGood, seenKey, type LastGood, type SeenState } from '@/lib/lastSeen'
 import { BottleBuilder, sameAsPlan, type BottleValue } from '@/components/BottleBuilder'
+import { LeftoverField, type LeftoverValue } from '@/components/LeftoverField'
+import { validateLeftover } from '@/lib/milkBottles'
 import {
   applyPendingInventory,
   stashMl,
@@ -67,6 +70,7 @@ import type {
   DoctorAppointment,
   Feeding,
   MilkContainer,
+  MilkDiscard,
   MilkDrawdown,
   NursingSession,
   Side,
@@ -116,6 +120,8 @@ type ServerRows = {
    */
   containers: MilkContainer[]
   drawdowns: MilkDrawdown[]
+  /** Discarded milk (0015): a discarded bottle is free, not in what there is. */
+  discards: MilkDiscard[]
   lastBottle: Feeding[]
 }
 const NO_ROWS: ServerRows = {
@@ -126,6 +132,7 @@ const NO_ROWS: ServerRows = {
   appt: [],
   containers: [],
   drawdowns: [],
+  discards: [],
   lastBottle: [],
 }
 
@@ -143,6 +150,7 @@ function ownRows(rows: ServerRows): ServerRows {
     appt: rows.appt ?? [],
     containers: rows.containers ?? [],
     drawdowns: rows.drawdowns ?? [],
+    discards: rows.discards ?? [],
     lastBottle: rows.lastBottle ?? [],
   }
 }
@@ -173,6 +181,8 @@ export default function Dashboard() {
   // into it on open and back to the button on close.
   const [bottleOpen, setBottleOpen] = useState(false)
   const [built, setBuilt] = useState<BottleValue | null>(null)
+  // "Sobró" (V4-41): optional, for both "Log as is" and "Log with changes".
+  const [leftover, setLeftover] = useState<LeftoverValue>({ ml: null, bad: false })
   const bottleBtn = useRef<HTMLButtonElement>(null)
   const panelHead = useRef<HTMLHeadingElement>(null)
   // "She started five minutes before I hit the button": minutes to move a
@@ -244,7 +254,12 @@ export default function Dashboard() {
     // The queue folded into what there is: a bottle given offline already
     // came out of its containers, a session pumped offline is already in.
     setContainers(
-      applyPendingInventory(rows.containers ?? [], rows.drawdowns ?? [], queued).containers,
+      applyPendingInventory(
+        rows.containers ?? [],
+        rows.drawdowns ?? [],
+        rows.discards ?? [],
+        queued,
+      ).containers,
     )
     setLastBottle(rows.lastBottle ?? [])
   }, [])
@@ -273,7 +288,7 @@ export default function Dashboard() {
         setSeen(last.state(offline))
       }
 
-      const [f, d, n, s, a, c, dd, lb, queued] = await Promise.all([
+      const [f, d, n, s, a, c, dd, dc, lb, queued] = await Promise.all([
         recentFeedings(babyId),
         recentDiapers(babyId),
         recentNursing(babyId),
@@ -281,6 +296,7 @@ export default function Dashboard() {
         listAppointments(babyId),
         listContainers(babyId),
         listDrawdowns(babyId),
+        listDiscards(babyId),
         lastBottleFeeding(babyId),
         pendingWrites(),
       ])
@@ -294,6 +310,7 @@ export default function Dashboard() {
         appt: a,
         containers: c,
         drawdowns: dd,
+        discards: dc,
         lastBottle: { ...lb, data: lb.data ? [lb.data] : [] },
       })
       setSeen(last.settle(rows, error))
@@ -486,6 +503,15 @@ export default function Dashboard() {
     formulaMl: number
     containersPending: boolean
   }) {
+    // "Sobró" is checked against what this bottle serves (V4-43, D-10).
+    const total = value.portions.reduce((sum, p) => sum + p.amount_ml, 0) + value.formulaMl
+    const leftoverProblem = leftover.bad ? 'number' : validateLeftover(leftover.ml, total)
+    if (leftoverProblem) {
+      setErr(
+        t(leftoverProblem === 'number' ? 'bottle.leftoverNotNumber' : 'bottle.leftoverTooMuch'),
+      )
+      return
+    }
     run(t('dash.label.bottle'), async () => {
       const res = await logBottleFeed(
         baby!.id,
@@ -495,6 +521,7 @@ export default function Dashboard() {
           notes: null,
           formula_ml: value.formulaMl,
           portions: value.portions,
+          leftover_ml: leftover.ml,
         },
         { containersPending: value.containersPending },
       )
@@ -1019,6 +1046,9 @@ export default function Dashboard() {
             {containers.some((c) => c.pending) && (
               <div className="pending-tag">{t('milk.stashPending')}</div>
             )}
+            {/* "Sobró", for both buttons below. Mounted with the panel:
+                closing it (after a save, too) starts it over, empty and in oz. */}
+            <LeftoverField id="dash-bottle-leftover" disabled={busy} onChange={setLeftover} />
             <div className="row-tight">
               <Btn disabled={busy} onClick={logAsIs}>
                 {t('bottle.logAsIs')}

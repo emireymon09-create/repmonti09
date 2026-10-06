@@ -21,8 +21,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { AmountUnit } from '@/components/AmountUnit'
 import { useT } from '@/lib/i18n/react'
 import { newId } from '@/lib/queue'
-import { DISPLAY_UNIT, ML_PER_FL_OZ, formatMilkOz } from '@/lib/format'
-import { parseAmountMl, portionMl, type BottlePlan } from '@/lib/milk'
+import { DISPLAY_UNIT, formatMilkOz } from '@/lib/format'
+import {
+  amountText,
+  convertAmountText,
+  parseAmountMl,
+  portionMl,
+  type BottlePlan,
+} from '@/lib/milk'
 import type { MilkContainer, VolumeUnit, WithPending } from '@/lib/types'
 
 export type BottleValue = {
@@ -47,12 +53,6 @@ type Row = {
   text: string
   planMl: number | null
   planText: string
-}
-
-/** An amount for a field, in `unit`: two decimals in oz, whole ml. */
-function amountText(ml: number, unit: VolumeUnit): string {
-  if (!(ml > 0)) return ''
-  return unit === 'oz' ? String(Number((ml / ML_PER_FL_OZ).toFixed(2))) : String(Math.round(ml))
 }
 
 function rowsFromPlan(plan: BottlePlan): Row[] {
@@ -186,10 +186,9 @@ export function BottleBuilder({
 
   function switchUnit(next: VolumeUnit) {
     if (next === unit) return
-    const convert = (text: string) => {
-      const parsed = parseAmountMl(text, unit)
-      return parsed.ml == null ? text : amountText(parsed.ml, next)
-    }
+    // The same conversion as the left/right and "left over" fields
+    // (lib/milk.ts, D-19): one rule for every oz/ml toggle in the app.
+    const convert = (text: string) => convertAmountText(text, unit, next)
     // A field still showing the plan's amount keeps meaning the plan's EXACT
     // ml in the other unit too — switching back and forth changes nothing.
     setRows((rs) =>

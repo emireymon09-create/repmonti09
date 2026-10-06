@@ -6,9 +6,12 @@ import { NoBaby } from '@/components/NoBaby'
 import { Banner, Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
 import { SeenNote, SyncBar, SyncErrorBanner } from '@/components/SyncStatus'
 import { AmountUnit } from '@/components/AmountUnit'
+import { BottleSlotPicker, storedWhen } from '@/components/BottleSlotPicker'
 import {
+  discardContainer,
   keepLastGood,
   listContainers,
+  listDiscards,
   listDrawdowns,
   logPumpingSession,
   mergePending,
@@ -27,21 +30,26 @@ import {
   SERVED_EPSILON_ML,
   activeContainers,
   applyPendingInventory,
+  convertAmountText,
   isUsable,
   newestSavedContainers,
-  normalizeTapeLabel,
-  parseAmountMl,
-  servedMl,
+  readPumpingSides,
   stashMl,
-  suggestTape,
-  takenTapes,
-  type TapeCheck,
 } from '@/lib/milk'
+import {
+  DEFAULT_BOTTLE_COUNT,
+  bottleSlots,
+  canDiscard,
+  containerBalance,
+  discardedTotalMl,
+  labelNumber,
+} from '@/lib/milkBottles'
 import { useT } from '@/lib/i18n/react'
 import type {
   MilkContainer,
+  MilkDiscard,
   MilkDrawdown,
-  MilkRules,
+  MilkSettings,
   PumpingSession,
   VolumeUnit,
   WithPending,
@@ -62,8 +70,10 @@ type ServerRows = {
   sessions: PumpingSession[]
   containers: MilkContainer[]
   drawdowns: MilkDrawdown[]
+  /** Expired milk thrown out (0015): "Discarded milk", and which bottles it freed. */
+  discards: MilkDiscard[]
 }
-const NO_ROWS: ServerRows = { sessions: [], containers: [], drawdowns: [] }
+const NO_ROWS: ServerRows = { sessions: [], containers: [], drawdowns: [], discards: [] }
 
 /** Only the keys this page reads (a copy saved by an older build may carry others, or miss some). */
 function ownRows(rows: ServerRows): ServerRows {
@@ -71,6 +81,7 @@ function ownRows(rows: ServerRows): ServerRows {
     sessions: rows.sessions ?? [],
     containers: rows.containers ?? [],
     drawdowns: rows.drawdowns ?? [],
+    discards: rows.discards ?? [],
   }
 }
 
@@ -103,7 +114,13 @@ export default function PumpingPage() {
 
   const [sessions, setSessions] = useState<WithPending<PumpingSession>[]>([])
   const [containers, setContainers] = useState<WithPending<MilkContainer>[]>([])
-  const [rules, setRules] = useState<MilkRules>(DEFAULT_MILK_RULES)
+  const [discards, setDiscards] = useState<WithPending<MilkDiscard>[]>([])
+  // The storage rules (for the expiry shown offline) and N, how many bottles
+  // the selector offers (0015). Defaults until they arrive.
+  const [rules, setRules] = useState<MilkSettings>({
+    ...DEFAULT_MILK_RULES,
+    milk_bottle_count: DEFAULT_BOTTLE_COUNT,
+  })
   const [now, setNow] = useState(() => Date.now())
 
   // Live: when the pump started, on this device.
@@ -113,17 +130,18 @@ export default function PumpingPage() {
   const [stopping, setStopping] = useState(false)
   const [left, setLeft] = useState('')
   const [right, setRight] = useState('')
-  // What the two numbers are in, for THIS session only — back to ounces after
-  // every save (components/AmountUnit.tsx, design.md §5.7).
-  const [unit, setUnit] = useState<VolumeUnit>(DISPLAY_UNIT)
+  // What each number is in, each side on its own (V4-01), for THIS session
+  // only — back to ounces after every save (components/AmountUnit.tsx,
+  // design.md §5.7).
+  const [unitLeft, setUnitLeft] = useState<VolumeUnit>(DISPLAY_UNIT)
+  const [unitRight, setUnitRight] = useState<VolumeUnit>(DISPLAY_UNIT)
   const [notes, setNotes] = useState('')
-  // The tape the person typed; null = untouched, so the field shows the
-  // current suggestion (and follows it when the list changes).
-  const [tape, setTape] = useState<string | null>(null)
-  // A tape just taken online (saved here, or refused because another phone
-  // has it), until the next good read: without it, the field would offer that
-  // same number again for a moment.
-  const [justSaved, setJustSaved] = useState<string | null>(null)
+  // The bottle chosen in the selector. Never preselected (D-4).
+  const [bottle, setBottle] = useState<string | null>(null)
+  // A bottle the server just refused as taken (another phone), until the next
+  // good read: without it the selector would offer it again for a moment.
+  const [justTaken, setJustTaken] = useState<string | null>(null)
+  const pickerRef = useRef<HTMLDivElement>(null)
   const [at, setAt] = useState(() => toHouseholdInputValue(new Date()))
 
   const [err, setErr] = useState<string | null>(null)
@@ -148,15 +166,15 @@ export default function PumpingPage() {
   const [seen, setSeen] = useState<SeenState>({ kind: 'live' })
   // Is the container list on screen THE list? Only after a container read
   // worked, or with this page's own saved copy. Offline with neither, the
-  // list is unknown — not empty — and the tape field must not guess (QA,
-  // 6 oct 2026: it offered M1 while M1…M10 were on the shelf). `goodRead`
+  // list is unknown — not empty — and the bottle selector must not pretend
+  // to know which bottles are free (QA, 6 oct 2026; V4-11 CA3). `goodRead`
   // remembers, per baby, that a read worked this session.
   const goodRead = useRef<string | null>(null)
   const [readKnown, setReadKnown] = useState(false)
   // Until a read has answered, an unknown list is just "not read yet".
   const [settled, setSettled] = useState(false)
   // Unknown here: what Today, Feeding or History saved on this device (the
-  // same full container list), to suggest from. Null when none did.
+  // same full container list), for the selector. Null when none did.
   const [savedList, setSavedList] = useState<{
     savedAt: string
     containers: MilkContainer[]
@@ -167,8 +185,9 @@ export default function PumpingPage() {
       b.pumped_at.localeCompare(a.pumped_at),
     )
     setSessions(merged)
-    const view = applyPendingInventory(rows.containers, rows.drawdowns, queued).containers
-    setContainers(view)
+    const view = applyPendingInventory(rows.containers, rows.drawdowns, rows.discards, queued)
+    setContainers(view.containers)
+    setDiscards(view.discards)
   }, [])
 
   const refresh = useCallback(
@@ -195,10 +214,11 @@ export default function PumpingPage() {
         setSeen(last.state(offline))
       }
 
-      const [s, c, d, queued] = await Promise.all([
+      const [s, c, d, dc, queued] = await Promise.all([
         recentPumping(babyId, 100),
         listContainers(babyId),
         listDrawdowns(babyId),
+        listDiscards(babyId),
         pendingWrites(),
       ])
       if (read !== latestRead.current) return
@@ -210,11 +230,12 @@ export default function PumpingPage() {
         sessions: s,
         containers: c,
         drawdowns: d,
+        discards: dc,
       })
       setSeen(last.settle(rows, error))
-      // A good read made after the save has the real list (with that tape, or
-      // without it if another phone already voided it): the marker is done.
-      if (!error) setJustSaved(null)
+      // A good read has the real list (with the refused bottle taken, or free
+      // again if the other phone already emptied it): the marker is done.
+      if (!c.error) setJustTaken(null)
       setLoadErr(error && !looksOffline(error) ? t('milk.couldNotLoad', { error }) : null)
       show(rows, queued)
     },
@@ -246,19 +267,31 @@ export default function PumpingPage() {
 
   const live = containers.filter((c) => !c.voided_at)
   const ctx = { containers: live, rules }
-  // `live` is already the non-voided list (queued ones included). Null when
-  // the list is unknown: then nothing is suggested (lib/milk.ts, takenTapes).
-  const taken = takenTapes({ live, readKnown, saved: savedList?.containers ?? null, justSaved })
-  const suggestedTape = suggestTape(taken)
-  const tapeTaken = (label: string) => (taken ?? live.map((c) => c.label)).includes(label)
-  const tapeText = tape ?? suggestedTape ?? ''
+  // What the selector knows (V4-11 CA3): this page's list when it is THE list;
+  // offline, another page's saved copy with the queue on top; with neither,
+  // null — unknown, not empty.
+  const slotContainers: WithPending<MilkContainer>[] | null = readKnown
+    ? live
+    : savedList
+      ? [...savedList.containers, ...live]
+      : null
+  const count = rules.milk_bottle_count
   const containerOf = (sessionId: string) => live.find((c) => c.source_session_id === sessionId)
 
-  function readSides(l: string, r: string, u: VolumeUnit) {
-    const pl = parseAmountMl(l, u)
-    const pr = parseAmountMl(r, u)
-    if (pl.problem || pr.problem) return null
-    return { left_ml: pl.ml, right_ml: pr.ml }
+  // Switching a side's oz/ml converts what is typed in it (D-19, AJ-16): the
+  // number keeps meaning the same milk. The other side is not touched (CA2).
+  function switchLeft(next: VolumeUnit) {
+    setLeft((x) => convertAmountText(x, unitLeft, next))
+    setUnitLeft(next)
+  }
+  function switchRight(next: VolumeUnit) {
+    setRight((x) => convertAmountText(x, unitRight, next))
+    setUnitRight(next)
+  }
+
+  function needBottle(message: string) {
+    setErr(message)
+    setTimeout(() => pickerRef.current?.focus(), 0)
   }
 
   function startLive() {
@@ -276,7 +309,7 @@ export default function PumpingPage() {
     writeTimer(baby.id, null)
     setStartedAt(null)
     setStopping(false)
-    setTape(null)
+    setBottle(null)
   }
 
   async function save(e: React.FormEvent) {
@@ -285,8 +318,8 @@ export default function PumpingPage() {
     setErr(null)
     setSaved(null)
 
-    const sides = readSides(left, right, unit)
-    if (!sides) {
+    const sides = readPumpingSides({ text: left, unit: unitLeft }, { text: right, unit: unitRight })
+    if (sides.problem) {
       setErr(t('milk.amountNotNumber'))
       return
     }
@@ -297,61 +330,59 @@ export default function PumpingPage() {
       setErr(t('past.inFuture'))
       return
     }
-    const input: PumpingInput = { ...sides, notes: notes.trim() || null, pumped_at: pumpedAt }
+    const input: PumpingInput = {
+      left_ml: sides.leftMl,
+      right_ml: sides.rightMl,
+      notes: notes.trim() || null,
+      pumped_at: pumpedAt,
+    }
 
-    // The tape only matters when there is milk: without an amount there is
-    // no container, and the field never blocks the session. A tape a live
-    // container (queued ones too) already has is refused here, never
-    // renumbered — the server refuses it as well.
-    let label: string | undefined
-    if ((sides.left_ml ?? 0) + (sides.right_ml ?? 0) > 0) {
-      // Untouched, the field holds the suggestion, which is always valid —
-      // even past the six digits a typed tape is limited to.
-      // With the list unknown there is no suggestion: the person writes the
-      // number. The server never picks one (a null tape is milk_bad_input).
-      const check: TapeCheck =
-        tape === null && suggestedTape
-          ? { ok: true, label: suggestedTape }
-          : normalizeTapeLabel(tape ?? '')
-      if (!check.ok) {
-        if (check.problem === 'empty') {
-          setErr(
-            suggestedTape ? t('milk.tapeEmpty', { label: suggestedTape }) : t('milk.tapeNeeded'),
-          )
-        } else {
-          setErr(t('milk.tapeFormat', { label: suggestedTape ?? 'M1' }))
-        }
+    // The bottle only matters when there is milk: with both sides empty there
+    // is no container and nothing is asked (V4-04). With milk, the person
+    // picks it — never made up, never renumbered (D-4, X-1). One that has
+    // milk by now (the list was re-read while choosing) is refused here, as
+    // the server would.
+    let label: string | null = null
+    if (sides.needsBottle) {
+      if (!bottle) {
+        needBottle(t('milk.bottleNeeded'))
         return
       }
-      if (tapeTaken(check.label)) {
-        setErr(t('milk.tapeInUse', { label: check.label }))
+      const { slots } = bottleSlots(count, slotContainers, discards, Date.now())
+      if (slots.find((x) => x.label === bottle)?.disabled || bottle === justTaken) {
+        setBottle(null)
+        needBottle(milkErrorText(`milk_label_taken:${bottle}`, lang))
         return
       }
-      label = check.label
+      label = bottle
     }
 
     setBusy(true)
     const { data, error, queued } = await logPumpingSession(baby.id, userId, input, ctx, label)
     setBusy(false)
     if (error) {
-      // Saved directly, nothing was stored: the other phone just took this
-      // tape. Say "pick another" (not the queued-sync "delete this session")
-      // and re-read so the suggestion moves past it.
+      // Saved directly, nothing was stored: another phone just put milk in
+      // this bottle (V4-16). Say so, clear the choice and re-read, so the
+      // selector shows it taken and another one is picked.
       const refused = /^milk_label_taken:(M[0-9]+)$/.exec(error)
       if (refused) {
         // Counted as taken right away, even if the re-read fails on bad wifi.
-        setJustSaved(refused[1])
-        setErr(t('milk.tapeInUse', { label: refused[1] }))
+        setJustTaken(refused[1])
+        setBottle(null)
+        needBottle(milkErrorText(error, lang))
         refresh(baby.id)
+        return
+      }
+      if (error === 'milk_bottle_needed') {
+        needBottle(milkErrorText(error, lang))
         return
       }
       setErr(t('common.couldNotSave', { error: milkErrorText(error, lang) }))
       return
     }
-    if (data.label && !queued) setJustSaved(data.label)
     setSaved(
       data.label
-        ? t(queued ? 'milk.queuedLabel' : 'milk.loggedLabel', { label: data.label })
+        ? t(queued ? 'milk.queuedIn' : 'milk.loggedIn', { label: data.label })
         : queued
           ? t('common.queued')
           : t('milk.logged'),
@@ -359,14 +390,42 @@ export default function PumpingPage() {
     setLeft('')
     setRight('')
     setNotes('')
-    setTape(null)
-    setUnit(DISPLAY_UNIT)
+    setBottle(null)
+    setUnitLeft(DISPLAY_UNIT)
+    setUnitRight(DISPLAY_UNIT)
     setAt(toHouseholdInputValue(new Date()))
     if (fromLive) {
       writeTimer(baby.id, null)
       setStartedAt(null)
       setStopping(false)
     }
+    refresh(baby.id)
+    reloadPending()
+  }
+
+  /**
+   * "Desechar" (V4-33/V4-34): all that is left in an expired bottle is thrown
+   * out and the bottle is free again. Asked first — it can't be undone in v4
+   * (D-11). Whether it really expired is the server's call (D-15). Offline it
+   * queues, behind its pumping session when that one hasn't synced (V4-39).
+   */
+  async function discard(c: WithPending<MilkContainer>) {
+    if (!baby || busy) return
+    const amount = formatMilkOz(c.remaining_ml)
+    if (!window.confirm(t('milk.discardConfirm', { label: c.label, amount }))) return
+    setErr(null)
+    setSaved(null)
+    setBusy(true)
+    const { error, queued } = await discardContainer(baby.id, userId, c, {
+      pending: !!c.pending,
+    })
+    setBusy(false)
+    if (error) {
+      setErr(t('common.couldNotSave', { error: milkErrorText(error, lang) }))
+      refresh(baby.id)
+      return
+    }
+    setSaved(queued ? t('common.queued') : t('milk.discardedOk', { label: c.label }))
     refresh(baby.id)
     reloadPending()
   }
@@ -394,74 +453,78 @@ export default function PumpingPage() {
   const shelf = activeContainers(live).filter((c) => c.remaining_ml >= EMPTY_ML)
   const stash = stashMl(live, now)
   const stashPending = shelf.some((c) => c.pending)
-  const unitName = t(`unit.${unit}`)
-  // Why the tape field is empty, or where its number came from, when this
-  // page couldn't read the list. Nothing while the first read is on its way.
-  const tapeHint =
-    taken === null
-      ? settled || !online
-        ? t('milk.tapeUnknown')
-        : null
-      : !readKnown && savedList
-        ? t('milk.tapeFromSaved', { when: timeAgo(savedList.savedAt, now, lang) })
-        : null
+  const discardedMl = discardedTotalMl(discards)
+  const discardedPending = discards.some((d) => d.pending && !d.voided_at)
+  // Is there milk typed? Then the selector shows; with both sides empty there
+  // is no container to name (V4-04). A side that isn't a number yet counts as
+  // milk, so the selector doesn't flicker while typing "1." or "1,".
+  const sidesNow = readPumpingSides(
+    { text: left, unit: unitLeft },
+    { text: right, unit: unitRight },
+  )
+  const typedMilk = sidesNow.problem ? true : sidesNow.needsBottle
 
-  // Etiqueta visible por lado: el placeholder solo no alcanza — "Izquierdo, oz"
-  // no entra en un campo angosto, y desaparece apenas se tipea un número.
+  // One amount field per side, each with its own oz/ml right next to it
+  // (V4-01): the same AmountUnit as Today's bottle. Visible labels — a
+  // placeholder alone disappears as soon as a number is typed.
+  const sideField = (
+    id: string,
+    side: 'left' | 'right',
+    value: string,
+    set: (v: string) => void,
+    unit: VolumeUnit,
+    switchUnit: (u: VolumeUnit) => void,
+  ) => {
+    const unitName = t(`unit.${unit}`)
+    return (
+      <div>
+        <label className="label" htmlFor={id}>
+          {t(`side.${side}`)}
+        </label>
+        <div className="row-tight row-wrap">
+          <input
+            id={id}
+            className="input narrow"
+            value={value}
+            onChange={(e) => set(e.target.value)}
+            inputMode="decimal"
+            placeholder={unitName}
+            aria-label={t(side === 'left' ? 'milk.left' : 'milk.right', { unit: unitName })}
+          />
+          <AmountUnit
+            value={unit}
+            onChange={switchUnit}
+            disabled={busy}
+            label={t(side === 'left' ? 'milk.leftUnit' : 'milk.rightUnit')}
+          />
+        </div>
+      </div>
+    )
+  }
+
   const amountFields = (idPrefix: string) => (
     <>
       <p className="meta">{t('milk.sidesHint')}</p>
-      <div className="row-tight row-wrap">
-        <div>
-          <label className="label" htmlFor={`${idPrefix}-left`}>
-            {t('side.left')}
-          </label>
-          <input
-            id={`${idPrefix}-left`}
-            className="input narrow"
-            value={left}
-            onChange={(e) => setLeft(e.target.value)}
-            inputMode="decimal"
-            placeholder={unitName}
-            aria-label={t('milk.left', { unit: unitName })}
-          />
-        </div>
-        <div>
-          <label className="label" htmlFor={`${idPrefix}-right`}>
-            {t('side.right')}
-          </label>
-          <input
-            id={`${idPrefix}-right`}
-            className="input narrow"
-            value={right}
-            onChange={(e) => setRight(e.target.value)}
-            inputMode="decimal"
-            placeholder={unitName}
-            aria-label={t('milk.right', { unit: unitName })}
-          />
-        </div>
-        <AmountUnit value={unit} onChange={setUnit} disabled={busy} />
+      <div className="row row-wrap">
+        {sideField(`${idPrefix}-left`, 'left', left, setLeft, unitLeft, switchLeft)}
+        {sideField(`${idPrefix}-right`, 'right', right, setRight, unitRight, switchRight)}
       </div>
-      <div>
-        <label className="label" htmlFor={`${idPrefix}-tape`}>
-          {t('milk.tape')}
-        </label>
-        <input
-          id={`${idPrefix}-tape`}
-          className="input narrow"
-          value={tapeText}
-          onChange={(e) => setTape(e.target.value)}
-          autoCapitalize="characters"
-          autoComplete="off"
-          spellCheck={false}
-          aria-describedby={tapeHint ? `${idPrefix}-tape-hint` : undefined}
+      {typedMilk && (
+        <BottleSlotPicker
+          ref={pickerRef}
+          idPrefix={idPrefix}
+          count={count}
+          containers={slotContainers}
+          discards={discards}
+          nowMs={now}
+          value={bottle}
+          onChange={setBottle}
+          disabled={busy}
+          savedAgo={!readKnown && savedList ? timeAgo(savedList.savedAt, now, lang) : null}
+          sayUnknown={settled || !online}
+          justTaken={justTaken}
         />
-        {tapeHint && (
-          <p className="meta" id={`${idPrefix}-tape-hint`}>
-            {tapeHint}
-          </p>
-        )}
-      </div>
+      )}
       <input
         className="input"
         value={notes}
@@ -569,8 +632,12 @@ export default function PumpingPage() {
           {!unknown && shelf.length === 0 && <div className="empty">{t('milk.noContainers')}</div>}
           {shelf.length > 0 && (
             <ul className="feed">
+              {/* Oldest first, by when it went into the fridge — never by number:
+                  the bottles are reused, M6 can be the oldest (V4-13). */}
               {shelf.map((c) => {
                 const usable = isUsable(c, now)
+                const num = labelNumber(c.label)
+                const outside = num === null || num > count
                 return (
                   <li key={c.id} className="feed-item">
                     <div className="feed-what">
@@ -578,21 +645,48 @@ export default function PumpingPage() {
                         label: c.label,
                         amount: formatMilkOz(c.remaining_ml),
                       })}
+                      {outside && (
+                        <span className="meta"> · {t('milk.outOfRange', { n: count })}</span>
+                      )}
+                      <div className="meta">
+                        {t('milk.storedAt', { when: storedWhen(c.stored_at, now, lang) })}
+                      </div>
+                      <div className="meta">
+                        {usable
+                          ? t('milk.expires', {
+                              when: `${longDate(c.expires_at, lang)} · ${clockTime(c.expires_at, lang)}`,
+                            })
+                          : t('milk.expiredShort')}
+                      </div>
+                      {c.pending && <div className="pending-tag">{t('common.notSyncedYet')}</div>}
                     </div>
-                    <div className="meta">
-                      {usable
-                        ? t('milk.expires', {
-                            when: `${longDate(c.expires_at, lang)} · ${clockTime(c.expires_at, lang)}`,
-                          })
-                        : t('milk.expired')}
-                    </div>
-                    {c.pending && <div className="pending-tag">{t('common.notSyncedYet')}</div>}
+                    {canDiscard(c, discards, now) && (
+                      <span className="feed-actions">
+                        <button
+                          type="button"
+                          className="linkish"
+                          disabled={busy}
+                          aria-label={t('milk.discardAria', { label: c.label })}
+                          onClick={() => discard(c)}
+                        >
+                          {t('milk.discard')}
+                        </button>
+                      </span>
+                    )}
                   </li>
                 )
               })}
             </ul>
           )}
           <p className="meta">{t('milk.rulesHint')}</p>
+        </Card>
+
+        {/* ---------------- Discarded milk (V4-35, D-13) ---------------- */}
+        <Card>
+          <Label>{t('milk.discardedTotal')}</Label>
+          <div className="value">{unknown ? '—' : formatMilkOz(discardedMl)}</div>
+          <div className="meta">{t('milk.discardedNote')}</div>
+          {discardedPending && <div className="pending-tag">{t('milk.stashPending')}</div>}
         </Card>
 
         {/* ---------------- Sessions ----------------
@@ -610,7 +704,8 @@ export default function PumpingPage() {
             <div className="feed">
               {sessions.map((row) => {
                 const container = containerOf(row.id)
-                const served = servedMl(container)
+                // Served = what went into bottles; a discard is not served (v4).
+                const served = container ? containerBalance(container, null, discards).served : 0
                 const voided = !!(row as { voided_at?: string | null }).voided_at
                 const hasSides = row.left_ml != null || row.right_ml != null
                 return (

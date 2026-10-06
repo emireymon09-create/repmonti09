@@ -341,25 +341,11 @@ export const es: Dictionary = {
   'milk.left': 'Izquierdo, {unit}',
   'milk.right': 'Derecho, {unit}',
   'milk.sidesLine': 'Izquierdo {left} · Derecho {right}',
-  'milk.loggedLabel': 'Sesión registrada — escribí {label} en la cinta.',
-  'milk.queuedLabel':
-    'Guardada en este dispositivo, sin sincronizar todavía — escribí {label} en la cinta.',
-  'milk.tape': 'Cinta',
-  'milk.tapeEmpty': 'Escribí el número de la cinta, por ejemplo {label}.',
-  'milk.tapeFormat': 'La cinta es una M y un número desde 1, por ejemplo {label}.',
-  'milk.tapeInUse': '{label} ya lo tiene una extracción que sigue guardada. Elegí otro número.',
-  'milk.tapeUnknown':
-    'Sin conexión, este teléfono no puede saber qué números de cinta están libres. Escribí el número que tiene la cinta.',
-  'milk.tapeFromSaved':
-    'Sin conexión: sugerido según lo que este teléfono vio {when}. Si el otro teléfono registró leche desde entonces, el número puede estar ocupado.',
-  'milk.tapeNeeded':
-    'Escribí el número de la cinta. Sin conexión, este teléfono no puede elegir uno libre por vos.',
   'milk.stashNote': 'Solo leche materna, de extracciones que todavía se pueden usar.',
   'milk.stashPending': 'Incluye registros que todavía no se sincronizaron.',
   'milk.noContainers': 'Todavía no hay leche guardada.',
   'milk.containerLine': '{label} · quedan {amount}',
   'milk.expires': 'Usar antes del {when}',
-  'milk.expired': 'Caducada — no cuenta',
   'milk.rulesHint': 'Cuánto dura la leche se cambia en Ajustes → Conservación de la leche.',
   'milk.nothingSaved': 'Sin conexión, y todavía no hay nada guardado en este dispositivo.',
   'milk.servedNote': 'Ya se sirvieron {amount} de acá',
@@ -368,6 +354,35 @@ export const es: Dictionary = {
   'milk.deletedPending': 'Borrada en este dispositivo — sin sincronizar todavía.',
   'milk.bottleNeeded': 'Elegí en qué biberón quedó.',
   'milk.discardedLine': 'Leche desechada · {label} · {amount}',
+  'milk.leftUnit': 'Unidad del izquierdo',
+  'milk.rightUnit': 'Unidad del derecho',
+  'milk.bottle': 'Biberón',
+  'milk.bottlePick': '¿En qué biberón quedó? Los que tienen leche no se pueden elegir.',
+  'milk.slotFree': 'Libre',
+  'milk.slotTaken': 'Tiene {amount} · {when}',
+  'milk.slotJustTaken': 'Recién ocupado desde otro teléfono',
+  'milk.outOfRange': 'fuera de M1–M{n}',
+  'milk.bottlesUnknown':
+    'Sin conexión: no se sabe qué biberones están ocupados. Si elegís uno ocupado, te va a avisar al sincronizar.',
+  'milk.bottlesFromSaved':
+    'Sin conexión: los biberones como los vio este teléfono {when}. El otro teléfono puede haber usado alguno desde entonces.',
+  'milk.loggedIn': 'Sesión registrada en {label}.',
+  'milk.queuedIn': 'Guardada en este dispositivo en {label} — sin sincronizar todavía.',
+  'milk.storedAt': 'En el refri desde {when}',
+  'milk.expiredShort': 'Caducada',
+  'milk.discard': 'Desechar',
+  'milk.discardAria': 'Desechar {label}',
+  'milk.discardConfirm':
+    '¿Desechar {label} ({amount})? Se anota como leche tirada y el biberón queda libre.',
+  'milk.discardedOk': '{label} desechada — el biberón quedó libre.',
+  'milk.discardedTotal': 'Leche desechada',
+  'milk.discardedNote': 'Leche caducada que se tiró con “Desechar”, toda hasta hoy.',
+  'milk.notReturned':
+    '{amount} no volvió a {label}: ese biberón se desechó o ya tiene otra extracción.',
+  'milk.notReturnedReused': '{amount} no vuelve a {label}: ese biberón ya tiene otra extracción.',
+  'milk.notReturnedDiscarded': '{amount} no vuelve a {label}: se desechó.',
+  'milk.notReturnedGone': '{amount} no vuelve a {label}: esa extracción ya no existe.',
+  'milk.byThisPhone': 'Según lo que sabe este teléfono: {text}',
 
   // ------------------------------------------------------------ bottle (0014)
   'bottle.formulaPart': 'fórmula {amount}',
@@ -399,8 +414,24 @@ export const es: Dictionary = {
   'bottle.addRow': '+ Agregar fila',
   'bottle.formula': 'Fórmula',
   'bottle.total': 'En total: {amount}',
-  'bottle.timeOnly':
-    'Solo se puede cambiar la hora. Para cambiar lo que tenía, borrala — la leche vuelve — y registrala de nuevo.',
+  'bottle.leftover': 'Sobró (opcional)',
+  'bottle.leftoverHint':
+    'Lo que no tomó. Es solo para las estadísticas: no vuelve a ningún biberón.',
+  'bottle.leftoverAria': 'Sobró, {unit}',
+  'bottle.leftoverUnit': 'Unidad de lo que sobró',
+  'bottle.leftoverTooMuch': 'Sobró más de lo que se sirvió.',
+  'bottle.leftoverNotNumber': 'Lo que sobró tiene que ser un número.',
+  'bottle.editTitle': 'Corregir esta toma',
+  'bottle.editMilk': 'Leche materna, {unit}',
+  'bottle.editFormula': 'Fórmula, {unit}',
+  'bottle.milkNotNumber': 'La leche materna tiene que ser un número.',
+  'bottle.editPlan': 'Al guardar:',
+  'bottle.editReturns': 'Vuelve {amount} a {label}',
+  'bottle.editTakes': 'Sale {amount} de {label}',
+  'bottle.editNoMilkChange': 'La leche materna no cambia.',
+  'bottle.estimated': '≈ {milk} de leche + {formula} de fórmula (estimado)',
+  'bottle.estimatedHint':
+    'Estimado con las extracciones anotadas en ese momento: esta toma es de antes de que la leche se contara por biberón. No se edita y no cambia lo que hay.',
   'dash.give': 'Dale {amount}',
 
   // ------------------------------------------------------------ milk storage (0014)
@@ -421,6 +452,15 @@ export const es: Dictionary = {
   'milkRules.saved': 'Guardado para toda la familia.',
   'milkRules.couldNotSave': 'No se pudo guardar — {error}',
   'milkRules.couldNotLoad': 'No se pudieron cargar las reglas de conservación — {error}',
+  'milkRules.bottles': 'Biberones de leche',
+  'milkRules.bottlesUnit': 'biberones',
+  'milkRules.bottlesHint': 'Cuántos biberones reusables hay. Leche ofrece de M1 hasta este número.',
+  'milkRules.notUsedYet': 'Todavía no se usa',
+  'milkRules.fridgeOnlyNote':
+    'Por ahora toda la leche se cuenta en el refrigerador: solo se usa esa regla.',
+  'milkRules.problem.bottles': '“{field}” tiene que ser un número entero de {min} a {max}.',
+  'milkRules.bottlesAbove':
+    '{labels} todavía tienen leche: se siguen viendo hasta que se usen o se desechen.',
 
   // ------------------------------------------------------------ milk errors (0014)
   'milkError.overdraw':
