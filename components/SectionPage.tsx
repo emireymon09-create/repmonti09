@@ -77,6 +77,7 @@ import {
   applyPendingInventory,
   describeBottle,
   isInventoryBottleFeed,
+  rereadsInventory,
   suggestPlan,
   suggestedTotalMl,
   usableContainers,
@@ -680,6 +681,9 @@ export function SectionPage({ section }: { section: Section }) {
     const { error, queued } = await send()
     if (error) {
       setErr(t('dash.couldNotSaveLabel', { label, error: milkErrorText(error, lang) }))
+      // A bottle refused because the containers on screen were out of date:
+      // read them again (same as Today), keeping what was typed.
+      if (rereadsInventory(error)) refresh(baby.id)
     } else {
       const when = t('dash.forTime', { time: clockTime(at, lang) })
       confirm(t(queued ? 'dash.queuedLabel' : 'dash.loggedLabel', { label, when }))

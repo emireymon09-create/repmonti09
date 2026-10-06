@@ -118,7 +118,7 @@ export function SyncErrorBanner({
 
   return (
     <Banner kind="error">
-      {t('common.couldNotSync', { error: milkErrorText(error, lang) })}
+      {t('common.couldNotSync', { error: milkErrorText(error, lang, 'sync') })}
       {failed && what && (
         <>
           <div className="meta">

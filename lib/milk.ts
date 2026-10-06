@@ -526,3 +526,87 @@ export function isLegacyPumping(row: PumpingSession): boolean {
 export function servedMl(c: MilkContainer | undefined): number {
   return c ? Math.max(0, c.amount_ml - c.remaining_ml) : 0
 }
+
+// ------------------------------------------------------------- tapes offline
+
+/**
+ * The tapes that are taken, or null when this device can't know them.
+ *
+ * QA, 6 oct 2026: opened offline with no read and no saved copy of /pumping,
+ * the list was empty and the field offered M1 while M1…M10 were on the shelf;
+ * the queued session was then refused on sync (`milk_label_taken:M1`). An
+ * empty list and an unknown one are not the same thing, and only the first
+ * one can suggest anything.
+ *
+ *   · `live`: what the page shows (queued containers folded in) — always
+ *     counted, it is real even when the server list is unknown;
+ *   · `readKnown`: a container read worked, or the page has its own saved
+ *     copy — then `live` IS the list and `saved` is ignored;
+ *   · `saved`: another page's saved copy (Today, Feeding, History read the
+ *     same full list): good enough to suggest from when this page has
+ *     nothing, and as stale as any saved copy — the server still has the
+ *     last word;
+ *   · `justSaved`: a tape taken a moment ago, before the next read.
+ */
+export function takenTapes(opts: {
+  live: MilkContainer[]
+  readKnown: boolean
+  saved: MilkContainer[] | null
+  justSaved: string | null
+}): string[] | null {
+  const { live, readKnown, saved, justSaved } = opts
+  if (!readKnown && !saved) return null
+  const from = readKnown ? live : [...(saved ?? []), ...live]
+  const taken = liveLabels(from)
+  return justSaved ? [...taken, justSaved] : taken
+}
+
+/** What the tape field offers: the next number, or nothing when the list is unknown. */
+export function suggestTape(taken: string[] | null): string | null {
+  return taken ? nextContainerLabel(taken) : null
+}
+
+/**
+ * The newest of the saved copies (lib/lastSeen.ts) that really carries a
+ * container list. A copy saved by an older build, or by a page that never
+ * reads containers, has no `containers` array and says nothing.
+ */
+export function newestSavedContainers(
+  copies: ({ savedAt: string; rows: Record<string, unknown> } | null)[],
+): { savedAt: string; containers: MilkContainer[] } | null {
+  let best: { savedAt: string; containers: MilkContainer[] } | null = null
+  for (const copy of copies) {
+    if (!copy || !Array.isArray(copy.rows?.containers)) continue
+    if (best && Date.parse(copy.savedAt) <= Date.parse(best.savedAt)) continue
+    best = { savedAt: copy.savedAt, containers: copy.rows.containers as MilkContainer[] }
+  }
+  return best
+}
+
+// ------------------------------------------------------------- stale inventory
+
+/**
+ * A bottle refused because the containers on screen were out of date (the
+ * other phone served from one, it ran out or expired): the page has to read
+ * what there is again, or it keeps offering the same impossible bottle
+ * (QA, 6 oct 2026: "M16 · 1 oz left" while 0.25 was left, until a reload).
+ */
+export function rereadsInventory(error: string | null): boolean {
+  if (!error) return false
+  return /^milk_(overdraw|container_unusable)(:|$)/.test(error.trim())
+}
+
+// ------------------------------------------------------------- deleting a session
+
+/**
+ * The confirmation for deleting a pumping session. Only a session with a
+ * container takes milk out of what there is; a legacy one (a total from
+ * before 0014) or one with no amount never had a container.
+ */
+export function pumpingRemoveConfirmKey(
+  row: PumpingSession,
+  container: MilkContainer | undefined,
+): 'milk.removeConfirm' | 'milk.removeConfirmLegacy' | 'milk.removeConfirmNoMilk' {
+  if (container && !container.voided_at) return 'milk.removeConfirm'
+  return isLegacyPumping(row) ? 'milk.removeConfirmLegacy' : 'milk.removeConfirmNoMilk'
+}

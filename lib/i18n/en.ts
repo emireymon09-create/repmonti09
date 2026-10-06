@@ -324,6 +324,10 @@ export const en = {
   'milk.amountNotNumber': 'Amount has to be a number.',
   'milk.logged': 'Session logged',
   'milk.removeConfirm': 'Remove this session? Its milk comes out of what there is too.',
+  'milk.removeConfirmLegacy':
+    'Remove this session? It was logged before milk was kept by container, so what there is doesn’t change.',
+  'milk.removeConfirmNoMilk':
+    'Remove this session? It has no amount, so what there is doesn’t change.',
   'milk.logTitle': 'Log a pumping session',
   'milk.when': 'When (defaults to now)',
   'milk.logSession': 'Log session',
@@ -350,6 +354,11 @@ export const en = {
   'milk.tapeEmpty': 'Write the tape number, for example {label}.',
   'milk.tapeFormat': 'A tape is an M and a number from 1 up, for example {label}.',
   'milk.tapeInUse': '{label} is already on a container that is still in use. Pick another number.',
+  'milk.tapeUnknown':
+    'Offline, this phone can’t know which tape numbers are free. Write the number that’s on the tape.',
+  'milk.tapeFromSaved':
+    'Offline: suggested from what this phone saw {when}. If the other phone logged milk since, the number may be taken.',
+  'milk.tapeNeeded': 'Write the tape number. Offline, this phone can’t pick a free one for you.',
   'milk.stashNote': 'Breast milk only, from containers that can still be used.',
   'milk.stashPending': 'This includes entries not synced yet.',
   'milk.noContainers': 'No milk stored yet.',
@@ -422,7 +431,9 @@ export const en = {
   'milkError.containerUnknown':
     'One of the containers in this bottle no longer exists or isn’t this baby’s. Choose again.',
   'milkError.labelTaken':
-    'Another phone already used the tape {label}. Delete this session and log it again to get a new number.',
+    'The tape {label} is already on another container — another phone may have just used it. Nothing was saved: try again with another number.',
+  'milkError.labelTakenQueued':
+    'The tape {label} is already on another container — another phone used it, or this one picked it without a connection. This session never reached the server: tap “Discard this entry” and log it again with another number.',
   'milkError.alreadyServed':
     'Milk from {label} was already served. Delete those bottles first; then this session can be changed.',
   'milkError.servedExceedsAmount':

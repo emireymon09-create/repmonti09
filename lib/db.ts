@@ -1119,7 +1119,18 @@ const MILK_ERRORS: Record<string, MessageKey> = {
  * stable code, sometimes followed by a container's tape ("milk_overdraw:M3");
  * anything else is passed through as it came (and framed by the page).
  */
-export function milkErrorText(message: string | null, lang: Lang = 'en'): string {
+export function milkErrorText(
+  message: string | null,
+  lang: Lang = 'en',
+  /**
+   * 'sync': the rejection of a QUEUED entry, in the sync banner. There the
+   * entry exists only on this device and "Discard" is the way out, so a
+   * taken tape says that (QA, 6 oct 2026: it said "another phone… delete
+   * this session" — it may have been this phone offline, and there was
+   * nothing to delete).
+   */
+  context?: 'sync',
+): string {
   if (!message) return ''
   const match = /^(milk_[a-z_]+)(?::(.+))?$/.exec(message.trim())
   let key = match ? MILK_ERRORS[match[1]] : undefined
@@ -1127,6 +1138,7 @@ export function milkErrorText(message: string | null, lang: Lang = 'en'): string
   const label = match![2]
   // Without a tape to name, the "which one" sentence would have a hole in it.
   if (key === 'milkError.containerUnusable' && !label) key = 'milkError.containerUnknown'
+  if (key === 'milkError.labelTaken' && context === 'sync') key = 'milkError.labelTakenQueued'
   return translate(lang, key, { label: label ?? '' })
 }
 

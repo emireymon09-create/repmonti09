@@ -316,6 +316,10 @@ export const es: Dictionary = {
   'milk.amountNotNumber': 'La cantidad tiene que ser un número.',
   'milk.logged': 'Sesión registrada',
   'milk.removeConfirm': '¿Borrar esta sesión? Su leche también sale de lo que hay.',
+  'milk.removeConfirmLegacy':
+    '¿Borrar esta sesión? Se registró antes de que la leche se guardara por extracción, así que lo que hay no cambia.',
+  'milk.removeConfirmNoMilk':
+    '¿Borrar esta sesión? No tiene cantidad, así que lo que hay no cambia.',
   'milk.logTitle': 'Registrar una extracción',
   'milk.when': 'Cuándo (si no la cambiás, ahora)',
   'milk.logSession': 'Registrar sesión',
@@ -343,6 +347,12 @@ export const es: Dictionary = {
   'milk.tapeEmpty': 'Escribí el número de la cinta, por ejemplo {label}.',
   'milk.tapeFormat': 'La cinta es una M y un número desde 1, por ejemplo {label}.',
   'milk.tapeInUse': '{label} ya lo tiene una extracción que sigue guardada. Elegí otro número.',
+  'milk.tapeUnknown':
+    'Sin conexión, este teléfono no puede saber qué números de cinta están libres. Escribí el número que tiene la cinta.',
+  'milk.tapeFromSaved':
+    'Sin conexión: sugerido según lo que este teléfono vio {when}. Si el otro teléfono registró leche desde entonces, el número puede estar ocupado.',
+  'milk.tapeNeeded':
+    'Escribí el número de la cinta. Sin conexión, este teléfono no puede elegir uno libre por vos.',
   'milk.stashNote': 'Solo leche materna, de extracciones que todavía se pueden usar.',
   'milk.stashPending': 'Incluye registros que todavía no se sincronizaron.',
   'milk.noContainers': 'Todavía no hay leche guardada.',
@@ -416,7 +426,9 @@ export const es: Dictionary = {
   'milkError.containerUnknown':
     'Una de las extracciones de este biberón ya no existe o no es de este bebé. Elegí de nuevo.',
   'milkError.labelTaken':
-    'Otro teléfono ya usó la cinta {label}. Borrá esta sesión y registrala de nuevo para que tenga otro número.',
+    'La cinta {label} ya está en otra extracción — puede que otro teléfono la acabe de usar. No se guardó nada: probá de nuevo con otro número.',
+  'milkError.labelTakenQueued':
+    'La cinta {label} ya está en otra extracción — la usó otro teléfono, o este la eligió sin conexión. Esta sesión nunca llegó al servidor: tocá “Descartar este registro” y registrala de nuevo con otro número.',
   'milkError.alreadyServed':
     'De {label} ya se sirvió leche. Primero borrá esas tomas; después se puede cambiar esta sesión.',
   'milkError.servedExceedsAmount':

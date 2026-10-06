@@ -19,7 +19,7 @@ import {
   type PumpingInput,
 } from '@/lib/db'
 import { useSync } from '@/lib/useSync'
-import { lastGood, seenKey, type LastGood, type SeenState } from '@/lib/lastSeen'
+import { lastGood, readSeen, seenKey, type LastGood, type SeenState } from '@/lib/lastSeen'
 import { looksOffline, type PendingWrite } from '@/lib/queue'
 import {
   DEFAULT_MILK_RULES,
@@ -28,12 +28,13 @@ import {
   activeContainers,
   applyPendingInventory,
   isUsable,
-  nextContainerLabel,
+  newestSavedContainers,
   normalizeTapeLabel,
   parseAmountMl,
   servedMl,
   stashMl,
-  tapeInUse,
+  suggestTape,
+  takenTapes,
   type TapeCheck,
 } from '@/lib/milk'
 import { useT } from '@/lib/i18n/react'
@@ -52,6 +53,7 @@ import {
   formatMilkOz,
   fromHouseholdInputValue,
   longDate,
+  timeAgo,
   toHouseholdInputValue,
 } from '@/lib/format'
 
@@ -144,6 +146,21 @@ export default function PumpingPage() {
   const serverRows = useRef<LastGood<ServerRows> | null>(null)
   const latestRead = useRef(0)
   const [seen, setSeen] = useState<SeenState>({ kind: 'live' })
+  // Is the container list on screen THE list? Only after a container read
+  // worked, or with this page's own saved copy. Offline with neither, the
+  // list is unknown — not empty — and the tape field must not guess (QA,
+  // 6 oct 2026: it offered M1 while M1…M10 were on the shelf). `goodRead`
+  // remembers, per baby, that a read worked this session.
+  const goodRead = useRef<string | null>(null)
+  const [readKnown, setReadKnown] = useState(false)
+  // Until a read has answered, an unknown list is just "not read yet".
+  const [settled, setSettled] = useState(false)
+  // Unknown here: what Today, Feeding or History saved on this device (the
+  // same full container list), to suggest from. Null when none did.
+  const [savedList, setSavedList] = useState<{
+    savedAt: string
+    containers: MilkContainer[]
+  } | null>(null)
 
   const show = useCallback((rows: ServerRows, queued: PendingWrite[]) => {
     const merged = mergePending(rows.sessions, 'pumping_sessions', queued).sort((a, b) =>
@@ -160,6 +177,15 @@ export default function PumpingPage() {
       const key = seenKey.page('pumping', babyId)
       if (serverRows.current?.key !== key) serverRows.current = lastGood(key, NO_ROWS)
       const last = serverRows.current
+      const known = () => !!last.saved || goodRead.current === key
+      const otherCopies = () =>
+        newestSavedContainers(
+          (['dashboard', 'feeding', 'history'] as const).map((page) =>
+            readSeen<Record<string, unknown>>(seenKey.page(page, babyId)),
+          ),
+        )
+      setReadKnown(known())
+      setSavedList(known() ? null : otherCopies())
 
       const queuedNow = await pendingWrites()
       if (read !== latestRead.current) return
@@ -176,6 +202,10 @@ export default function PumpingPage() {
         pendingWrites(),
       ])
       if (read !== latestRead.current) return
+      if (!c.error) goodRead.current = key
+      setReadKnown(known())
+      setSavedList(known() ? null : otherCopies())
+      setSettled(true)
       const { rows, error } = keepLastGood(ownRows(last.rows), {
         sessions: s,
         containers: c,
@@ -216,10 +246,12 @@ export default function PumpingPage() {
 
   const live = containers.filter((c) => !c.voided_at)
   const ctx = { containers: live, rules }
-  // `live` is already the non-voided list (queued ones included).
-  const suggestedTape = nextContainerLabel([...live.map((c) => c.label), justSaved])
-  const tapeTaken = (label: string) => tapeInUse(label, live) || label === justSaved
-  const tapeText = tape ?? suggestedTape
+  // `live` is already the non-voided list (queued ones included). Null when
+  // the list is unknown: then nothing is suggested (lib/milk.ts, takenTapes).
+  const taken = takenTapes({ live, readKnown, saved: savedList?.containers ?? null, justSaved })
+  const suggestedTape = suggestTape(taken)
+  const tapeTaken = (label: string) => (taken ?? live.map((c) => c.label)).includes(label)
+  const tapeText = tape ?? suggestedTape ?? ''
   const containerOf = (sessionId: string) => live.find((c) => c.source_session_id === sessionId)
 
   function readSides(l: string, r: string, u: VolumeUnit) {
@@ -275,11 +307,20 @@ export default function PumpingPage() {
     if ((sides.left_ml ?? 0) + (sides.right_ml ?? 0) > 0) {
       // Untouched, the field holds the suggestion, which is always valid —
       // even past the six digits a typed tape is limited to.
+      // With the list unknown there is no suggestion: the person writes the
+      // number. The server never picks one (a null tape is milk_bad_input).
       const check: TapeCheck =
-        tape === null ? { ok: true, label: suggestedTape } : normalizeTapeLabel(tape)
+        tape === null && suggestedTape
+          ? { ok: true, label: suggestedTape }
+          : normalizeTapeLabel(tape ?? '')
       if (!check.ok) {
-        const key = check.problem === 'empty' ? 'milk.tapeEmpty' : 'milk.tapeFormat'
-        setErr(t(key, { label: suggestedTape }))
+        if (check.problem === 'empty') {
+          setErr(
+            suggestedTape ? t('milk.tapeEmpty', { label: suggestedTape }) : t('milk.tapeNeeded'),
+          )
+        } else {
+          setErr(t('milk.tapeFormat', { label: suggestedTape ?? 'M1' }))
+        }
         return
       }
       if (tapeTaken(check.label)) {
@@ -296,11 +337,11 @@ export default function PumpingPage() {
       // Saved directly, nothing was stored: the other phone just took this
       // tape. Say "pick another" (not the queued-sync "delete this session")
       // and re-read so the suggestion moves past it.
-      const taken = /^milk_label_taken:(M[0-9]+)$/.exec(error)
-      if (taken) {
+      const refused = /^milk_label_taken:(M[0-9]+)$/.exec(error)
+      if (refused) {
         // Counted as taken right away, even if the re-read fails on bad wifi.
-        setJustSaved(taken[1])
-        setErr(t('milk.tapeInUse', { label: taken[1] }))
+        setJustSaved(refused[1])
+        setErr(t('milk.tapeInUse', { label: refused[1] }))
         refresh(baby.id)
         return
       }
@@ -354,6 +395,16 @@ export default function PumpingPage() {
   const stash = stashMl(live, now)
   const stashPending = shelf.some((c) => c.pending)
   const unitName = t(`unit.${unit}`)
+  // Why the tape field is empty, or where its number came from, when this
+  // page couldn't read the list. Nothing while the first read is on its way.
+  const tapeHint =
+    taken === null
+      ? settled || !online
+        ? t('milk.tapeUnknown')
+        : null
+      : !readKnown && savedList
+        ? t('milk.tapeFromSaved', { when: timeAgo(savedList.savedAt, now, lang) })
+        : null
 
   // Etiqueta visible por lado: el placeholder solo no alcanza — "Izquierdo, oz"
   // no entra en un campo angosto, y desaparece apenas se tipea un número.
@@ -403,7 +454,13 @@ export default function PumpingPage() {
           autoCapitalize="characters"
           autoComplete="off"
           spellCheck={false}
+          aria-describedby={tapeHint ? `${idPrefix}-tape-hint` : undefined}
         />
+        {tapeHint && (
+          <p className="meta" id={`${idPrefix}-tape-hint`}>
+            {tapeHint}
+          </p>
+        )}
       </div>
       <input
         className="input"

@@ -40,6 +40,7 @@ import {
   stashMl,
   suggestPlan,
   suggestedTotalMl,
+  rereadsInventory,
   usableContainers,
   type BottlePlan,
 } from '@/lib/milk'
@@ -498,6 +499,11 @@ export default function Dashboard() {
         { containersPending: value.containersPending },
       )
       if (!res.error) closeBottle()
+      // Refused because what's on screen is out of date (the other phone
+      // served from that container, it ran out or expired): read what there
+      // is again, so the panel stops offering the same impossible bottle.
+      // Rows the person typed stay; the builder says the suggestion changed.
+      else if (rereadsInventory(res.error)) refresh(baby!.id)
       // The rejection in words: "M3 doesn't have that much milk left…"
       return res.error ? { ...res, error: milkErrorText(res.error, lang) } : res
     })

@@ -44,6 +44,7 @@ import {
   describeBottle,
   isInventoryBottleFeed,
   isLegacyPumping,
+  pumpingRemoveConfirmKey,
   keepMl,
   ozText,
   servedMl,
@@ -500,10 +501,12 @@ export default function HistoryPage() {
     // A pumping session also comes out of the stash total on /pumping, and a
     // bottle with a breakdown gives its milk back: each confirmation says so —
     // "nothing else changes" would be false there.
+    // Only a session with a container takes milk out of what there is: a
+    // legacy one (a total from before 0014) or one with no amount says so.
     const question = inventory
       ? t('bottle.removeConfirm')
       : kind === 'pumping'
-        ? t('milk.removeConfirm')
+        ? t(pump ? pumpingRemoveConfirmKey(pump, pumpContainer) : 'milk.removeConfirm')
         : t('history.removeConfirm')
     if (!window.confirm(question)) return
 
