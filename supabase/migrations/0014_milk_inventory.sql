@@ -15,7 +15,10 @@
 --     La fórmula NO tiene inventario: vive solo como número en la toma.
 --   · babies: las tres reglas de conservación del pediatra (por familia).
 --   · cinco funciones que hacen cada escritura en UNA transacción, y triggers
---     que impiden armar o desarmar el inventario por fuera de ellas.
+--     que impiden armar o desarmar el inventario por fuera de ellas. Una
+--     extracción con la forma vieja (solo total, sin lados ni contenedor) sigue
+--     entrando directo: es lo que escribe la app v0.12.1 cacheada en los
+--     teléfonos durante el deploy, y no toca el inventario (ver GUARDAS).
 --
 -- Scope: las tablas nuevas llevan `family_id` DIRECTO (la forma de la fase 2,
 -- CLAUDE.md §5.3) y además `baby_id` (lo pide el pedido), atados con una FK
@@ -171,8 +174,14 @@ grant select, insert, update on milk_drawdowns to authenticated;
 -- rechazan lo que llegue sin ella. Es defensa en profundidad, no una frontera
 -- de seguridad: lo que cuida es que una versión vieja de la app cacheada en un
 -- teléfono (o un PATCH a mano por PostgREST) no pueda anular una toma sin
--- devolver la leche, ni registrar una extracción con cantidad sin contenedor.
+-- devolver la leche, ni tocar una extracción que ya llenó un contenedor.
 -- Quien la recibe ve un error, nunca un inventario que no cierra.
+--
+-- Una excepción a propósito, para la ventana del deploy: una extracción con la
+-- FORMA VIEJA (total sin izquierda ni derecha, sin contenedor) se sigue
+-- pudiendo dar de alta, corregir y borrar directo, como lo hace la app v0.12.1
+-- que los teléfonos siguen corriendo cacheada. No mueve el inventario. Detalle
+-- y por qué no desincroniza: arriba de milk_guard_pumping.
 
 create or replace function milk_in_rpc()
 returns boolean
@@ -215,6 +224,31 @@ create trigger milk_guard_feedings
   before insert or update on feedings
   for each row execute function milk_guard_feedings();
 
+-- La FORMA VIEJA de una extracción: un total (o nada), sin izquierda ni
+-- derecha y sin contenedor. Es lo que escribe la app v0.12.1 y lo que hay en
+-- toda sesión anterior a 0014; no mueve el inventario ni cuenta en lo que hay.
+--
+-- Por qué se deja pasar por fuera de las funciones (6 oct 2026): después del
+-- deploy, los teléfonos siguen corriendo un rato la app vieja cacheada (PWA),
+-- que escribe esta tabla DIRECTO — alta `{id, baby_id, logged_by, side,
+-- amount_ml, notes, pumped_at}` (y su reenvío como `INSERT … ON CONFLICT (id)
+-- DO NOTHING`), edición de side/amount_ml/notes/pumped_at y borrado con
+-- `voided_at`. Si la guarda la rechazara, la cola offline vieja quedaría
+-- trabada hasta que la persona descartara la entrada, y esa leche registrada
+-- se perdería. Una fila con forma vieja es exactamente lo que ya eran todas
+-- las sesiones de antes: aceptarla no desarma nada.
+--
+-- Lo que sigue protegido, y por qué no hay forma de desincronizar:
+--   · Una sesión con izquierda o derecha (las que crean las funciones) o con un
+--     contenedor vivo: por fuera solo cambia la nota, como antes.
+--   · Una sesión vieja nunca gana izquierda o derecha por fuera (NEW también
+--     tiene que venir sin lados), así que nunca parece "nueva" sin contenedor.
+--     Los contenedores los escriben solo las funciones (milk_guard_containers):
+--     por esta vía no se le puede colgar uno.
+--   · Ninguna fila cambia de bebé por fuera.
+-- El contenedor vivo de la condición es defensivo: las funciones solo crean
+-- uno cuando izquierda + derecha > 0, o sea que una sesión con contenedor
+-- siempre tiene algún lado escrito.
 create or replace function milk_guard_pumping()
 returns trigger
 language plpgsql set search_path = public as $$
@@ -223,16 +257,29 @@ begin
     return new;
   end if;
   if tg_op = 'INSERT' then
-    -- Una extracción con cantidad sin su contenedor no sumaría a lo que hay y
-    -- nadie se daría cuenta: que falle a la vista.
-    if new.amount_ml is not null or new.left_ml is not null or new.right_ml is not null then
+    -- Forma vieja: entra (sin contenedor, como toda sesión de antes de 0014).
+    -- Con izquierda o derecha, solo por log_pumping_session, que crea el
+    -- contenedor en la misma transacción.
+    if new.left_ml is not null or new.right_ml is not null then
       raise exception 'milk_rpc_only';
     end if;
     return new;
   end if;
-  -- Por fuera de las funciones solo se cambia la nota.
-  if new.baby_id is distinct from old.baby_id
-     or new.amount_ml is distinct from old.amount_ml
+  if new.baby_id is distinct from old.baby_id then
+    raise exception 'milk_rpc_only';
+  end if;
+  -- Sesión vieja que sigue vieja: la app v0.12.1 le corrige el lado, el
+  -- total, la hora y la nota, o la borra.
+  if old.left_ml is null and old.right_ml is null
+     and new.left_ml is null and new.right_ml is null
+     and not exists (
+       select 1 from milk_containers
+       where source_session_id = old.id and voided_at is null
+     ) then
+    return new;
+  end if;
+  -- Todo lo demás, por fuera de las funciones, solo cambia la nota.
+  if new.amount_ml is distinct from old.amount_ml
      or new.left_ml is distinct from old.left_ml
      or new.right_ml is distinct from old.right_ml
      or new.pumped_at is distinct from old.pumped_at

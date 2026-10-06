@@ -309,6 +309,259 @@ describe.skipIf(!ready)('cinta elegida (5 oct 2026) — necesita 0014', () => {
   })
 })
 
+// La ventana del deploy (6 oct 2026). Después de aplicar 0014, los teléfonos
+// siguen corriendo un rato la app v0.12.1 cacheada (PWA). Esa app escribe
+// pumping_sessions DIRECTO, sin las funciones: alta `{id, baby_id, logged_by,
+// side, amount_ml, notes, pumped_at}` (y su replay como upsert
+// ignoreDuplicates), edición con side/amount_ml/notes/pumped_at y borrado con
+// voided_at. Si la guarda la rechaza, la cola vieja queda trabada hasta que la
+// persona descarte la entrada — y esa leche registrada se pierde. Estas son las
+// llamadas EXACTAS de v0.12.1 (lib/db.ts de 0cbe798: sendOpWith, logPumping,
+// updatePumping, voidPumping, updateFeeding, voidFeeding).
+describe.skipIf(!ready)('app vieja v0.12.1 durante el deploy — necesita 0014', () => {
+  let f: SeededFamily
+  let other: SeededFamily
+  let done: () => Promise<void>
+  beforeAll(async () => {
+    ;({ a: f, b: other, cleanup: done } = await seedTwoFamilies('milk-v0121'))
+  })
+  afterAll(async () => {
+    await done()
+  })
+
+  /** El alta de logPumping de v0.12.1, tal cual. */
+  function oldPumpRow(amountMl: number | null, side = 'both') {
+    return {
+      id: randomUUID(),
+      baby_id: f.babyId,
+      logged_by: f.userId,
+      side,
+      amount_ml: amountMl,
+      notes: null as string | null,
+      pumped_at: new Date().toISOString(),
+    }
+  }
+  const containersOf = async (sessionId: string) =>
+    (
+      await adminClient()
+        .from('milk_containers')
+        .select('id, voided_at')
+        .eq('source_session_id', sessionId)
+    ).data
+  const session = async (id: string) =>
+    (
+      await adminClient()
+        .from('pumping_sessions')
+        .select('side, amount_ml, left_ml, right_ml, notes, pumped_at, voided_at, baby_id')
+        .eq('id', id)
+        .single()
+    ).data
+  const stash = async () =>
+    (await listContainers(f.babyId, f.client)).data.map((c) => [c.label, c.remaining_ml])
+
+  it('alta vieja en línea con cantidad: entra, sin contenedor y sin mover lo que hay', async () => {
+    expect(await sendOpWith(f.client, pump(f, 40, 20, 'M1').op, 'write')).toEqual({ error: null })
+    const before = await stash()
+    const row = oldPumpRow(90, 'left')
+    const { error } = await f.client.from('pumping_sessions').insert(row)
+    expect(error).toBeNull()
+    expect(await session(row.id)).toMatchObject({
+      side: 'left',
+      amount_ml: 90,
+      left_ml: null,
+      right_ml: null,
+      voided_at: null,
+    })
+    expect(await containersOf(row.id)).toEqual([])
+    expect(await stash()).toEqual(before)
+    expect(before).toEqual([['M1', 60]])
+  })
+
+  it('alta vieja reenviada por la cola (upsert ignoreDuplicates) dos veces: una sola fila', async () => {
+    const row = oldPumpRow(120)
+    for (let i = 0; i < 2; i++) {
+      const { error } = await f.client
+        .from('pumping_sessions')
+        .upsert(row, { onConflict: 'id', ignoreDuplicates: true })
+      expect(error, `replay ${i + 1}`).toBeNull()
+    }
+    const { data } = await adminClient().from('pumping_sessions').select('id').eq('id', row.id)
+    expect(data).toHaveLength(1)
+    expect(await containersOf(row.id)).toEqual([])
+    expect(await stash()).toEqual([['M1', 60]])
+  })
+
+  it('alta vieja sin cantidad: entra como siempre', async () => {
+    const row = oldPumpRow(null)
+    expect((await f.client.from('pumping_sessions').insert(row)).error).toBeNull()
+    expect(await containersOf(row.id)).toEqual([])
+  })
+
+  it('edición vieja de una sesión vieja (lado, cantidad, hora, nota): entra, sin contenedor', async () => {
+    const row = oldPumpRow(80, 'both')
+    expect((await f.client.from('pumping_sessions').insert(row)).error).toBeNull()
+    const at = new Date(Date.now() - 3_600_000).toISOString()
+    const { error } = await f.client
+      .from('pumping_sessions')
+      .update({ side: 'right', amount_ml: 95, notes: 'corrected', pumped_at: at })
+      .eq('id', row.id)
+    expect(error).toBeNull()
+    const s = await session(row.id)
+    expect(s).toMatchObject({
+      side: 'right',
+      amount_ml: 95,
+      notes: 'corrected',
+      left_ml: null,
+      right_ml: null,
+    })
+    expect(Date.parse(s!.pumped_at)).toBe(Date.parse(at))
+    expect(await containersOf(row.id)).toEqual([])
+    expect(await stash()).toEqual([['M1', 60]])
+  })
+
+  it('borrado viejo de una sesión vieja (voided_at directo): entra', async () => {
+    const row = oldPumpRow(70)
+    expect((await f.client.from('pumping_sessions').insert(row)).error).toBeNull()
+    const { error } = await f.client
+      .from('pumping_sessions')
+      .update({ voided_at: new Date().toISOString() })
+      .eq('id', row.id)
+    expect(error).toBeNull()
+    expect((await session(row.id))!.voided_at).not.toBeNull()
+    expect(await stash()).toEqual([['M1', 60]])
+  })
+
+  it('por fuera de las funciones, un alta con izquierda o derecha se sigue rechazando', async () => {
+    const extras: Record<string, number>[] = [
+      { left_ml: 30 },
+      { right_ml: 30 },
+      { left_ml: 0, right_ml: 0 },
+    ]
+    for (const extra of extras) {
+      const row = { ...oldPumpRow(30), ...extra }
+      const { error } = await f.client.from('pumping_sessions').insert(row)
+      expect(error?.message, JSON.stringify(extra)).toBe('milk_rpc_only')
+      const { data } = await adminClient().from('pumping_sessions').select('id').eq('id', row.id)
+      expect(data).toEqual([])
+    }
+  })
+
+  it('una sesión vieja nunca gana izquierda o derecha por fuera de las funciones', async () => {
+    const row = oldPumpRow(50)
+    expect((await f.client.from('pumping_sessions').insert(row)).error).toBeNull()
+    for (const patch of [{ left_ml: 50 }, { right_ml: 50 }, { left_ml: 25, amount_ml: 25 }]) {
+      const { error } = await f.client.from('pumping_sessions').update(patch).eq('id', row.id)
+      expect(error?.message, JSON.stringify(patch)).toBe('milk_rpc_only')
+    }
+    expect(await session(row.id)).toMatchObject({ amount_ml: 50, left_ml: null, right_ml: null })
+    expect(await containersOf(row.id)).toEqual([])
+  })
+
+  it('una sesión vieja no se muda de bebé (ni con service_role, que salta RLS)', async () => {
+    const row = oldPumpRow(50)
+    expect((await f.client.from('pumping_sessions').insert(row)).error).toBeNull()
+    const { error } = await adminClient()
+      .from('pumping_sessions')
+      .update({ baby_id: other.babyId })
+      .eq('id', row.id)
+    expect(error?.message).toBe('milk_rpc_only')
+    expect((await session(row.id))!.baby_id).toBe(f.babyId)
+  })
+
+  it('una sesión con contenedor sigue protegida: ni borrado, ni cantidad, ni lado por fuera', async () => {
+    const m2 = pump(f, 30, 30, 'M2')
+    expect(await sendOpWith(f.client, m2.op, 'write')).toEqual({ error: null })
+    const before = await stash()
+    for (const patch of [
+      { voided_at: new Date().toISOString() },
+      { amount_ml: 200 },
+      { side: 'left', amount_ml: 60 },
+      { pumped_at: new Date(Date.now() - 60_000).toISOString() },
+    ]) {
+      const { error } = await f.client.from('pumping_sessions').update(patch).eq('id', m2.id)
+      expect(error?.message, JSON.stringify(patch)).toBe('milk_rpc_only')
+    }
+    // Lo que la app vieja manda al editar solo la nota (los demás campos
+    // iguales) sigue entrando, como antes.
+    const s = await session(m2.id)
+    const { error: noteErr } = await f.client
+      .from('pumping_sessions')
+      .update({ side: s!.side, amount_ml: s!.amount_ml, pumped_at: s!.pumped_at, notes: 'n' })
+      .eq('id', m2.id)
+    expect(noteErr).toBeNull()
+    expect(await session(m2.id)).toMatchObject({ amount_ml: 60, voided_at: null, notes: 'n' })
+    expect(await stash()).toEqual(before)
+  })
+
+  it('una toma con desglose sigue protegida; cambiar solo la hora (resto igual) entra', async () => {
+    const m1 = (await listContainers(f.babyId, f.client)).data.find((c) => c.label === 'M1')!
+    const fd = feed(f, [[m1.id, 20]], 10)
+    expect(await sendOpWith(f.client, fd.op, 'write')).toEqual({ error: null })
+    const before = await stash()
+
+    const { error: voidErr } = await f.client
+      .from('feedings')
+      .update({ voided_at: new Date().toISOString() })
+      .eq('id', fd.id)
+    expect(voidErr?.message).toBe('milk_rpc_only')
+    const { error: amountErr } = await f.client
+      .from('feedings')
+      .update({ feeding_type: 'bottle', amount_ml: 45, fed_at: new Date().toISOString() })
+      .eq('id', fd.id)
+    expect(amountErr?.message).toBe('milk_rpc_only')
+
+    // El updateFeeding de v0.12.1 manda los tres campos: con tipo y cantidad
+    // iguales es una corrección de hora, y entra.
+    const at = new Date(Date.now() - 120_000).toISOString()
+    const { error: timeErr } = await f.client
+      .from('feedings')
+      .update({ feeding_type: 'bottle', amount_ml: 30, fed_at: at })
+      .eq('id', fd.id)
+    expect(timeErr).toBeNull()
+    const { data: row } = await adminClient()
+      .from('feedings')
+      .select('amount_ml, breast_milk_ml, formula_ml, voided_at, fed_at')
+      .eq('id', fd.id)
+      .single()
+    expect(row).toMatchObject({
+      amount_ml: 30,
+      breast_milk_ml: 20,
+      formula_ml: 10,
+      voided_at: null,
+    })
+    expect(Date.parse(row!.fed_at)).toBe(Date.parse(at))
+    expect(await stash()).toEqual(before)
+  })
+
+  it('una toma vieja de biberón sin desglose (alta, edición y borrado de v0.12.1) entra', async () => {
+    const id = randomUUID()
+    const base = {
+      id,
+      baby_id: f.babyId,
+      logged_by: f.userId,
+      feeding_type: 'bottle',
+      amount_ml: 90,
+      fed_at: new Date().toISOString(),
+    }
+    expect((await f.client.from('feedings').insert(base)).error).toBeNull()
+    expect(
+      (await f.client.from('feedings').upsert(base, { onConflict: 'id', ignoreDuplicates: true }))
+        .error,
+    ).toBeNull()
+    expect(
+      (await f.client.from('feedings').update({ amount_ml: 100 }).eq('id', id)).error,
+    ).toBeNull()
+    expect(
+      (await f.client.from('feedings').update({ voided_at: new Date().toISOString() }).eq('id', id))
+        .error,
+    ).toBeNull()
+    expect(await stash()).toEqual([
+      ['M1', 40],
+      ['M2', 60],
+    ])
+  })
+})
+
 describe('sonda del esquema', () => {
   it('dice si la base tiene 0014 (si no, la suite de arriba se salta: NO VERIFICADO)', () => {
     expect(typeof ready).toBe('boolean')

@@ -157,8 +157,25 @@ describe lo implementado, con dónde vive cada cosa y su estado:
   [VERIFICADO: SQL; unit `isInventoryBottleFeed`]
 - Un trigger impide, por fuera de las cinco funciones, cambiar cantidad,
   composición o anular una toma con desglose, escribir contenedores o
-  porciones, o registrar una extracción con cantidad sin su contenedor
+  porciones, dar de alta una extracción con izquierda o derecha, o tocar algo
+  que no sea la nota de una extracción con lados o con contenedor
   (`milk_rpc_only`). [VERIFICADO: SQL]
+- **Excepción a propósito — la ventana del deploy (6 oct 2026).** Una
+  extracción con la **forma vieja** (un total o nada, **sin** izquierda ni
+  derecha y **sin** contenedor vivo) se puede dar de alta, corregir (lado,
+  total, hora, nota) y borrar **directo**, sin las funciones. Es exactamente lo
+  que hace la app v0.12.1, que los teléfonos siguen corriendo cacheada un rato
+  después del deploy: si la base la rechazara, su cola offline quedaría trabada
+  hasta descartar la entrada y esa leche registrada se perdería. Una fila así
+  es lo mismo que toda sesión de antes de 0014: **no crea contenedor, no mueve
+  lo que hay y cuenta 0** en el inventario; la app nueva la muestra como
+  sesión vieja ("solo total"). Lo que la regla no deja: que una sesión vieja
+  gane izquierda o derecha por fuera (seguiría sin contenedor y parecería
+  nueva), que cambie de bebé, o que se toque por fuera una sesión con lados o
+  con contenedor. Las tomas viejas de biberón sin desglose ya entraban así y no
+  cambiaron. [VERIFICADO: integración `tests/integration/milk.test.ts`, "app
+  vieja v0.12.1 durante el deploy", con las llamadas exactas de v0.12.1, y la
+  suite de integración de v0.12.1 corrida contra esta base]
 
 ## 5. Lo que hay (stash)
 
