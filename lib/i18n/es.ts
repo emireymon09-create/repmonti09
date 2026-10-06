@@ -321,7 +321,6 @@ export const es: Dictionary = {
   'milk.logSession': 'Registrar sesión',
   'milk.inStash': 'Lo que hay',
   'milk.empty': 'Todavía no hay sesiones registradas.',
-  'milk.editSession': 'Editar sesión',
   'milk.noAmount': 'Sin cantidad',
   'milk.editInHistory': 'Corregí o borrá una extracción en el Historial',
   'milk.sessions': 'Extracciones',
@@ -351,7 +350,6 @@ export const es: Dictionary = {
   'milk.expires': 'Usar antes del {when}',
   'milk.expired': 'Caducada — no cuenta',
   'milk.rulesHint': 'Cuánto dura la leche se cambia en Ajustes → Conservación de la leche.',
-  'milk.sessionsTitle': 'Sesiones',
   'milk.nothingSaved': 'Sin conexión, y todavía no hay nada guardado en este dispositivo.',
   'milk.servedNote': 'Ya se sirvieron {amount} de acá',
   'milk.legacyHint':

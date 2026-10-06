@@ -88,6 +88,11 @@ describe lo implementado, con dónde vive cada cosa y su estado:
 - **Anular** (`void_pumping_session`): anula sesión y contenedor; se **niega**
   si ya se sirvió leche de él (`milk_already_served:M#`). La pantalla lo dice
   antes de mandar nada. [VERIFICADO: SQL]
+- **Dónde se corrige o se borra:** en el Historial, con el ⋯ de cada fila —
+  la decisión de v0.11.0 (4a3c082). Leche (`/pumping`) es solo para registrar
+  y mirar: su tarjeta "Sesiones" lista cada extracción (total, cinta M#,
+  izquierda/derecha, lo ya servido) y su esquina lleva al Historial, que pasa
+  por las mismas dos funciones y hace los mismos chequeos de lo servido.
 
 ## 3. Conservación y caducidad
 

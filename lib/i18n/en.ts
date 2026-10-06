@@ -329,7 +329,6 @@ export const en = {
   'milk.logSession': 'Log session',
   'milk.inStash': 'What there is',
   'milk.empty': 'No sessions logged yet.',
-  'milk.editSession': 'Edit session',
   'milk.noAmount': 'No amount',
   'milk.editInHistory': 'Fix or delete a session in History',
   'milk.sessions': 'Sessions',
@@ -358,7 +357,6 @@ export const en = {
   'milk.expires': 'Use by {when}',
   'milk.expired': 'Expired — not counted',
   'milk.rulesHint': 'How long milk lasts is set in Settings → Milk storage.',
-  'milk.sessionsTitle': 'Sessions',
   'milk.nothingSaved': 'Offline, and nothing saved on this device yet.',
   'milk.servedNote': '{amount} already served from it',
   'milk.legacyHint':
