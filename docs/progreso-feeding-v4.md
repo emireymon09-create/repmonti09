@@ -22,7 +22,7 @@ Ninguna rama remota tiene una migración 0015: se usa `0015_milk_phase1_2.sql`.
 | Hito | Estado | Commit |
 |---|---|---|
 | H0 integración de PR + línea base | hecho | `2aebe24` (respuestas del papá), `436de96` (merge PR #1), `7e94c65` (merge PR #2) |
-| H1 spec + arquitectura + plan de pruebas | en curso | |
+| H1 spec + arquitectura + plan de pruebas | hecho | ver `git log` |
 | H2 migración 0015 + lógica pura | pendiente | |
 | H3 capa de datos y cola | pendiente | |
 | H4 interfaz | pendiente | |
@@ -45,3 +45,17 @@ Ninguna rama remota tiene una migración 0015: se usa `0015_milk_phase1_2.sql`.
 - Línea base con Node v24.16.0: `tsc` OK, `lint` sin avisos, `format:check`
   limpio, `build` OK, unitarias **379/379** en UTC, LA, Tokio y Kiritimati,
   integración **151/151**.
+
+## H1
+
+- `docs/spec-feeding-v4.md` (analista): trazabilidad R-1…R-22, 25 decisiones
+  D-x a confirmar, 12 reversiones de v3, 40 casos límite, enganches fases 3–4.
+- `docs/arquitectura-v4.md` (arquitecto): estados del biberón por columnas
+  (`released_at`, `lost_ml`, tabla `milk_discards`), índice de ocupación nuevo,
+  invariante contable INV-1…INV-9 (consulta SQL §2.4), RPC nuevas
+  `discard_container` y `edit_bottle_feed` (idempotente por `p_op_id` +
+  `milk_feeding_edits`), N en `babies.milk_bottle_count` (1–30, default 6),
+  19 ajustes a la spec (§12). AJ-1: el código de biberón ocupado sigue siendo
+  `milk_label_taken` (la app v3 cacheada ya lo traduce) — aceptado.
+- `docs/plan-pruebas-v4.md`: 258 casos (65 U, 106 I, 25 C, 50 E, 12 R) escritos
+  antes de implementar.
