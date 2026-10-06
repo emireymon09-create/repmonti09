@@ -497,7 +497,16 @@ Flujo:
    `milk_container_unusable:M#`. Cambiar solo nota, sobró o fórmula no
    re-valida: una toma que `log_bottle_feed` aceptó (anterior a la extracción,
    S-17; o cuya extracción se movió después, D-7) no queda bloqueada para
-   corregirle la nota.
+   corregirle la nota. **La hora se compara al milisegundo** (O-4,
+   re-auditoría H6), como `p_expected`: si `p_fed_at` y `fed_at` coinciden
+   al milisegundo, la hora **no se mueve** y la RPC conserva la guardada (con
+   sus microsegundos) — una edición de solo nota no es un cambio de hora
+   aunque el cliente mande la hora de un `Date` de JavaScript. Hoy
+   `BottleEditPanel` manda la hora **tal como la leyó** (`feeding.fed_at`,
+   con microsegundos) cuando no se tocó el campo, así que O-4 no se disparaba
+   desde la app; sí desde cualquier cliente que la pase por un `Date`.
+   **El espejo en TS es el mismo** (`planBottleEdit`, H6): la pantalla y la
+   cola re-validan solo si cambia la hora (al ms) o la leche.
 10. Escribe porciones; `milk_rebalance(c, 'return')` para las que bajaron y
     `('serve')` para las que subieron; actualiza la toma (`fed_at`,
     `breast_milk_ml`, `formula_ml`, `amount_ml = breast + formula`,
@@ -756,7 +765,13 @@ ciclo: `EMPTY_ML` se **mueve** acá y `lib/milk.ts` lo re-exporta).
   `suggestPlan` lo heredan (V4-36).
 - `activeContainers` pasa a devolver solo **ocupados** (lo que lista `/pumping`).
 - `applyPendingInventory(containers, drawdowns, discards, pending)` devuelve
-  `{ containers, drawdowns, discards }` (§7.3).
+  `{ containers, drawdowns, discards }` (§7.3). Para un `edit_bottle_feed`
+  encolado, la hora "de antes" es `p_expected.fed_at` (lo que vio la
+  pantalla), no `p_fed_at`: si no, un cambio de hora encolado nunca se
+  re-validaba y no se marcaba "no aplicado" (m-1, re-auditoría H6).
+- `planBottleEdit` re-valida las porciones (paso 9 de §3.8) **solo si la
+  edición mueve la hora (al milisegundo) o la leche** — la misma condición
+  que 0015 (m-1, O-4).
 - `convertAmountText(text, from, to)` — extraído de `BottleBuilder.switchUnit`
   (D-19: convertir, **reusando**, sin copia); lo usan `BottleBuilder`,
   `/pumping` (izq/der) y el campo "Sobró".

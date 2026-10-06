@@ -1067,7 +1067,8 @@ $$;
 --     existía y no había vencido; si no alcanza → milk_not_enough:<ml
 --     disponibles> y nada se guarda (V4-54). La fórmula no tiene inventario y
 --     nunca bloquea.
---   · La hora nueva re-valida cada porción que queda viva (D-7, V4-55).
+--   · La hora nueva re-valida cada porción que queda viva (D-7, V4-55), solo
+--     si la edición mueve la hora (al milisegundo, O-4) o la leche (m-1).
 create function edit_bottle_feed(
   p_op_id uuid,
   p_feeding_id uuid,
@@ -1084,6 +1085,7 @@ language plpgsql security invoker set search_path = public as $$
 declare
   v_uid uuid := auth.uid();
   v_exp_fed timestamptz;
+  v_fed_at timestamptz;
   v_exp_breast numeric;
   v_exp_formula numeric;
   v_exp_leftover numeric;
@@ -1178,6 +1180,15 @@ begin
     raise exception 'milk_not_inventory';
   end if;
   select family_id into v_family from babies where id = v_f.baby_id;
+  -- La hora pedida, al milisegundo (O-4): es lo que conserva un Date de
+  -- JavaScript, como en `p_expected`. Si al milisegundo es la de la toma, la
+  -- hora NO se mueve y se conserva la guardada (con sus microsegundos): una
+  -- edición de solo nota no es un cambio de hora para m-1.
+  v_fed_at := case
+    when date_trunc('milliseconds', p_fed_at) = date_trunc('milliseconds', v_f.fed_at)
+      then v_f.fed_at
+    else p_fed_at
+  end;
 
   v_before := jsonb_build_object(
     'fed_at', v_f.fed_at,
@@ -1196,7 +1207,7 @@ begin
 
   -- 3. Ya está como se pide (otra edición llegó a lo mismo): se registra el op
   --    como no-op, así su reenvío también lo es.
-  if v_f.fed_at = p_fed_at
+  if v_f.fed_at = v_fed_at
      and coalesce(v_f.breast_milk_ml, 0) = p_breast_ml
      and coalesce(v_f.formula_ml, 0) = p_formula_ml
      and v_f.leftover_ml is not distinct from p_leftover_ml
@@ -1221,7 +1232,7 @@ begin
     raise exception 'milk_edit_conflict';
   end if;
 
-  if p_fed_at > now() + interval '10 minutes' then
+  if v_fed_at > now() + interval '10 minutes' then
     raise exception 'milk_future_time';
   end if;
 
@@ -1238,7 +1249,7 @@ begin
     select c.id from milk_containers c
      where v_delta > 0 and c.baby_id = v_f.baby_id
        and c.voided_at is null and c.released_at is null
-       and c.stored_at <= p_fed_at and c.expires_at > p_fed_at
+       and c.stored_at <= v_fed_at and c.expires_at > v_fed_at
   ) s;
   perform 1 from milk_containers where id = any (v_ids) order by id for update;
 
@@ -1266,7 +1277,7 @@ begin
       from milk_containers c
      where c.id = any (v_ids) and c.baby_id = v_f.baby_id
        and c.voided_at is null and c.released_at is null
-       and c.stored_at <= p_fed_at and c.expires_at > p_fed_at
+       and c.stored_at <= v_fed_at and c.expires_at > v_fed_at
        and c.remaining_ml >= 0.15;
     if v_avail < v_delta then
       raise exception 'milk_not_enough:%', trim_scale(round(v_avail, 4));
@@ -1277,7 +1288,7 @@ begin
         from milk_containers c
        where c.id = any (v_ids) and c.baby_id = v_f.baby_id
          and c.voided_at is null and c.released_at is null
-         and c.stored_at <= p_fed_at and c.expires_at > p_fed_at
+         and c.stored_at <= v_fed_at and c.expires_at > v_fed_at
          and c.remaining_ml >= 0.15
        order by c.stored_at, substring(c.label from 2)::numeric, c.id
     loop
@@ -1306,11 +1317,11 @@ begin
   --    el sobró o la fórmula de una toma que log_bottle_feed aceptó (p. ej.
   --    anterior a la extracción, S-17, o una extracción cuya hora se corrió
   --    después, D-7) no puede quedar bloqueado por porciones que nadie toca.
-  if p_fed_at is distinct from v_f.fed_at or v_delta <> 0 then
+  if v_fed_at is distinct from v_f.fed_at or v_delta <> 0 then
     select c.label into v_bad
       from milk_drawdowns d join milk_containers c on c.id = d.container_id
      where d.feeding_id = p_feeding_id and d.voided_at is null
-       and (c.expires_at <= p_fed_at or c.stored_at > p_fed_at + interval '10 minutes')
+       and (c.expires_at <= v_fed_at or c.stored_at > v_fed_at + interval '10 minutes')
      order by c.id
      limit 1;
   end if;
@@ -1333,7 +1344,7 @@ begin
   end loop;
 
   update feedings set
-    fed_at = p_fed_at,
+    fed_at = v_fed_at,
     breast_milk_ml = p_breast_ml,
     formula_ml = p_formula_ml,
     amount_ml = p_breast_ml + p_formula_ml,

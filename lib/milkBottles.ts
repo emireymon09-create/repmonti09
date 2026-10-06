@@ -475,8 +475,9 @@ const finiteIn = (x: number) => Number.isFinite(x) && x >= 0 && x < 100000
  *     bottle already uses grows its portion (a voided one is revived);
  *     not enough → `not_enough` with what there was, and nothing changes;
  *   · formula is only a number and never blocks.
- * Then every portion left must still be from a container not expired at the
- * new time and stored no later than it + 10 min (D-7) → else `unusable`.
+ * Then, only if the edit moves the time (to the millisecond) or the milk
+ * (m-1, O-4), every portion left must still be from a container not expired
+ * at the new time and stored no later than it + 10 min (D-7) → else `unusable`.
  *
  * Not checked here (only the server can): `p_expected` against what another
  * phone wrote meanwhile (`milk_edit_conflict`).
@@ -638,8 +639,12 @@ export function planBottleEdit(
   }
 
   // D-7 / V4-55: what stays in the bottle has to be good at the new time.
-  // The first bad one by id, as 0015 picks it (`order by c.id`).
-  const stale = livePortions()
+  // The first bad one by id, as 0015 picks it (`order by c.id`). Only when
+  // the edit moves the time (to the millisecond, O-4) or the milk (m-1): a
+  // note, leftover or formula fix of a bottle the server accepted (S-17) is
+  // not blocked by portions nobody touches.
+  const moves = Date.parse(feeding.fed_at) !== fedMs || deltaMl !== 0
+  const stale = (moves ? livePortions() : [])
     .map((d) => containerOf(d.container_id))
     .filter((c): c is MilkContainer => !!c)
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))

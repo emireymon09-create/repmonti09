@@ -182,6 +182,29 @@ describe.skipIf(!ready)('v4 · log_bottle_feed (I-51…I-65)', () => {
     expect(await milkSnapshot(f.babyId)).toEqual(before)
   })
 
+  it('I-109 mismo id que una toma que no es biberón: milk_idempotency_conflict; p_portions que no es un array: milk_bad_input', async () => {
+    const [f] = await newBaby(fx.a)
+    const p = await pumpOk(f, 90, 'M3', Date.now() - HOUR)
+    const id = randomUUID()
+    const { error } = await f.client
+      .from('feedings')
+      .insert({ id, baby_id: f.babyId, feeding_type: 'solid', fed_at: new Date().toISOString() })
+    expect(error).toBeNull()
+    const before = await milkSnapshot(f.babyId)
+    const r = await rpc(f.client, 'log_bottle_feed', feedArgs(f, [[p.containerId, 30]], { id }))
+    expect(r.error).toBe('milk_idempotency_conflict')
+    expect(await milkSnapshot(f.babyId)).toEqual(before)
+    expect((await feedingRow(id)).breast_milk_ml).toBeNull()
+    for (const bad of [{ container_id: p.containerId, amount_ml: 30 }, 'x', 3, true]) {
+      const args: Record<string, unknown> = { ...feedArgs(f, [], { formula: 10 }), p_portions: bad }
+      const b = await rpc(f.client, 'log_bottle_feed', args)
+      expect(b.error, JSON.stringify(bad)).toBe('milk_bad_input')
+      const { data } = await adminClient().from('feedings').select('id').eq('id', args.p_id)
+      expect(data).toEqual([])
+    }
+    expect(await milkSnapshot(f.babyId)).toEqual(before)
+  })
+
   it('I-61 el reenvío del alta después de una edición completa: no-op (AJ-8)', async () => {
     const [f] = await newBaby(fx.a)
     const p = await pumpOk(f, 4 * OZ, 'M3', Date.now() - HOUR)
@@ -398,6 +421,30 @@ describe.skipIf(!ready)('v4 · void_bottle_feed (I-66…I-73)', () => {
       .update({ voided_at: new Date().toISOString() })
       .eq('id', id)
     expect(error?.message).toBe('milk_rpc_only')
+    expect(await milkSnapshot(f.babyId)).toEqual(before)
+  })
+
+  it('I-108 INSERT directo (authenticated) de una toma con breast_milk_ml o formula_ml: milk_rpc_only y nada escrito', async () => {
+    const [f] = await newBaby(fx.a)
+    const before = await milkSnapshot(f.babyId)
+    for (const breakdown of [
+      { breast_milk_ml: 30, formula_ml: 0 },
+      { breast_milk_ml: 30 },
+      { formula_ml: 30 },
+    ]) {
+      const id = randomUUID()
+      const { error } = await f.client.from('feedings').insert({
+        id,
+        baby_id: f.babyId,
+        feeding_type: 'bottle',
+        fed_at: new Date().toISOString(),
+        amount_ml: 30,
+        ...breakdown,
+      })
+      expect(error?.message, JSON.stringify(breakdown)).toBe('milk_rpc_only')
+      const { data } = await adminClient().from('feedings').select('id').eq('id', id)
+      expect(data).toEqual([])
+    }
     expect(await milkSnapshot(f.babyId)).toEqual(before)
   })
 })

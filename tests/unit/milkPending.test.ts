@@ -424,6 +424,80 @@ describe('applyPendingInventory v4 (U-49…U-57)', () => {
     expect(JSON.stringify([cs, ds, dc])).toBe(before)
   })
 
+  // m-1 / O-4 en la cola: la toma "como estaba" es `p_expected` (lo que vio la
+  // pantalla), no `p_fed_at` (lo que se pide). Espejo de I-79b.
+  describe('U-68: a queued edit of a bottle from BEFORE its milk was pumped (S-17, m-1)', () => {
+    const TUE = MON + DAY
+    const fedAt = iso(TUE - 3 * HOUR)
+    const m3 = box('M3', { stored_at: iso(TUE), amount_ml: 2 * OZ, remaining_ml: OZ })
+    const draws = [portion('f1', 'M3', OZ)]
+    const edit = (over: Partial<EditBottleArgs>, expectedFedAt = fedAt) => {
+      const args: EditBottleArgs = {
+        p_op_id: 'e1',
+        p_feeding_id: 'f1',
+        p_fed_at: fedAt,
+        p_breast_ml: OZ,
+        p_formula_ml: 0,
+        p_leftover_ml: null,
+        p_notes: null,
+        p_expected: { fed_at: expectedFedAt, breast_milk_ml: OZ, formula_ml: 0, leftover_ml: null },
+        ...over,
+      }
+      const w = queued(
+        rpc('edit_bottle_feed', args, { table: 'feedings', id: 'f1', effect: 'update' }),
+        NOW,
+      )
+      return { w, r: applyPendingInventory([m3], draws, [], [w]) }
+    }
+
+    it('note, leftover or formula alone: applied, nothing marked "not applied"', () => {
+      for (const over of [
+        { p_notes: 'solo la nota' },
+        { p_leftover_ml: 5 },
+        { p_formula_ml: 10 },
+      ]) {
+        const { r } = edit(over)
+        expect(r.unapplied, JSON.stringify(over)).toEqual([])
+        expect(r.drawdowns[0].amount_ml).toBe(OZ)
+        expect(r.containers[0].remaining_ml).toBe(OZ)
+      }
+    })
+
+    it('moving the time (one minute) or the milk: "not applied", unusable', () => {
+      for (const over of [{ p_fed_at: iso(TUE - 3 * HOUR + 60_000) }, { p_breast_ml: OZ / 2 }]) {
+        const { w, r } = edit(over)
+        expect(r.unapplied, JSON.stringify(over)).toEqual([
+          { writeId: w.id, fn: 'edit_bottle_feed', problem: 'unusable' },
+        ])
+        expect(r.containers[0]).toEqual(m3)
+      }
+    })
+
+    it('the time read with microseconds and sent to the millisecond is not a move (O-4)', () => {
+      const { r } = edit(
+        { p_fed_at: '2026-10-06T06:00:00.123Z', p_notes: 'x' },
+        '2026-10-06T06:00:00.123456+00:00',
+      )
+      expect(r.unapplied).toEqual([])
+    })
+  })
+
+  it('U-69: a queued edit down whose container is not in the list: lost, reason unknown', () => {
+    const w = queued(editOp('e1', 'f1', OZ, 0, MON + HOUR), NOW)
+    const r = applyPendingInventory([], [portion('f1', 'M3', 2 * OZ)], [], [w])
+    expect(r.unapplied).toEqual([])
+    expect(r.lost).toEqual([
+      {
+        writeId: w.id,
+        containerId: 'c-M3',
+        label: 'M3',
+        ml: expect.closeTo(OZ, 9),
+        reason: 'unknown',
+      },
+    ])
+    expect(r.drawdowns[0]).toMatchObject({ amount_ml: expect.closeTo(OZ, 9), pending: true })
+  })
+
   it('the v3 three-argument form still works and returns no discards', () => {
     const r = applyPendingInventory([box('M1')], [], [queued(feedOp('f1', [['M1', OZ]]))])
     expect(r.discards).toEqual([])

@@ -240,3 +240,20 @@ Cada una con prueba que fallaba antes (salida en el informe del corrector):
   PASS desde el JSON de vitest.
 - Verificación del director: `tsc`/`lint`/`format:check` OK, unitarias
   **554/554** ×4 TZ, integración **307/307**.
+
+### Re-auditoría y cierre de H6 [VERIFICADO]
+
+- Seguridad, 2.ª vuelta: **0 bloqueantes**; B-1, M-1, m-1, m-2 CERRADOS
+  (scripts `run4.sql`, `run5.sql` en el scratchpad). Abiertos y declarados:
+  m-3, O-1, O-2, O-3 (escribir a mano lados en una legada crea contenedor).
+- Cobertura, 2.ª vuelta: **0 bloqueantes**; los 2 MAYOR previos CERRADOS; el
+  MAYOR nuevo (m-1 solo en el servidor) cerrado: `planBottleEdit` re-valida solo
+  si cambia la hora (al ms) o la leche (U-66, U-67); `applyPendingInventory`
+  toma la hora anterior de `p_expected` (U-68 fallaba antes). O-4: 0015 compara
+  la hora al ms (I-107 fallaba antes). Pruebas nuevas sin defecto: I-108,
+  I-109, U-69, U-42 contra el bloque de 0015.
+- Aceptados con motivo: ramas inalcanzables mientras rige la invariante;
+  `milk_not_signed_in` (anon sin EXECUTE); E-29/E-31 con el texto genérico de
+  "no se puede usar"; ayudantes de cinta de v3 exportados sin uso (los usan las
+  pruebas de v3); C-11/C-13/C-18/C-21 sin pantalla [NO VERIFICADO].
+- Corrector: unitarias **561/561** ×4 TZ, integración **310/310**.

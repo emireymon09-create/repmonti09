@@ -661,11 +661,13 @@ export function applyPendingInventory(
       const a = op.args as unknown as EditBottleArgs
       const mine = ds.filter((d) => d.feeding_id === a.p_feeding_id && !d.voided_at)
       // What the bottle has now, as far as this phone knows (INV-6: the
-      // breakdown IS its portions). Already in the asked state → Δ = 0.
+      // breakdown IS its portions). Already in the asked state → Δ = 0. Its
+      // time is the one the screen saw (`p_expected`), so a queued move of
+      // the time is re-checked as the server does (m-1).
       const plan = planBottleEdit(
         {
           id: a.p_feeding_id,
-          fed_at: a.p_fed_at,
+          fed_at: a.p_expected?.fed_at ?? a.p_fed_at,
           feeding_type: 'bottle',
           breast_milk_ml: mine.reduce((s, d) => s + d.amount_ml, 0),
           formula_ml: a.p_formula_ml,

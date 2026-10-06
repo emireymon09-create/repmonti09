@@ -920,6 +920,62 @@ describe('planBottleEdit — the mirror of edit_bottle_feed (U-24…U-33)', () =
     planBottleEdit(f, ds, cs, [], ask(f, { breast_milk_ml: OZ }), NOW)
     expect(JSON.stringify([f, cs, ds])).toBe(before)
   })
+
+  // Espejo de I-79b (m-1): log_bottle_feed acepta una toma anterior a la
+  // extracción (S-17); edit_bottle_feed re-valida las porciones solo si la
+  // edición mueve la hora o la leche.
+  it('U-66: a bottle from BEFORE its milk was pumped (S-17): note, leftover or formula alone go through; moving the time or the milk re-checks (m-1)', () => {
+    const f = feed('f1', TUE - 3 * HOUR, OZ, 0)
+    const m3 = box('M3', { stored_at: iso(TUE), amount_ml: 2 * OZ, remaining_ml: OZ })
+    const draws = [portion('f1', 'M3', OZ)]
+    const plan = (over: Parameters<typeof ask>[1] & { notes?: string | null }) =>
+      planBottleEdit(f, draws, [m3], [], { ...ask(f), ...over }, NOW)
+    for (const over of [{ notes: 'solo la nota' }, { leftover_ml: 5 }, { formula_ml: 10 }]) {
+      expect(plan(over), JSON.stringify(over)).toMatchObject({ ok: true, noop: false, lost: [] })
+    }
+    expect(plan({ fed_at: iso(TUE - 3 * HOUR + 60_000) })).toEqual({
+      ok: false,
+      problem: 'unusable',
+      label: 'M3',
+    })
+    expect(plan({ breast_milk_ml: OZ / 2 })).toEqual({
+      ok: false,
+      problem: 'unusable',
+      label: 'M3',
+    })
+  })
+
+  it('U-67: the same time read with microseconds and sent to the millisecond is NOT a time change (O-4)', () => {
+    const f = { ...feed('f1', TUE - 3 * HOUR, OZ, 0), fed_at: '2026-10-06T06:00:00.123456+00:00' }
+    const m3 = box('M3', { stored_at: iso(TUE), amount_ml: 2 * OZ, remaining_ml: OZ })
+    const p = planBottleEdit(
+      f,
+      [portion('f1', 'M3', OZ)],
+      [m3],
+      [],
+      { ...ask(f), fed_at: '2026-10-06T06:00:00.123Z', notes: 'solo la nota' },
+      NOW,
+    )
+    expect(p).toMatchObject({ ok: true, noop: false })
+  })
+
+  it('U-69: milk going back to a container that is not in the list → lost, reason unknown', () => {
+    const f = feed('f1', WED, 2 * OZ, 0)
+    const p = planBottleEdit(
+      f,
+      [portion('f1', 'M3', 2 * OZ)],
+      [],
+      [],
+      ask(f, { breast_milk_ml: OZ }),
+      NOW,
+    )
+    if (!p.ok) throw new Error(p.problem)
+    expect(p.returned).toEqual([])
+    expect(p.lost).toEqual([
+      { containerId: 'c-M3', label: 'M3', ml: expect.closeTo(OZ, 9), reason: 'unknown' },
+    ])
+    expect(p.portions).toEqual([{ containerId: 'c-M3', label: 'M3', ml: expect.closeTo(OZ, 9) }])
+  })
 })
 
 // --------------------------------------------------------------- leftover
@@ -949,6 +1005,16 @@ describe('milkInvariantFailures (U-42 and the checks themselves)', () => {
     const section = doc.slice(doc.indexOf('### 2.4'), doc.indexOf('## 3.'))
     const sqlIds = new Set([...section.matchAll(/'(INV-\d)/g)].map((m) => m[1]))
     expect([...sqlIds].sort()).toEqual(MILK_INVARIANT_IDS.filter((x) => x !== 'INV-7'))
+    // And the block that 0015 runs at the end of the migration: the same ids,
+    // in the same order as the document (re-auditoría H6).
+    const mig = readFileSync(
+      join(__dirname, '..', '..', 'supabase', 'migrations', '0015_milk_phase1_2.sql'),
+      'utf8',
+    )
+    const invBlock = mig.slice(mig.indexOf('=== INVARIANTE'), mig.indexOf('notify pgrst'))
+    const migIds = [...invBlock.matchAll(/'(INV-\d)/g)].map((m) => m[1])
+    expect(migIds).toEqual([...section.matchAll(/'(INV-\d)/g)].map((m) => m[1]))
+    expect(migIds).toEqual(MILK_INVARIANT_IDS.filter((x) => x !== 'INV-7'))
     // And the integration helper, once it exists, names the same ones.
     const helper = join(__dirname, '..', 'helpers', 'milkInvariant.ts')
     if (existsSync(helper)) {

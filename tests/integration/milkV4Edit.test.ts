@@ -213,6 +213,36 @@ describe.skipIf(!ready)('v4 · edit_bottle_feed (I-74…I-92)', () => {
     expect(await milkSnapshot(f.babyId)).toEqual(before)
   })
 
+  it('I-107 hora guardada con microsegundos y enviada al milisegundo: no es mover la hora (O-4) — solo nota entra sin re-validar y la hora no cambia', async () => {
+    const [f] = await newBaby(fx.a)
+    const at = Date.now() - HOUR
+    const p = await pumpOk(f, 2 * OZ, 'M3', at)
+    // La toma, anterior a la extracción (S-17), con una hora de microsegundos.
+    const micro = iso(at - 3 * HOUR).replace('Z', '456Z')
+    const args = feedArgs(f, [[p.containerId, OZ]], { at: at - 3 * HOUR })
+    args.p_fed_at = micro
+    expect((await rpc(f.client, 'log_bottle_feed', args)).error).toBeNull()
+    const id = args.p_id as string
+    const stored = (await feedingRow(id)).fed_at
+    expect(stored).toMatch(/\.\d{3}456/)
+    const ms = new Date(stored).toISOString()
+    expect(Date.parse(ms)).toBe(Date.parse(stored))
+    const r = await rpc(
+      f.client,
+      'edit_bottle_feed',
+      await editArgs(id, { fedAt: ms, notes: 'solo la nota' }),
+    )
+    expect(r.error).toBeNull()
+    const row = await feedingRow(id)
+    expect(row.notes).toBe('solo la nota')
+    expect(row.fed_at).toBe(stored)
+    expect(await portionsOf(id)).toEqual({ M3: OZ })
+    // Un milisegundo de diferencia sí es mover la hora: re-valida.
+    const moved = iso(Date.parse(ms) + 1)
+    const r2 = await rpc(f.client, 'edit_bottle_feed', await editArgs(id, { fedAt: moved }))
+    expect(r2.error).toBe('milk_container_unusable:M3')
+  })
+
   it('I-80 hora futura: milk_future_time', async () => {
     const [f] = await newBaby(fx.a)
     const id = await feedOk(f, [], { formula: OZ })
