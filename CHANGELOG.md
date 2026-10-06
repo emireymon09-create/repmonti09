@@ -4,6 +4,11 @@ Every version of Amelia, newest first. The current version is the `version`
 field in `package.json`; this file is the history. A test fails if the two
 disagree. Shown in the app under the settings gear → Version history.
 
+## [0.12.2] - 2026-10-06
+
+- **Nothing in the app changed.** Behind the scenes, the project now needs Node 24 LTS to build
+  and run, because the version of the package manager it uses can't run on Node 20.
+
 ## [0.12.1] - 2026-10-05
 
 - **The changing-table screen can update itself.** Its new firmware is published here, and the
