@@ -39,7 +39,7 @@ export type Feeding = {
   amount_ml: number | null
   notes: string | null
   /**
-   * The breakdown of a bottle logged through the milk inventory (0013):
+   * The breakdown of a bottle logged through the milk inventory (0014):
    * breast milk served from containers, and formula on top. Both null on a
    * feeding logged before that — the "legacy" rows, still fully editable.
    * Written by the server (log_bottle_feed), never typed by a page.
@@ -88,10 +88,10 @@ export type PumpingSession = {
   id: string
   pumped_at: string
   side: PumpSide
-  /** The total, written by the server as left + right (0013). */
+  /** The total, written by the server as left + right (0014). */
   amount_ml: number | null
   notes: string | null
-  /** Each breast on its own (0013). Null on sessions logged before that. */
+  /** Each breast on its own (0014). Null on sessions logged before that. */
   left_ml?: number | null
   right_ml?: number | null
 }
@@ -100,7 +100,7 @@ export type PumpingSession = {
 export type MilkLocation = 'fridge' | 'freezer'
 
 /**
- * One physical container of expressed milk (0013): the bottle with "M7" on
+ * One physical container of expressed milk (0014): the bottle with "M7" on
  * its tape. Created by the server together with the pumping session that
  * filled it; `remaining_ml` goes down as bottles are served from it.
  */
@@ -118,7 +118,7 @@ export type MilkContainer = {
 
 /**
  * One portion of a bottle: how much of one container went into one feeding
- * (0013). `label` is the container's, read along with it for display.
+ * (0014). `label` is the container's, read along with it for display.
  */
 export type MilkDrawdown = {
   id: string
@@ -129,7 +129,7 @@ export type MilkDrawdown = {
   voided_at?: string | null
 }
 
-/** The pediatrician's storage rules, one set per family (0013, on `babies`). */
+/** The pediatrician's storage rules, one set per family (0014, on `babies`). */
 export type MilkRules = {
   milk_room_hours: number
   milk_fridge_days: number

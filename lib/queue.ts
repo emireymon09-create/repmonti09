@@ -38,7 +38,7 @@ export type PendingOp =
   | RpcOp
 
 /**
- * A call to one of the milk-inventory functions of 0013 (log_bottle_feed and
+ * A call to one of the milk-inventory functions of 0014 (log_bottle_feed and
  * friends). Those writes touch several rows in one transaction — a bottle,
  * its portions and the containers they come out of — so they cannot be a
  * plain insert or update. The function is idempotent by the client-made id

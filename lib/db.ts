@@ -77,7 +77,7 @@ function data() {
 
 /**
  * Something to run a query on: the app's client, or a signed-in test client.
- * `rpc` is for the milk-inventory functions of 0013 (log_bottle_feed…).
+ * `rpc` is for the milk-inventory functions of 0014 (log_bottle_feed…).
  */
 type Db = Pick<ReturnType<typeof data>, 'from' | 'rpc'>
 
@@ -458,9 +458,9 @@ export function recordBirth(babyId: string, birthDate: string): Promise<Result<n
 // --------------------------------------------------------------- feedings
 
 /**
- * The breakdown columns (0013) are read only here and in lastBottleFeeding:
+ * The breakdown columns (0014) are read only here and in lastBottleFeeding:
  * `feedingsSince` keeps its columns, so the totals and their integration
- * tests do not depend on 0013.
+ * tests do not depend on 0014.
  */
 const FEEDING_COLUMNS = 'id, fed_at, feeding_type, amount_ml, notes, breast_milk_ml, formula_ml'
 
@@ -717,7 +717,7 @@ export async function sessionById(
  * here" gate on the dashboard is about the baby-tracking screens, not
  * this one, since building a stash typically starts weeks before birth.
  *
- * Since 0013 every write goes through a database function that does the
+ * Since 0014 every write goes through a database function that does the
  * session and its container in one transaction (docs/spec-feeding-v3.md).
  */
 export async function recentPumping(babyId: string, limit = 20): Promise<Result<PumpingSession[]>> {
@@ -840,7 +840,7 @@ export function updatePumpingSession(
   opts?: {
     pending?: boolean
     /**
-     * The session is from before 0013: a total and no sides. With both sides
+     * The session is from before 0014: a total and no sides. With both sides
      * left empty, only its time and note change — the server keeps the total
      * (and the screen shows it kept), never erases it or splits it 50/50.
      */
@@ -979,7 +979,7 @@ export async function lastBottleFeeding(babyId: string): Promise<Result<Feeding 
   return ok(((rows ?? [])[0] as Feeding | undefined) ?? null)
 }
 
-// --------------------------------------------------------------- bottles (0013)
+// --------------------------------------------------------------- bottles (0014)
 
 export type BottleInput = {
   fed_at: string
@@ -1060,7 +1060,7 @@ export function voidBottleFeed(id: string, opts?: { pending?: boolean }): Promis
   )
 }
 
-// --------------------------------------------------------------- milk rules (0013)
+// --------------------------------------------------------------- milk rules (0014)
 
 /*
  * The pediatrician's storage rules. Like the countdown thresholds (0012) they

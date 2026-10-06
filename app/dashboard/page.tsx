@@ -109,7 +109,7 @@ type ServerRows = {
    */
   appt: DoctorAppointment[]
   /**
-   * El inventario de leche (0013): lo que hay, para la sugerencia del
+   * El inventario de leche (0014): lo que hay, para la sugerencia del
    * biberón, y la última toma de biberón — que puede no estar entre las
    * pocas más nuevas — de la que sale cuánto sugerir.
    */
@@ -167,7 +167,7 @@ export default function Dashboard() {
   const [birthOz, setBirthOz] = useState('')
   const [birthIn, setBirthIn] = useState('')
   const [birthBusy, setBirthBusy] = useState(false)
-  // The bottle panel (0013): opened by the bottle button, inline under the
+  // The bottle panel (0014): opened by the bottle button, inline under the
   // three cards — this app has no overlay modals (design.md §4). Focus goes
   // into it on open and back to the button on close.
   const [bottleOpen, setBottleOpen] = useState(false)
@@ -835,7 +835,7 @@ export default function Dashboard() {
               </div>
             </>
           )}
-          {/* El biberón (0013): una línea con cuánto dar y el botón de la
+          {/* El biberón (0014): una línea con cuánto dar y el botón de la
               mamila, que abre el panel de abajo. Se carga cuando NO hay una
               toma de pecho corriendo: ahí esta fila es la corrección del
               inicio. Sólidos salió de acá el 23 sep 2026. */}
@@ -988,7 +988,7 @@ export default function Dashboard() {
         </Card>
       </Grid>
 
-      {/* El panel del biberón (0013), inline y de ancho completo, debajo de
+      {/* El panel del biberón (0014), inline y de ancho completo, debajo de
           las tres tarjetas: en la pared no estira la de Comida (el grid las
           iguala) y en el teléfono queda justo debajo del botón. */}
       {bottleOpen && !activeNursing && (

@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * The rows of a bottle (0013): breast milk from one or more containers, plus
+ * The rows of a bottle (0014): breast milk from one or more containers, plus
  * formula. ONE component, used by the bottle panel on Today and by "Log a past
  * one" on /feeding — not two copies (docs/spec-feeding-v3.md §1.6).
  *

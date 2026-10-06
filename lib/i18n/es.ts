@@ -358,7 +358,7 @@ export const es: Dictionary = {
     'Registrada antes de que izquierdo y derecho fueran por separado: su total de {amount} queda como está, salvo que escribas los lados.',
   'milk.deletedPending': 'Borrada en este dispositivo — sin sincronizar todavía.',
 
-  // ------------------------------------------------------------ bottle (0013)
+  // ------------------------------------------------------------ bottle (0014)
   'bottle.formulaPart': 'fórmula {amount}',
   'bottle.panelTitle': 'Biberón',
   'bottle.planFormula': '{amount} de fórmula',
@@ -391,7 +391,7 @@ export const es: Dictionary = {
     'Solo se puede cambiar la hora. Para cambiar lo que tenía, borrala — la leche vuelve — y registrala de nuevo.',
   'dash.give': 'Dale {amount}',
 
-  // ------------------------------------------------------------ milk storage (0013)
+  // ------------------------------------------------------------ milk storage (0014)
   'milkRules.title': 'Conservación de la leche',
   'milkRules.note':
     'Las reglas del pediatra, para toda la familia. Cada extracción nueva toma de acá su fecha límite al guardarse.',
@@ -410,7 +410,7 @@ export const es: Dictionary = {
   'milkRules.couldNotSave': 'No se pudo guardar — {error}',
   'milkRules.couldNotLoad': 'No se pudieron cargar las reglas de conservación — {error}',
 
-  // ------------------------------------------------------------ milk errors (0013)
+  // ------------------------------------------------------------ milk errors (0014)
   'milkError.overdraw':
     'A {label} no le queda tanta leche — puede que alguien acabe de servir de ahí. Elegí de nuevo.',
   'milkError.containerUnusable':

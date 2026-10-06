@@ -1,5 +1,5 @@
 /**
- * The milk inventory, as pure functions (0013, 4 oct 2026).
+ * The milk inventory, as pure functions (0014, 4 oct 2026).
  *
  * No clock, no database, no React: every function takes what it needs and
  * gives back a value, so the rules the family asked for can be tested under
@@ -38,7 +38,7 @@ import type {
  */
 export const DEFAULT_FIRST_SUGGESTION_ML = 3 * ML_PER_FL_OZ
 
-/** The pediatrician's numbers; the same defaults as the columns in 0013. */
+/** The pediatrician's numbers; the same defaults as the columns in 0014. */
 export const DEFAULT_MILK_RULES: MilkRules = {
   milk_room_hours: 4,
   milk_fridge_days: 4,
@@ -254,7 +254,7 @@ export function portionMl(
  * A bottle logged through the inventory: it has a breakdown (breast milk
  * and formula) written by the server. Only its time can be edited; to change
  * what was in it, it is deleted — which gives the milk back — and logged
- * again. A bottle from before 0013 has neither and stays fully editable.
+ * again. A bottle from before 0014 has neither and stays fully editable.
  */
 export function isInventoryBottleFeed(f: Feeding): boolean {
   return f.feeding_type === 'bottle' && (f.breast_milk_ml != null || f.formula_ml != null)
@@ -328,7 +328,7 @@ export function validateMilkRules(input: MilkRulesInput):
 
 // ------------------------------------------------------------- offline
 
-/** The arguments of log_pumping_session (0013), as lib/db.ts queues them. */
+/** The arguments of log_pumping_session (0014), as lib/db.ts queues them. */
 export type PumpingArgs = {
   p_id: string
   p_baby_id: string
@@ -342,7 +342,7 @@ export type PumpingArgs = {
   p_container_expires_at: string | null
 }
 
-/** The arguments of log_bottle_feed (0013), as lib/db.ts queues them. */
+/** The arguments of log_bottle_feed (0014), as lib/db.ts queues them. */
 export type BottleFeedArgs = {
   p_id: string
   p_baby_id: string
@@ -517,7 +517,7 @@ export function keepMl(
 /** Below this, what was served from a container is rounding, not milk. */
 export const SERVED_EPSILON_ML = 0.01
 
-/** Logged before left and right existed (0013): a total, no sides. */
+/** Logged before left and right existed (0014): a total, no sides. */
 export function isLegacyPumping(row: PumpingSession): boolean {
   return row.left_ml == null && row.right_ml == null && row.amount_ml != null
 }

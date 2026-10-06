@@ -138,7 +138,7 @@ type ServerRows = {
   weekNursing: NursingSession[]
   weekDiapers: DiaperChange[]
   weekSleep: SleepSession[]
-  /** The milk inventory (0013), Feeding only: what a bottle can come from. */
+  /** The milk inventory (0014), Feeding only: what a bottle can come from. */
   containers: MilkContainer[]
   drawdowns: MilkDrawdown[]
   /** The last bottle, which the log may not reach: what the suggestion starts from. */
@@ -299,7 +299,7 @@ export function SectionPage({ section }: { section: Section }) {
   // "Log a past one".
   const [pKind, setPKind] = useState<PastFeeding>('breast')
   const [pSide, setPSide] = useState<Side>('left')
-  // A past bottle (0013): the same row builder as Today's bottle panel.
+  // A past bottle (0014): the same row builder as Today's bottle panel.
   const [pBuilt, setPBuilt] = useState<BottleValue | null>(null)
   // A new plan starts the builder over — after a save, or another time.
   const [pPlanKey, setPPlanKey] = useState(0)
@@ -584,7 +584,7 @@ export function SectionPage({ section }: { section: Section }) {
     setErr(null)
 
     // A bottle with a breakdown is deleted by the function that also gives its
-    // milk back to each container (0013).
+    // milk back to each container (0014).
     const result =
       feed && inventory
         ? await voidBottleFeed(id, { pending: !!feed.pending })

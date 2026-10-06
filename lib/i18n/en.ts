@@ -365,7 +365,7 @@ export const en = {
     'Logged before left and right were separate: its {amount} total stays as it is unless you type the sides.',
   'milk.deletedPending': 'Deleted on this device — not synced yet.',
 
-  // ------------------------------------------------------------ bottle (0013)
+  // ------------------------------------------------------------ bottle (0014)
   'bottle.formulaPart': 'formula {amount}',
   'bottle.panelTitle': 'Bottle',
   'bottle.planFormula': '{amount} of formula',
@@ -397,7 +397,7 @@ export const en = {
     'Only the time can be changed. To change what was in it, delete it — the milk goes back — and log it again.',
   'dash.give': 'Give {amount}',
 
-  // ------------------------------------------------------------ milk storage (0013)
+  // ------------------------------------------------------------ milk storage (0014)
   'milkRules.title': 'Milk storage',
   'milkRules.note':
     'The pediatrician’s rules, for the whole family. Each new pumping session gets its use-by time from them when it is saved.',
@@ -416,7 +416,7 @@ export const en = {
   'milkRules.couldNotSave': 'Couldn’t save — {error}',
   'milkRules.couldNotLoad': 'Couldn’t load the storage rules — {error}',
 
-  // ------------------------------------------------------------ milk errors (0013)
+  // ------------------------------------------------------------ milk errors (0014)
   'milkError.overdraw':
     '{label} doesn’t have that much milk left — someone may have just served from it. Choose again.',
   'milkError.containerUnusable':

@@ -85,7 +85,7 @@ type ServerRows = {
   sleep: SleepSession[]
   pumping: PumpingSession[]
   /**
-   * Which containers each bottle came from (0013), for the breakdown line —
+   * Which containers each bottle came from (0014), for the breakdown line —
    * and the containers, so a bottle given offline still names its M#.
    */
   containers: MilkContainer[]
@@ -132,7 +132,7 @@ function groupByHouseholdDay(entries: ActivityEntry[], lang: Lang): Day[] {
  * The kinds with a raw row + edit/void functions behind them. Pumping joined
  * them so History is a place where any entry gets corrected or removed. A
  * pumping session goes through the same milk-aware functions as /pumping
- * (update_pumping_session / void_pumping_session, 0013): its container
+ * (update_pumping_session / void_pumping_session, 0014): its container
  * follows the edit, and milk already served is never edited away.
  */
 type EditKind = 'feeding' | 'diaper' | 'nursing' | 'sleep' | 'pumping'
@@ -186,7 +186,7 @@ export default function HistoryPage() {
   const [nEnd, setNEnd] = useState('')
   const [sStart, setSStart] = useState('')
   const [sEnd, setSEnd] = useState('')
-  // Left and right on their own, as on /pumping (0013): the side is derived
+  // Left and right on their own, as on /pumping (0014): the side is derived
   // from which breast gave milk, never picked. `pBase` is what the fields
   // were prefilled with, so an untouched field keeps the exact stored ml.
   const [pLeft, setPLeft] = useState('')
@@ -437,7 +437,7 @@ export default function HistoryPage() {
         ended_at: fromHouseholdInputValue(sEnd),
       })
     } else {
-      // The same path as the edit on /pumping (0013): through
+      // The same path as the edit on /pumping (0014): through
       // update_pumping_session, so the container follows the new amount and
       // is never left below what already went into bottles.
       const row = pumping.find((r) => r.id === editing.id)
@@ -511,7 +511,7 @@ export default function HistoryPage() {
     setErr(null)
 
     // A bottle with a breakdown goes through the function that also gives its
-    // milk back to each container (0013).
+    // milk back to each container (0014).
     const result =
       feed && inventory
         ? await voidBottleFeed(id, { pending: !!feed.pending })

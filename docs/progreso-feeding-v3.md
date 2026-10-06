@@ -9,21 +9,21 @@ correr o comprobar.
 | Hito | Estado | Verificado con |
 |---|---|---|
 | 0 · Lectura, exploración, plan, spec | Hecho (4 oct 2026) | — |
-| 1 · Migración 0013 + `lib/milk.ts` + tests | Hecho | `vitest run tests/unit/milk.test.ts` 45/45; `tsc --noEmit` limpio; SQL en Postgres efímero (ver abajo) |
-| 2 · Datos y cola + tests (+ página Leche) | Hecho | `pnpm test` 350/350; `tsc --noEmit` limpio; `pnpm test:integration` 107 pasan + 8 saltados (suite de leche: la base local no tiene 0013) |
+| 1 · Migración 0014 + `lib/milk.ts` + tests | Hecho | `vitest run tests/unit/milk.test.ts` 45/45; `tsc --noEmit` limpio; SQL en Postgres efímero (ver abajo) |
+| 2 · Datos y cola + tests (+ página Leche) | Hecho | `pnpm test` 350/350; `tsc --noEmit` limpio; `pnpm test:integration` 107 pasan + 8 saltados (suite de leche: la base local no tiene 0014) |
 | 3 · Interfaz + i18n | Hecho (código) | `tsc`, `lint`, `format:check`, `build` en verde; **comportamiento en pantalla NO VERIFICADO** (ver abajo) |
 | 4 · Documentación y documento familiar | Hecho | `docs/milk-business-logic.md`, `docs/handoff-2026-10-04.md`, `docs/reglas-de-uso-familia.md`, índice de `docs/README.md`; grep de términos técnicos sobre el documento familiar: sin resultados |
 | Revisión independiente (3 agentes + 2 vueltas sobre los arreglos) | Hecha | Hallazgos bloqueantes abiertos: 0 (tablas abajo) |
-| 5 · Verificación local (0013 en el stack local, navegador, barrido) | Hecho (4 oct 2026) | `pnpm test:all` 4×351 + 115 (milk 9/9); recorrido a–f 13/13; barrido 64 combinaciones 16 → 0 hallazgos (ver al final) |
+| 5 · Verificación local (0014 en el stack local, navegador, barrido) | Hecho (4 oct 2026) | `pnpm test:all` 4×351 + 115 (milk 9/9); recorrido a–f 13/13; barrido 64 combinaciones 16 → 0 hallazgos (ver al final) |
 
 ## Notas
 
 - `tests/unit/milk.test.ts`: 45/45 en verde con `pnpm exec vitest run
   tests/unit/milk.test.ts` antes de la migración [VERIFICADO].
 
-- **0013 validada sin aplicarla en ningún entorno** [VERIFICADO]: contenedor
+- **0014 validada sin aplicarla en ningún entorno** [VERIFICADO]: contenedor
   efímero `public.ecr.aws/supabase/postgres:17.6.1.167` **sin puertos
-  publicados**, con 0001–0013 + 41 chequeos de comportamiento dentro de una
+  publicados**, con 0001–0012 + la del inventario + 41 chequeos de comportamiento dentro de una
   sola transacción terminada en `ROLLBACK` (`to_regclass('public.milk_containers')`
   vacío después). Cubre: total = izq + der escrito por el servidor, M1 con
   caducidad del servidor, reenvíos no-op, `milk_label_taken`, sin cantidad sin
@@ -53,9 +53,9 @@ correr o comprobar.
   (`logPumping`/`updatePumping`/`voidPumping`/`totalPumped`): sin eso el
   commit no compilaba.
 - **Integración de la leche: NO VERIFICADA.** `tests/integration/milk.test.ts`
-  está escrita y se salta sola contra una base sin 0013 (sonda sobre
+  está escrita y se salta sola contra una base sin 0014 (sonda sobre
   `milk_containers`). Las otras seis suites corren y pasan contra el stack
-  local sin 0013 [VERIFICADO, `pnpm test:integration`].
+  local sin 0014 [VERIFICADO, `pnpm test:integration`].
 
 - **Hito 3.** `components/BottleBuilder.tsx` (el constructor de filas, uno
   solo), Hoy (línea "Dale X oz", botón de mamila, panel inline con "Registrar
@@ -66,7 +66,7 @@ correr o comprobar.
   borraron `logFeeding` (sin uso: un biberón ahora siempre lleva desglose) y
   tres claves de i18n que quedaron sin lector.
 - **La interfaz NO se probó en un navegador contra datos reales** [NO
-  VERIFICADO]: las pantallas leen tablas de 0013, y 0013 no está aplicada en
+  VERIFICADO]: las pantallas leen tablas de 0014, y 0014 no está aplicada en
   el stack local (prohibido en este pase). Contra el stack actual, Leche, Hoy,
   /feeding e Historial mostrarían el error de lectura de `milk_containers`. Lo
   que sí está verificado es que compila, pasa lint y build, y que toda la
@@ -94,7 +94,7 @@ escribió código; ninguno de los que escribieron código revisó.
 | # | Sev. | Hallazgo | Resolución |
 |---|---|---|---|
 | 1 | **BLOQUEANTE** | Bucle de render: `usable` nuevo en cada render → `value` nuevo → `onChange` → re-render | **Corregido** en las dos puntas: `BottleBuilder` reporta solo si el valor cambió (firma JSON), y las páginas memorizan `usable` y el plan por contenido (`useMemo` sobre la firma). **Verificado en un navegador** (abajo) |
-| 2 | IMPORTANTE | Editar una sesión anterior a 0013 le borraba el total | **Corregido** en el servidor (rama `v_legacy`) y en la pantalla (aviso + no manda el total en el patch). Verificado en SQL |
+| 2 | IMPORTANTE | Editar una sesión anterior a 0014 le borraba el total | **Corregido** en el servidor (rama `v_legacy`) y en la pantalla (aviso + no manda el total en el patch). Verificado en SQL |
 | 3 | IMPORTANTE | "Registrar uno pasado" ofrecía leche extraída después de la hora elegida | **Corregido** en el cliente (`stored_at <= hora`). En el servidor sigue sin chequeo: S-17 |
 | 4 | IMPORTANTE | "Registrar con cambios" se habilitaba sin cambios (redondeo 0,15 ml) | **Corregido**: una fila sin tocar vale los ml EXACTOS del plan; comparación exacta |
 | 5 | IMPORTANTE | Una relectura de fondo borraba lo tipeado | **Corregido**: con filas editadas no se reinicia; aviso "La sugerencia cambió mientras editabas" + "Empezar de nuevo desde ahí" |
@@ -121,19 +121,19 @@ escribió código; ninguno de los que escribieron código revisó.
 ### Verificación del arreglo bloqueante, en un navegador [VERIFICADO]
 
 `pnpm build` + `pnpm start -p 3100` (escuchando solo en 127.0.0.1) contra el
-stack local **sin** 0013, una familia descartable sembrada y borrada al final,
+stack local **sin** 0014, una familia descartable sembrada y borrada al final,
 chrome-headless-shell por CDP a 390×844. Con el panel del biberón abierto, el
 hilo principal estuvo ocupado **10 ms de 4000** (un bucle lo dejaría cerca del
 100 %); un "2.5" tipeado en Fórmula sobrevivió varios ticks del reloj y el
 total lo siguió ("Total: 2.5 oz"); el foco entró al título del panel y
 `aria-expanded` pasó a `true`; 0 errores de consola. En `/feeding` →
 Biberón, el constructor se montó y el hilo estuvo ocupado 20 ms de 4000. Como
-0013 no está en ese stack, las lecturas de leche fallan y el panel sugiere
+0014 no está en ese stack, las lecturas de leche fallan y el panel sugiere
 todo fórmula: es lo esperado, y alcanza para ver el bucle.
 
-### Revalidación de 0013 después de los arreglos [VERIFICADO]
+### Revalidación de 0014 después de los arreglos [VERIFICADO]
 
-Postgres efímero nuevo, 0001–0013 + **58** chequeos en una transacción con
+Postgres efímero nuevo, 0001–0012 + la del inventario + **58** chequeos en una transacción con
 `ROLLBACK` (nada quedó: `to_regclass` vacío), y concurrencia en el mismo
 contenedor descartable: dos tomas distintas → una entra, otra
 `milk_overdraw:M1`; la MISMA toma dos veces a la vez → una toma, una porción,
@@ -155,7 +155,7 @@ Dos subagentes nuevos, solo lectura, sobre los arreglos.
 | Código | MENOR | Contenedores con 0,01–0,15 ml se ofrecían como "0 oz" | **Corregido**: `EMPTY_ML = 0.15` (lo que la pantalla mostraría como 0), con test |
 | Código | MENOR | La leche extraída en el minuto en curso no aparece en "Registrar uno pasado" hasta cambiar la hora | **Aceptado**: es correcto para una toma pasada; el formulario de Hoy no tiene ese límite |
 
-Revalidación de 0013 en un Postgres efímero nuevo: **61** chequeos en una
+Revalidación de 0014 en un Postgres efímero nuevo: **61** chequeos en una
 transacción con `ROLLBACK` [VERIFICADO], contenedor borrado.
 
 ## Tercera vuelta (sobre `0ee8b2f`)
@@ -176,7 +176,7 @@ cuenta como edición y aparece "La sugerencia cambió mientras editabas").
 Autorizado por el dueño **solo para el stack local**. Detalle completo en
 `docs/handoff-2026-10-04.md` §2.1.
 
-- **0013 aplicada al stack local** con `pnpm db:up` [VERIFICADO], tras probar
+- **0014 aplicada al stack local** con `pnpm db:up` [VERIFICADO], tras probar
   que el destino era 127.0.0.1 y que no había credenciales de la nube en el
   entorno. Primero falló: el worktree no tenía `supabase/docker/.env` y el
   script generó claves nuevas; se restauró el `.env` real del stack y el
@@ -233,7 +233,7 @@ rama `feat/milk-inventory-v3` limpia en `3fb9c27`, `main` =
   `milk_create_container` rechaza un formato fuera de `^M[1-9][0-9]*$`
   (`milk_bad_input`) y una cinta con contenedor vivo (`milk_label_taken:M#`),
   bajo un lock por bebé; el índice único parcial lo respalda. Una cinta de un
-  contenedor anulado se acepta (S-20). **Conclusión: 0013 no cambia.**
+  contenedor anulado se acepta (S-20). **Conclusión: 0014 no cambia.**
 - `update_pumping_session` nunca cambia la etiqueta de un contenedor existente
   (y la guarda impide escribirla por fuera): no se puede renumerar, que es lo
   que el dueño tampoco pide.

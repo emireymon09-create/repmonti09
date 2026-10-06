@@ -5,10 +5,10 @@ import type { PendingOp } from '@/lib/queue'
 import { suggestContainerLabel } from '@/lib/milk'
 import { adminClient, anonClient, seedTwoFamilies, type SeededFamily } from '../helpers/supabase'
 
-// El inventario de leche (0013) por el camino real: PostgREST + JWT de un padre,
+// El inventario de leche (0014) por el camino real: PostgREST + JWT de un padre,
 // RLS y GRANTs de verdad, las cinco funciones y sus guardas.
 //
-// NECESITA 0013 APLICADA EN LA BASE LOCAL (`pnpm db:up`). Sin ella la suite se
+// NECESITA 0014 APLICADA EN LA BASE LOCAL (`pnpm db:up`). Sin ella la suite se
 // SALTA sola (la sonda de abajo) y hay que reportarla como NO VERIFICADA. Corrió
 // en verde contra el stack local el 4 oct 2026 (docs/progreso-feeding-v3.md).
 
@@ -72,7 +72,7 @@ function feed(fam: SeededFamily, portions: [string, number][], formula = 0) {
   return { id, op }
 }
 
-describe.skipIf(!ready)('inventario de leche (0013) — necesita la migración aplicada', () => {
+describe.skipIf(!ready)('inventario de leche (0014) — necesita la migración aplicada', () => {
   beforeAll(async () => {
     ;({ a, b, cleanup } = await seedTwoFamilies('milk'))
   })
@@ -227,7 +227,7 @@ describe.skipIf(!ready)('inventario de leche (0013) — necesita la migración a
 // secuencia. El servidor sigue siendo la autoridad: rechaza una cinta viva
 // repetida y un formato inválido, y deja reusar la de un contenedor anulado.
 // Familias propias, para no depender del orden de la suite de arriba.
-describe.skipIf(!ready)('cinta elegida (5 oct 2026) — necesita 0013', () => {
+describe.skipIf(!ready)('cinta elegida (5 oct 2026) — necesita 0014', () => {
   let f: SeededFamily
   let done: () => Promise<void>
   beforeAll(async () => {
@@ -310,7 +310,7 @@ describe.skipIf(!ready)('cinta elegida (5 oct 2026) — necesita 0013', () => {
 })
 
 describe('sonda del esquema', () => {
-  it('dice si la base tiene 0013 (si no, la suite de arriba se salta: NO VERIFICADO)', () => {
+  it('dice si la base tiene 0014 (si no, la suite de arriba se salta: NO VERIFICADO)', () => {
     expect(typeof ready).toBe('boolean')
   })
 })

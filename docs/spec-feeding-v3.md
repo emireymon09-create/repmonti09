@@ -142,10 +142,10 @@ Un rechazo del servidor es un error visible, nunca algo encolado en silencio.
 
 - **S-1 · Ninguna migración se aplica, ni en local.** El pedido lo prohíbe "en
   cualquier entorno (local o nube)" y a la vez pide integración "si hay
-  Docker". Para correr esa integración habría que aplicar `0013` al stack
+  Docker". Para correr esa integración habría que aplicar `0014` al stack
   local. Gana la prohibición: `tests/integration/milk.test.ts` se escribe y se
   reporta **NO VERIFICADO**. Las suites de integración existentes no dependen
-  de `0013` y se pueden correr contra el stack tal como está.
+  de `0014` y se pueden correr contra el stack tal como está.
 - **S-2 · `family_id` directo además de `baby_id`.** `CLAUDE.md` §5.3 prohíbe
   tablas nuevas con scope por un join a través de `baby_id` (fase 2). El
   pedido describe las tablas con `baby_id`. Se ponen **las dos**:
@@ -198,7 +198,7 @@ Un rechazo del servidor es un error visible, nunca algo encolado en silencio.
   en un teléfono no puede desarmar el inventario con un `update` directo:
   recibe un rechazo visible.
 - **S-9 · Las sesiones viejas no crean contenedores.** Las extracciones
-  anteriores a `0013` no tienen izquierda/derecha ni contenedor, y no se
+  anteriores a `0014` no tienen izquierda/derecha ni contenedor, y no se
   inventa qué quedó de ellas: lo que hay arranca en 0 y crece con cada
   extracción nueva. `babies.pumping_reset_at` deja de usarse para el total
   (sigue en la base, sin lector ni escritor nuevo).
@@ -241,12 +241,12 @@ Un rechazo del servidor es un error visible, nunca algo encolado en silencio.
   fed_at`), propuesto por el plan. No lo pidió nadie y con dos teléfonos con
   relojes distintos rechazaría tomas reales. Se deja anotado.
   **Aceptado por el dueño el 5 oct 2026** (el servidor no lo valida).
-- **S-19 · Cómo se validó 0013 sin aplicarla.** En un Postgres **efímero**
+- **S-19 · Cómo se validó 0014 sin aplicarla.** En un Postgres **efímero**
   (imagen de Supabase, sin puertos publicados, borrado al terminar), nunca en
   el stack local ni en la nube: primero dentro de una transacción con
   `ROLLBACK`, y la prueba de concurrencia (dos sesiones) en la base de ese
   mismo contenedor descartable. Es la lectura que respeta la prohibición (ningún
-  entorno de la app tiene `0013`) sin entregar SQL sin correr.
+  entorno de la app tiene `0014`) sin entregar SQL sin correr.
 - **S-20 · La cinta de un contenedor anulado se puede volver a usar** (sin
   cambios el 5 oct 2026; ahora también **eligiéndola** a mano). La sugerencia
   es una más que la mayor de los contenedores **vivos**, y tanto la pantalla
@@ -262,7 +262,7 @@ Un rechazo del servidor es un error visible, nunca algo encolado en silencio.
   los dos padres, y no dependen del dispositivo. Señalado por el verificador
   (M-4); si algún día hay dos bebés, se mudan a `family_settings`.
   **Aceptado por el dueño el 5 oct 2026.**
-- **S-22 · Una sesión anterior a 0013 recibe contenedor solo si se le
+- **S-22 · Una sesión anterior a 0014 recibe contenedor solo si se le
   escriben los lados a propósito.** Corregirle la hora o la nota no le toca el
   total (ni lo reparte 50/50, ni le crea contenedor); escribirle izquierda y
   derecha es decir "esta leche está en un biberón", y entonces sí nace su M#.
@@ -286,7 +286,7 @@ Un rechazo del servidor es un error visible, nunca algo encolado en silencio.
 - **S-25 · El panel de edición no tiene campo "Cinta"** (5 oct 2026). El
   pedido nombra los dos formularios de **registro**, y prohíbe cambiar la
   cinta de una extracción ya registrada. Cuando una edición le da cantidad a
-  una sesión que no tenía (o a una anterior a 0013), su contenedor nace con la
+  una sesión que no tenía (o a una anterior a 0014), su contenedor nace con la
   **sugerencia**, como antes. Lectura conservadora: no se agrega UI fuera de
   lo pedido.
 - **S-26 · Lo que se tipeó en "Cinta" se conserva hasta guardar** (como los
@@ -303,8 +303,8 @@ Un rechazo del servidor es un error visible, nunca algo encolado en silencio.
   teléfono ya usó la cinta… Borrá esta sesión" queda para el caso para el que
   se escribió: una extracción **encolada** que choca al sincronizar (sigue con
   "Descartar este registro").
-- **S-18 · Orden de despliegue.** La app nueva lee columnas de `0013`
-  (`recentFeedings`, Leche, Ajustes): **`0013` tiene que estar aplicada en la
+- **S-18 · Orden de despliegue.** La app nueva lee columnas de `0014`
+  (`recentFeedings`, Leche, Ajustes): **`0014` tiene que estar aplicada en la
   nube antes de que esta rama llegue a `main`**. `currentBaby`,
   `feedingsSince` y el resto de las lecturas que usan los tests de
   integración existentes no cambian.
@@ -318,7 +318,7 @@ el pedido. Orden secuencial: las capas comparten `lib/types.ts` e i18n.
 
 ### Hito 1 — migración y lógica pura
 
-- `supabase/migrations/0013_milk_inventory.sql` (nueva, **sin aplicar**):
+- `supabase/migrations/0014_milk_inventory.sql` (nueva, **sin aplicar**):
   columnas (`pumping_sessions.left_ml/right_ml`, `feedings.breast_milk_ml/
   formula_ml`, `babies.milk_room_hours/milk_fridge_days/milk_freezer_months`);
   tablas `milk_containers` y `milk_drawdowns` con `family_id` + `baby_id` y FK
@@ -351,7 +351,7 @@ el pedido. Orden secuencial: las capas comparten `lib/types.ts` e i18n.
 - Tests: `queue.test.ts` (orden, timeout, rechazo, descarte en cascada,
   `isDeletion`), `pending.test.ts` (`mergePending` y `describeWrite` con
   `rpc` en EN y ES, `milkErrorText`), `tests/integration/milk.test.ts`
-  (escrito, salta solo si la base no tiene `0013`; **NO VERIFICADO**).
+  (escrito, salta solo si la base no tiene `0014`; **NO VERIFICADO**).
 
 ### Hito 3 — interfaz
 

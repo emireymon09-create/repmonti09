@@ -311,7 +311,7 @@ function ScheduleSettings({ familyId }: { familyId: string | null }) {
 }
 
 /**
- * Conservación de la leche (0013): las tres reglas del pediatra — ambiente,
+ * Conservación de la leche (0014): las tres reglas del pediatra — ambiente,
  * refrigerador, congelador. Como los umbrales de arriba, son **de la familia**
  * (viven en `babies`, los dos padres ven lo mismo) y **no pasan por la cola
  * offline**: sin conexión no se guarda nada y la tarjeta lo dice.

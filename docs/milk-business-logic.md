@@ -1,4 +1,4 @@
-# Lógica de negocio — inventario de leche y tomas de biberón (0013)
+# Lógica de negocio — inventario de leche y tomas de biberón (0014)
 
 Cómo funciona **de verdad**, en el código de la rama `feat/milk-inventory-v3`
 (4 oct 2026). Las reglas que se pidieron están en `docs/spec-feeding-v3.md`
@@ -7,7 +7,7 @@ describe lo implementado, con dónde vive cada cosa y su estado:
 **[VERIFICADO]** = con un comando o una prueba que se corrió (citada);
 **[NO VERIFICADO]** = escrito pero no ejercitado en este pase.
 
-> **`0013` está aplicada solo en el stack local** (desde el 4 oct 2026,
+> **`0014` está aplicada solo en el stack local** (desde el 4 oct 2026,
 > `docs/handoff-2026-10-04.md` §2.1); **en la nube, no**. Antes de desplegar
 > hay que aplicarla a mano allá. *(Hasta el 5 oct este recuadro decía que
 > ningún entorno la tenía: había quedado viejo.)*
@@ -18,7 +18,7 @@ describe lo implementado, con dónde vive cada cosa y su estado:
 
 | Pieza | Dónde | Qué hace |
 |---|---|---|
-| Esquema y reglas del servidor | `supabase/migrations/0013_milk_inventory.sql` | Columnas, dos tablas, RLS, guardas, cinco funciones |
+| Esquema y reglas del servidor | `supabase/migrations/0014_milk_inventory.sql` | Columnas, dos tablas, RLS, guardas, cinco funciones |
 | Lógica pura | `lib/milk.ts` | Caducidad, utilizables, etiquetas, sugerencia, reparto, lo que hay, cola offline, texto del desglose, reglas |
 | Única puerta a la base | `lib/db.ts` | Lecturas sin límite, las cinco escrituras, `milkErrorText` |
 | Cola offline | `lib/queue.ts` | Operación `rpc`, descarte en cascada |
@@ -30,7 +30,7 @@ describe lo implementado, con dónde vive cada cosa y su estado:
 - Una sesión guarda **izquierda** (`left_ml`) y **derecha** (`right_ml`) por
   separado. El total (`amount_ml`) lo escribe el servidor como la suma; una
   sesión sin nada en ningún lado queda con total vacío y **sin contenedor**.
-  Nunca se reparte un total a la mitad: una sesión vieja (anterior a 0013)
+  Nunca se reparte un total a la mitad: una sesión vieja (anterior a 0014)
   que solo tiene total abre su edición con los dos lados vacíos.
   [VERIFICADO: chequeos SQL "session total = left + right" y "session without
   amount: valid, no container"]
@@ -65,7 +65,7 @@ describe lo implementado, con dónde vive cada cosa y su estado:
     qué escribir: "Sesión registrada — escribí M5 en la cinta."
     [VERIFICADO: navegador (a), (b)]
   - El servidor no cambió: ya validaba `^M[1-9][0-9]*$` (`milk_bad_input`) y
-    la cinta viva repetida; `0013` **no se tocó** en este pase.
+    la cinta viva repetida; `0014` **no se tocó** en este pase.
   - **No se puede cambiar la cinta de una extracción ya registrada** (no se
     pidió): la salida es borrarla y registrarla de nuevo, que no se puede si ya
     se sirvió leche de ella. El panel de edición no tiene campo "Cinta"; si una
@@ -76,10 +76,10 @@ describe lo implementado, con dónde vive cada cosa y su estado:
   terminar se registra con esa hora. El otro teléfono no ve el cronómetro.
   **A mano**: con la hora que se elija (no futura). [NO VERIFICADO en un
   navegador — ver §8]
-- **Sesiones anteriores a 0013** (solo un total, sin lados): corregirles la
+- **Sesiones anteriores a 0014** (solo un total, sin lados): corregirles la
   hora o la nota no toca el total; recién si se escriben los lados nace su
   contenedor (S-22). La pantalla de edición lo avisa. [VERIFICADO: SQL "editing
-  only the note/time of a pre-0013 session keeps its total"]
+  only the note/time of a pre-0014 session keeps its total"]
 - **Editar** (`update_pumping_session`): el contenedor sigue la cantidad,
   **nunca por debajo de lo servido** (`milk_served_exceeds_amount:M#`); si la
   sesión no tenía cantidad y se le da una, el contenedor nace ahí; si se le
@@ -172,7 +172,7 @@ describe lo implementado, con dónde vive cada cosa y su estado:
   se reemplazó.
 - **Días de reserva**: no existían en `main` (grep), así que no se
   construyeron.
-- Las extracciones anteriores a 0013 no tienen contenedor: lo que hay arranca
+- Las extracciones anteriores a 0014 no tienen contenedor: lo que hay arranca
   en 0 y crece con cada extracción nueva. `babies.pumping_reset_at` ya no
   participa.
 
@@ -220,16 +220,16 @@ NO VERIFICADO con extracciones reales — ver §8]
 ## 8. Lo que NO se verificó
 
 *(Actualizado el 5 oct 2026: desde el pase de verificación local del 4 oct
-—`docs/handoff-2026-10-04.md` §2.1— 0013 está aplicada en el stack local,
+—`docs/handoff-2026-10-04.md` §2.1— 0014 está aplicada en el stack local,
 la integración corre y las pantallas se recorrieron con datos reales. Lo de
 abajo es la lista original del 4 oct; para el estado vigente manda el
 handoff §3.)*
 
 - **Las pantallas con datos reales de leche** (Leche, el panel con
-  extracciones, `/feeding`, Historial, Ajustes): necesitan 0013 en la base, y
+  extracciones, `/feeding`, Historial, Ajustes): necesitan 0014 en la base, y
   aplicarla estaba prohibido. Compilan, pasan lint y build, y el panel se vio
   abrir sin bucle; no se vio una toma con porciones registrada desde la
   pantalla.
-- **`tests/integration/milk.test.ts`**: escrita, se salta sola sin 0013.
+- **`tests/integration/milk.test.ts`**: escrita, se salta sola sin 0014.
 - **Barrido de layout** (390/1440, temas, idiomas) de las pantallas nuevas.
 - **El cronómetro en vivo** al recargar, y en un iPhone.

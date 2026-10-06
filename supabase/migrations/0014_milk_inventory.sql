@@ -519,7 +519,7 @@ begin
     into v_family, v_fridge, v_freezer
     from babies where id = v_session.baby_id;
 
-  -- Una sesión de antes de 0013 solo tiene un total, sin izquierda ni derecha
+  -- Una sesión de antes de 0014 solo tiene un total, sin izquierda ni derecha
   -- y sin contenedor. Corregirle la hora o la nota sin escribir los lados NO
   -- puede borrarle el total (ni inventarle un reparto 50/50): se le cambian
   -- esas dos cosas y nada más.
