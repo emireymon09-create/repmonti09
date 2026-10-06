@@ -218,7 +218,9 @@ export function suggestPlan(
   const portions: PlanPortion[] = []
   let left = totalMl
   for (const c of usableContainers(containers, atMs)) {
-    if (left <= 0) break
+    // Not `left <= 0`: 3 oz − 1 oz − 2 oz leaves ~1e-14 ml of float dust,
+    // which would add a phantom "M3 · 0 oz" portion.
+    if (left <= EMPTY_ML) break
     const ml = Math.min(c.remaining_ml, left)
     portions.push({ containerId: c.id, label: c.label, ml })
     left -= ml

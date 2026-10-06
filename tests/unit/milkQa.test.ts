@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  suggestPlan,
   newestSavedContainers,
   pumpingRemoveConfirmKey,
   rereadsInventory,
@@ -132,5 +133,35 @@ describe('Bug 5 — deleting a pumping session says what it really does', () => 
       'milk.removeConfirmNoMilk',
     )
     expect(pumpingRemoveConfirmKey(session({}), undefined)).toBe('milk.removeConfirmNoMilk')
+  })
+})
+
+describe('suggestPlan — no phantom portion from a floating-point leftover', () => {
+  const at = Date.parse('2026-10-06T12:00:00Z')
+  const box = (id: string, label: string, ml: number, storedMin: number): MilkContainer =>
+    ({
+      id,
+      family_id: 'f',
+      baby_id: 'b',
+      source_session_id: null,
+      label,
+      amount_ml: ml,
+      remaining_ml: ml,
+      stored_at: new Date(at - storedMin * 60_000).toISOString(),
+      location: 'fridge',
+      expires_at: new Date(at + 86_400_000).toISOString(),
+      voided_at: null,
+    }) as MilkContainer
+
+  it('3 oz from M1 (1 oz) + M2 (2 oz) uses exactly two containers, not "+ M3 0 oz"', () => {
+    const oz = 29.5735
+    const plan = suggestPlan(
+      3 * oz,
+      [box('c1', 'M1', oz, 30), box('c2', 'M2', 2 * oz, 20), box('c3', 'M3', 2 * oz, 10)],
+      at,
+    )
+    expect(plan.portions.map((p) => p.label)).toEqual(['M1', 'M2'])
+    expect(plan.portions.every((p) => p.ml > 0.15)).toBe(true)
+    expect(plan.formulaMl).toBe(0)
   })
 })
