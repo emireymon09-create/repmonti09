@@ -22,6 +22,12 @@ Documentos: `docs/compatibilidad-leche.md` (qué pasa con teléfonos viejos),
 
 - Elegí un momento **sin una toma en curso** y avisá a la otra persona que no
   registre nada durante ~15 min (sobre todo leche).
+- **Regla para la ventana:** desde el paso 3b hasta que cada aparato se haya
+  actualizado (paso 8), **no registrar extracciones ni biberones de leche
+  materna** desde un aparato sin actualizar. Lo que registre la app vieja entra
+  como fila "legada": un biberón de leche materna así **no descuenta** del
+  inventario y "Lo que hay" queda **más alto que la leche real**; una extracción
+  así no entra al inventario. Pañales, sueño y lactancia no tienen este problema.
 - Tené a mano: la contraseña de la base de producción (conexión **directa**,
   puerto 5432), acceso al panel de Supabase (SQL Editor) y al de Vercel.
 
@@ -31,17 +37,23 @@ Seguí `docs/seguridad-operacional.md` §10.2 al pie de la letra (conexión dire
 no el pooler; formato custom; `pg_dump` de versión ≥ la del servidor):
 
 ```
-pg_dump -Fc -d "postgresql://postgres:<PASS>@db.<ref>.supabase.co:5432/postgres" -f "amelia-prod-2026-MM-DD-pre-leche.dump"
+pg_dump -Fc -h db.<ref>.supabase.co -p 5432 -U postgres -d postgres -f "amelia-prod-2026-MM-DD-pre-leche.dump"
 pg_restore -l "amelia-prod-2026-MM-DD-pre-leche.dump"
 ```
+
+Sin la contraseña en la línea de comandos: `pg_dump` la pide (así no queda en el
+historial de la consola ni en la lista de procesos).
 
 Esperado: el `pg_restore -l` lista las 15 tablas. **Si sale vacío o corto, no
 sigas.** Vuelta atrás de este paso: no hace falta (no cambia nada).
 
 ## 2. Saber qué hay de verdad en la nube (solo lectura)
 
-SQL Editor → pegá **entero** `docs/verificar-antes-leche.sql` → Run. No escribe
-nada (se probó en local dentro de una transacción `READ ONLY`).
+SQL Editor → pegá `docs/verificar-antes-leche.sql`, **seleccioná solo la
+consulta 1** (desde `-- 1.` hasta su `;`) y Run: el SQL Editor puede mostrar solo
+el resultado de la última consulta, y la 1 es la que decide. Después corré la 5
+sola y anotá los conteos. No escribe nada (se probó en local dentro de una
+transacción `READ ONLY`).
 
 Esperado:
 
@@ -61,6 +73,7 @@ SQL Editor → pegá esto (el contenido del archivo entre `begin` y `commit`):
 
 ```sql
 begin;
+set local lock_timeout = '5s';
 -- pegá acá el contenido de supabase/migrations/0013_changer_display_scopes.sql
 commit;
 ```
@@ -80,11 +93,15 @@ falla no quede a medias:
 
 ```sql
 begin;
+set local lock_timeout = '5s';
 -- pegá acá el contenido COMPLETO de supabase/migrations/0014_milk_inventory.sql
 commit;
 ```
 
-Esperado: termina sin `ERROR`. Si aparece un error, el `begin` hace que no quede
+El `lock_timeout` hace que, si una escritura de un teléfono tiene tomada la
+tabla, la migración falle limpia a los 5 s en vez de dejar colgadas las
+escrituras de todos (los `alter table` piden un bloqueo exclusivo). Si pasa,
+esperá un minuto y volvé a correrla. Esperado: termina sin `ERROR`. Si aparece un error, el `begin` hace que no quede
 nada aplicado: anotá el mensaje y **no sigas** (no pushees).
 
 Verificá corriendo otra vez `docs/verificar-antes-leche.sql`: la fila 0014 ahora
@@ -223,6 +240,24 @@ Y en el SQL Editor, solo lectura:
 
 Para limpiar la prueba: borrá desde la app lo que registraste (no a mano en SQL).
 
+**Lo que registraron aparatos viejos durante la ventana** (solo lectura;
+reemplazá la hora por la del paso 3b, en UTC):
+
+```sql
+select 'biberón sin desglose' as que, id, fed_at as cuando, amount_ml
+from feedings where feeding_type = 'bottle' and breast_milk_ml is null and formula_ml is null
+  and voided_at is null and fed_at > 'AAAA-MM-DD HH:MM+00'
+union all
+select 'extracción legada', id, pumped_at, amount_ml
+from pumping_sessions where left_ml is null and right_ml is null and amount_ml is not null
+  and voided_at is null and pumped_at > 'AAAA-MM-DD HH:MM+00';
+```
+
+Si sale algo: si fue leche materna, borrala desde Historial (⋯ → Borrar) y
+volvé a registrarla con la app nueva (la extracción con su cinta; el biberón
+eligiendo el contenedor), para que "Lo que hay" vuelva a coincidir con la
+heladera. Si fue fórmula, se puede dejar.
+
 ## 10. Vuelta atrás, por paso
 
 | Si falla en… | Qué hacer |
@@ -231,6 +266,6 @@ Para limpiar la prueba: borrá desde la app lo que registraste (no a mano en SQL
 | 3a | No hace falta deshacer 0013 |
 | 3b con error | El `begin` evita que quede aplicada; confirmalo con `verificar-antes-leche.sql` (0014 = `false`) |
 | 4–6, antes del push | Si querés sacar 0014: `docs/rollback-leche.sql` (ver abajo). Si no, se puede quedar: la app vieja convive (compatibilidad §3) |
-| Después del push, problema de la **app** | En Vercel → Deployments → el de v0.12.1 → *Promote to Production* (o `git revert` del rango y push). La base puede quedar con 0014: la app vieja funciona salvo editar/borrar lo creado por la nueva (bloqueo visible, sin desfase). Teléfonos con entradas de leche sin sincronizar de la app nueva verán un banner por entrada y tendrán que Descartarlas (compatibilidad §4) |
+| Después del push, problema de la **app** | En Vercel → Deployments → el de v0.12.1 → *Promote to Production* (o `git revert` del rango y push). Ojo: después de un *Promote* a un deployment viejo, Vercel deja de asignar Production automáticamente a los pushes siguientes hasta que lo deshagas en el panel. La base puede quedar con 0014: la app vieja funciona salvo editar/borrar lo creado por la nueva (bloqueo visible, sin desfase). Teléfonos con entradas de leche sin sincronizar de la app nueva verán un banner por entrada y tendrán que Descartarlas (compatibilidad §4) |
 | Después del push, hay que sacar **también** la base | Primero volvé la app (fila anterior), cerrá/reabrí las PWA, y recién entonces corré `docs/rollback-leche.sql` en el SQL Editor (trae su `begin/commit` y el `notify`). **Se pierden** los contenedores, las porciones y los repartos izq/der y leche/fórmula (los totales quedan); el encabezado del archivo lo detalla y trae un respaldo opcional comentado. Probado en un Postgres efímero: tras la reversa el esquema es idéntico a 0001–0013 y la suite de v0.12.1 pasa 118/118 |
 | Todo salió mal | Restaurar el dump del paso 1 (`docs/seguridad-operacional.md` §10) |

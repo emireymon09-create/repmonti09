@@ -6,6 +6,11 @@
 -- supabase_migrations.schema_migrations: las que se aplicaron a mano en el
 -- SQL Editor pueden no haber quedado registradas ahí.
 --
+-- CÓMO CORRERLO: el SQL Editor de Supabase puede mostrar solo el resultado de
+-- la ÚLTIMA consulta. Por eso la que decide (la 1) se corre SOLA: seleccioná
+-- desde "-- 1." hasta su ";" y Run. Después, si querés, la 2, la 4 y la 5,
+-- una por vez.
+--
 -- Resultado esperado en producción v0.12.1 ANTES del despliegue:
 --   0001 … 0012 → true
 --   0013_changer_display_scopes → true SI ya se aplicó (si da false, se aplica
@@ -30,9 +35,9 @@ from (values
              where n.nspname='public' and p.proname='is_family_member'
                and array_to_string(p.proconfig, ',') like '%search_path%'),
      'is_family_member con search_path fijo'),
-  ('0005_grant_authenticated',
+  ('0005_grant_authenticated (informativa)',
      has_table_privilege('authenticated', 'public.feedings', 'INSERT'),
-     'GRANT insert en feedings a authenticated'),
+     'GRANT insert en feedings a authenticated — en Supabase suele estar por defecto: no prueba que 0005 corrió'),
   ('0006_edit_and_void',
      exists (select 1 from information_schema.columns where table_schema='public' and table_name='feedings' and column_name='voided_at'),
      'feedings.voided_at'),
@@ -51,11 +56,15 @@ from (values
      exists (select 1 from information_schema.columns where table_schema='public' and table_name='push_subscriptions' and column_name='consecutive_403'),
      'push_subscriptions.consecutive_403'),
   ('0011_push_cron',
-     exists (select 1 from pg_extension where extname='pg_cron') and exists (select 1 from pg_extension where extname='pg_net'),
-     'extensiones pg_cron y pg_net (el job se mira en la consulta 3)'),
+     to_regclass('cron.job') is not null
+       and exists (select 1 from pg_extension where extname='pg_net')
+       and (xpath('/row/n/text()', query_to_xml(
+              'select count(*) as n from cron.job where jobname = ''nursing-check''', false, true, '')))[1]::text::int > 0,
+     'job ''nursing-check'' en cron.job + pg_net'),
   ('0012_schedule_appointments_calendar',
-     to_regclass('public.family_settings') is not null and to_regclass('public.calendar_feeds') is not null,
-     'tablas family_settings, calendar_feeds'),
+     to_regclass('public.family_settings') is not null and to_regclass('public.calendar_feeds') is not null
+       and exists (select 1 from information_schema.columns where table_schema='public' and table_name='doctor_appointments' and column_name='reminder_sent_at'),
+     'tablas family_settings, calendar_feeds + doctor_appointments.reminder_sent_at'),
   ('0013_changer_display_scopes',
      exists (select 1 from pg_constraint where conname='device_tokens_scopes_check'
              and pg_get_constraintdef(oid) like '%quick_diaper%'
@@ -80,10 +89,6 @@ from (values
 -- 2. El CHECK de scopes tal cual (0009 / 0013).
 select pg_get_constraintdef(oid) as device_tokens_scopes_check
 from pg_constraint where conname = 'device_tokens_scopes_check';
-
--- 3. El job de 0011 (si la extensión no está, esta consulta da error: es
---    información, no un problema del despliegue de leche).
-select jobname, schedule, active from cron.job where jobname = 'nursing-check';
 
 -- 4. Qué registró el historial de migraciones, si existe la tabla (solo
 --    informativo: NO es la verdad, la verdad es la consulta 1).

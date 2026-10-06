@@ -330,3 +330,34 @@ bloqueantes, 0 importantes**.
   --noEmit` exit 0; `pnpm lint` sin advertencias; `pnpm format:check` limpio;
   `pnpm build` compila; `pnpm test:all` 366/366 × 4 TZ + integración 120/120
   (`milk.test.ts` 14/14).
+
+## Pase de integración sobre producción v0.12.1 (6 oct 2026)
+
+Rama `feat/milk-inventory-v3-release` desde `0cbe798` (v0.12.1). Detalle en
+`docs/handoff-2026-10-06.md`, `docs/comparacion-v0.12.1.md` y
+`docs/compatibilidad-leche.md`.
+
+| Hito | Estado | Evidencia |
+|---|---|---|
+| v0.12.1 identificada y rama de release creada | Hecho | `0cbe798` por `package.json`, CHANGELOG y `git log -S` |
+| 13 commits montados con `cherry-pick -x`; 4 conflictos textuales y 7 semánticos resueltos | Hecho | comparación §3 y §5 |
+| Migración renumerada a `0014_milk_inventory.sql` | Hecho | ninguna migración de v0.12.1 editada |
+| Guarda de extracciones compatible con la app v0.12.1 (filas legadas) | Hecho | 11 pruebas de integración, 6 rojas antes |
+| QA en navegador de la release y de la app vieja sobre la base nueva | Hecho | 160/0 sobre HEAD; matriz de compatibilidad |
+| 4 defectos nuestros corregidos con regresión | Hecho | `bfcda1e`, `0d159bb` |
+| Auditorías de cobertura y de seguridad/datos | Hecho, 0 bloqueantes abiertos | 8 pruebas nuevas (`57518c9`); documentos corregidos |
+| Reversa probada en Postgres efímero; suite vieja 118/118 tras revertir | Hecho | `docs/rollback-leche.sql` |
+| Verificación final | Hecho | `tsc`, `lint`, `format:check`, `build`, `test:all` (379×4 TZ + 151) y suite v0.12.1 118/118 |
+
+**Hallazgos de las auditorías y su resolución:**
+
+| Sev. | Hallazgo | Resolución |
+|---|---|---|
+| BLOQ. (cobertura) | Navegador corrido antes de los dos últimos arreglos | **Corregido**: recorridos repetidos sobre HEAD, 160/0 |
+| BLOQ. (cobertura) | `update_pumping_session` a total 0 sin prueba | **Corregido**: 2 pruebas (con y sin leche servida) + 6 ramas más |
+| BLOQ. (cobertura) | Falta subir la versión | **Rechazado**: el pedido prohíbe tocar `package.json`/CHANGELOG; el runbook (paso 5) lo hace hacer al dueño antes del push |
+| IMPORT. (seguridad) | El SQL Editor puede mostrar solo el último resultado; la consulta de `cron.job` abortaba el resto | **Corregido**: el runbook manda correr la consulta 1 sola; la de cron entró en la consulta 1 sin romperla |
+| IMPORT. (seguridad) | Predicados de 0005 y 0011 dan falso "aplicada"; 0012 incompleto | **Corregido**: 0011 mira el job, 0005 marcada informativa, 0012 suma `reminder_sent_at` |
+| IMPORT. (seguridad) | Un biberón de la app vieja no descuenta: "Lo que hay" infla | **Corregido en documentos**: regla de la ventana (runbook paso 0) y consulta de control (paso 9); dicho en compatibilidad §3/§5/§7 |
+| MENOR | `lock_timeout`, contraseña en la línea de `pg_dump`, nota de *Promote*, encabezado viejo de 0014 | **Corregido** |
+| MENOR | Caducidad contra `fed_at` del cliente; mover `pumped_at` de una servida; porciones minúsculas; `log_pumping_session` idempotente sin verificar contenedor | **Aceptados y declarados** (handoff §5.4): son reglas de negocio, no del despliegue; cambiarlas toca la semántica de las RPC |

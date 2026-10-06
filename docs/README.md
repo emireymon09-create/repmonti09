@@ -49,7 +49,13 @@ hueco con una suposición presentada como hecho.
 | [`spec-feeding-v3.md`](spec-feeding-v3.md) | Especificación del inventario de leche y las tomas v3 (4 oct 2026): las reglas del dueño, los 22 supuestos elegidos donde el pedido no alcanzaba, y el plan por archivos. |
 | [`progreso-feeding-v3.md`](progreso-feeding-v3.md) | Estado por hitos de ese pase, con qué comando se verificó cada cosa, y la tabla de hallazgos de la revisión independiente con su resolución. |
 | [`milk-business-logic.md`](milk-business-logic.md) | Cómo funciona **de verdad** el inventario de leche (0014): extracciones, caducidad, tomas, lo que hay, sin conexión — cada afirmación etiquetada verificada o no. |
-| [`handoff-2026-10-04.md`](handoff-2026-10-04.md) | Handoff del pase del inventario: qué se hizo, qué se verificó y con qué, qué **no**, la propuesta de versión (0.11.0) y el orden para desplegar (**0014 no está aplicada en ningún lado**). |
+| [`handoff-2026-10-04.md`](handoff-2026-10-04.md) | Handoff del pase del inventario sobre la base vieja (`9824e26`). **Superado por el del 6 oct** en versión y despliegue (su "0.11.0" y su orden de despliegue ya no valen). |
+| [`handoff-2026-10-06.md`](handoff-2026-10-06.md) | **Empezar acá para desplegar la leche.** El inventario montado sobre producción v0.12.1 (rama `feat/milk-inventory-v3-release`): qué se integró, qué se probó y con qué, qué **no**, el veredicto y los riesgos que decide el dueño. |
+| [`comparacion-v0.12.1.md`](comparacion-v0.12.1.md) | Qué cambió el papá entre `9824e26` y v0.12.1, qué es nuestro, cada conflicto (textual y semántico) y cómo se resolvió. |
+| [`compatibilidad-leche.md`](compatibilidad-leche.md) | La app v0.12.1 corriendo contra la base con 0014: la superficie de la migración, la matriz de casos con resultado y lo que ve el usuario, el rollback solo de la app, cómo acortar la ventana. |
+| [`runbook-despliegue-leche.md`](runbook-despliegue-leche.md) | Pasos numerados para el dueño: respaldo, qué hay en la nube, migraciones 0013/0014, recarga de esquema, push, refresco de la PWA, prueba de humo y vuelta atrás por paso. |
+| [`verificar-antes-leche.sql`](verificar-antes-leche.sql) | Solo lectura: qué migraciones están de verdad en la nube, por sus objetos. |
+| [`rollback-leche.sql`](rollback-leche.sql) | Deshace 0014 (probado en Postgres efímero); el encabezado dice qué datos se pierden. |
 | [`reglas-de-uso-familia.md`](reglas-de-uso-familia.md) | Para papá y mamá, sin términos técnicos: cómo se usan la leche guardada y los biberones en la app. |
 
 ## Y además

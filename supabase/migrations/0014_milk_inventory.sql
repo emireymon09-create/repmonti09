@@ -1,9 +1,11 @@
 -- Inventario de leche materna y registro de tomas v3 (4 oct 2026).
 --
 -- Numerada en este repo por pedido explícito del dueño (CLAUDE.md §5.2), igual
--- que 0007…0012. NO ESTÁ APLICADA EN NINGÚN ENTORNO: ni en el stack local ni
--- en la nube. Hay que aplicarla a mano en el proyecto de la nube ANTES de que
--- la app que la usa llegue a `main` (docs/handoff-2026-10-04.md).
+-- que 0007…0012. Nació como 0013; pasó a 0014 porque producción (v0.12.1) ya
+-- tiene 0013_changer_display_scopes. Al 6 oct 2026 está aplicada SOLO en el
+-- stack local, NO en la nube. Hay que aplicarla a mano en el proyecto de la
+-- nube ANTES de que la app que la usa llegue a `main`, siguiendo
+-- docs/runbook-despliegue-leche.md.
 --
 -- Qué agrega, en una línea cada cosa (las reglas: docs/spec-feeding-v3.md §1):
 --   · pumping_sessions: izquierda y derecha por separado. `amount_ml` sigue

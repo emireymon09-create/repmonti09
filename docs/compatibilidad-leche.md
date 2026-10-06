@@ -66,7 +66,7 @@ los cinco tipos, Crecimiento, Médico, Ajustes (umbrales 150/95), los dos padres
 | B2c | Vieja cambia **solo la hora** | Pasa si el `amount_ml` reenviado coincide (88,7205 → 204); falla si el redondeo a oz lo altera (50 ml → reenvía 50,27495 → 400) | "Saved" o el banner | Sí: el dato queda a salvo; la edición de hora puede fallar |
 | B3 | Vieja borra o edita una extracción **con contenedor** | 400, contenedor intacto | Banner `milk_rpc_only` | Sí |
 | B3d/e | Vieja edita **solo la nota** de esa extracción | 400: reenvía `amount_ml` redondeado (59,1 ≠ 59,147) | Banner | Sí (siempre falla: la app vieja no puede editar extracciones nuevas) |
-| B4 | Vieja registra extracción y biberón | Entran en forma legada, 0 contenedores | Normal | **Sí**. La leche registrada así **no entra al inventario nuevo** (§5) |
+| B4 | Vieja registra extracción y biberón | Entran en forma legada, 0 contenedores, 0 porciones | Normal | **Sí, con una condición**: la extracción no entra al inventario, y un biberón de leche materna **no descuenta** de él, así que "Lo que hay" queda **más alto que la leche real** hasta corregirlo (§5). La contabilidad no se desfasa; la heladera sí |
 | B4' | La app nueva lee eso | "Lo que hay" 3,82 oz antes y después; Historial las muestra con ⋯ y el aviso de sesión legada | Normal | Sí |
 | B4'' | **`/pumping` vieja** muestra su total | Suma `amount_ml` de todas las extracciones: 9,5 oz contra 3,82 reales | Número **inflado** (no descuenta lo servido) | **Solo de pantalla**, no toca datos. Se acorta con §6 |
 | B5a | Cola vieja offline: extracción + biberón + pañal | 3 POST `on_conflict=id` → 201, sin duplicados, extracción legada | "Offline · 3 entries saved…" y luego nada | Sí |
@@ -116,7 +116,9 @@ cerrado. Salida: Descartar cada entrada y volver a registrar a mano.
 ## 5. La leche registrada por teléfonos viejos durante la ventana
 
 Entra como fila **legada**: total sin izq/der, **sin contenedor**. No suma a
-"Lo que hay" ni puede servirse en un biberón con desglose. Para que entre al
+"Lo que hay" ni puede servirse en un biberón con desglose. Y un biberón de leche
+materna registrado por la vieja **no descuenta** de ningún contenedor: "Lo que
+hay" muestra leche que ya se tomó. Para que entre al
 inventario, después de actualizar: borrarla desde Historial (⋯ → Borrar) y
 volver a registrarla en Leche con izquierda/derecha y su cinta. Un biberón
 registrado por la vieja queda como toma sin desglose: cuenta en los totales de
@@ -141,8 +143,15 @@ inflado de la `/pumping` vieja (solo pantalla); códigos de error crudos.
 **No aceptable (y corregido):** que la app vieja no pudiera registrar ni borrar
 ninguna extracción y que una extracción encolada offline se perdiera (S6).
 
-**No encontrado:** ningún caso en que una escritura de la app vieja desfase
+**No encontrado:** ningún caso en que una escritura de la app vieja altere
 `remaining_ml` o las porciones. Se verificó con SQL antes/después en B1–B6.
+
+**Pero ojo (auditoría de seguridad y datos):** que la base quede coherente no
+quiere decir que "Lo que hay" coincida con la heladera. Un biberón de leche
+materna dado con la app vieja no descuenta nada, así que el número queda **por
+encima** de la leche real. Es aceptable **solo** con la regla de la ventana
+(runbook paso 0: no registrar leche desde un aparato sin actualizar) y la
+consulta de control del runbook paso 9, que lista lo que entró por la vía vieja.
 
 ## 8. NO VERIFICADO
 
