@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { listContainers, listDrawdowns, sendOpWith } from '@/lib/db'
 import type { PendingOp } from '@/lib/queue'
-import { suggestContainerLabel } from '@/lib/milk'
+import { stashMl, suggestContainerLabel } from '@/lib/milk'
 import { adminClient, anonClient, seedTwoFamilies, type SeededFamily } from '../helpers/supabase'
 
 // El inventario de leche (0014) por el camino real: PostgREST + JWT de un padre,
@@ -559,6 +559,445 @@ describe.skipIf(!ready)('app vieja v0.12.1 durante el deploy — necesita 0014',
       ['M1', 40],
       ['M2', 60],
     ])
+  })
+})
+
+// Ramas de 0014 que la auditoría del 6 oct 2026 encontró sin test. Familia
+// propia, para no depender del orden de las suites de arriba. Cada rechazo se
+// comprueba también contra la base (service_role): el error solo no alcanza,
+// la base tiene que haber quedado igual.
+describe.skipIf(!ready)('ramas de 0014 sin cubrir (auditoría 6 oct 2026) — necesita 0014', () => {
+  let f: SeededFamily
+  let other: SeededFamily
+  let legacyOnly: SeededFamily
+  let sibling: SeededFamily
+  let done: () => Promise<void>
+  let done2: () => Promise<void>
+  beforeAll(async () => {
+    ;({ a: f, b: other, cleanup: done } = await seedTwoFamilies('milk-audit'))
+    ;({ a: legacyOnly, cleanup: done2 } = await seedTwoFamilies('milk-audit-legacy'))
+    // Un segundo bebé en la MISMA familia: RLS lo deja ver, la función no.
+    const { data: baby, error } = await adminClient()
+      .from('babies')
+      .insert({ family_id: f.familyId, name: 'Bebe hermano', birth_date: '2026-02-01' })
+      .select('id')
+      .single()
+    if (error) throw error
+    sibling = { ...f, babyId: baby.id }
+  })
+  afterAll(async () => {
+    await done()
+    await done2()
+  })
+
+  const admin = () => adminClient()
+  /** Foto de todo lo que el inventario toca para el bebé: lo que tiene que quedar igual. */
+  async function snapshot(babyId = f.babyId) {
+    const [c, d, fe, p] = await Promise.all([
+      admin()
+        .from('milk_containers')
+        .select('id, label, amount_ml, remaining_ml, expires_at, voided_at, source_session_id')
+        .eq('baby_id', babyId)
+        .order('id'),
+      admin()
+        .from('milk_drawdowns')
+        .select('id, container_id, feeding_id, amount_ml, voided_at')
+        .eq('baby_id', babyId)
+        .order('id'),
+      admin()
+        .from('feedings')
+        .select('id, baby_id, amount_ml, breast_milk_ml, formula_ml, voided_at, fed_at')
+        .eq('baby_id', babyId)
+        .order('id'),
+      admin()
+        .from('pumping_sessions')
+        .select('id, side, amount_ml, left_ml, right_ml, pumped_at, voided_at, notes')
+        .eq('baby_id', babyId)
+        .order('id'),
+    ])
+    return { containers: c.data, drawdowns: d.data, feedings: fe.data, sessions: p.data }
+  }
+  async function pumpOk(
+    fam: SeededFamily,
+    left: number | null,
+    right: number | null,
+    label: string,
+    pumpedAt?: string,
+  ) {
+    const p = pump(fam, left, right, label)
+    if (pumpedAt) (p.op as { args: Record<string, unknown> }).args.p_pumped_at = pumpedAt
+    expect(await sendOpWith(fam.client, p.op, 'write'), label).toEqual({ error: null })
+    const { data } = await admin()
+      .from('milk_containers')
+      .select('id, label, remaining_ml, expires_at, voided_at')
+      .eq('source_session_id', p.id)
+      .single()
+    return { ...p, container: data! }
+  }
+  const updateArgs = (id: string, left: number | null, right: number | null) => ({
+    p_id: id,
+    p_side: 'both',
+    p_left_ml: left,
+    p_right_ml: right,
+    p_notes: 'editada',
+    p_pumped_at: new Date().toISOString(),
+  })
+
+  // ---------------------------------------------------------------- (a)
+  it('editar una extracción a total 0 con su contenedor SIN servir: anula el contenedor y actualiza la sesión', async () => {
+    const p = await pumpOk(f, 30, 20, 'M1')
+    for (const [left, right] of [
+      [0, 0],
+      [null, null],
+    ] as const) {
+      if (left === null) {
+        // Volver a darle leche (crea M1 otra vez) y bajarla a null/null.
+        const { error } = await f.client.rpc('update_pumping_session', {
+          ...updateArgs(p.id, 10, 5),
+          p_container_id: randomUUID(),
+          p_container_label: 'M1',
+        })
+        expect(error).toBeNull()
+      }
+      const { error } = await f.client.rpc('update_pumping_session', updateArgs(p.id, left, right))
+      expect(error, `${left}/${right}`).toBeNull()
+      const { data: live } = await admin()
+        .from('milk_containers')
+        .select('id')
+        .eq('source_session_id', p.id)
+        .is('voided_at', null)
+      expect(live, `${left}/${right}`).toEqual([])
+      const { data: s } = await admin()
+        .from('pumping_sessions')
+        .select('amount_ml, left_ml, right_ml, notes, voided_at')
+        .eq('id', p.id)
+        .single()
+      expect(s, `${left}/${right}`).toEqual({
+        amount_ml: null,
+        left_ml: left,
+        right_ml: right,
+        notes: 'editada',
+        voided_at: null,
+      })
+    }
+    // Dos contenedores anulados (uno por vuelta), ninguno vivo.
+    const { data: all } = await admin()
+      .from('milk_containers')
+      .select('voided_at')
+      .eq('source_session_id', p.id)
+    expect(all!.map((c) => c.voided_at !== null)).toEqual([true, true])
+  })
+
+  it('editar una extracción a total 0 con leche YA servida: milk_already_served y la base no cambia', async () => {
+    const p = await pumpOk(f, 40, 20, 'M2')
+    const fd = feed(f, [[p.container.id, 15]])
+    expect(await sendOpWith(f.client, fd.op, 'write')).toEqual({ error: null })
+    const before = await snapshot()
+    for (const [left, right] of [
+      [0, 0],
+      [null, null],
+    ] as const) {
+      const { error } = await f.client.rpc('update_pumping_session', updateArgs(p.id, left, right))
+      expect(error?.message, `${left}/${right}`).toBe('milk_already_served:M2')
+    }
+    expect(await snapshot()).toEqual(before)
+  })
+
+  // ---------------------------------------------------------------- (b)
+  it('INSERT y UPDATE directos sobre milk_containers y milk_drawdowns: milk_rpc_only, la base no cambia', async () => {
+    const p = await pumpOk(f, 25, 25, 'M3')
+    const fd = feed(f, [[p.container.id, 10]])
+    expect(await sendOpWith(f.client, fd.op, 'write')).toEqual({ error: null })
+    const { data: dd } = await admin()
+      .from('milk_drawdowns')
+      .select('id')
+      .eq('feeding_id', fd.id)
+      .single()
+    const before = await snapshot()
+    const now = new Date().toISOString()
+
+    const insC = await f.client.from('milk_containers').insert({
+      id: randomUUID(),
+      family_id: f.familyId,
+      baby_id: f.babyId,
+      label: 'M77',
+      amount_ml: 100,
+      remaining_ml: 100,
+      stored_at: now,
+      expires_at: new Date(Date.now() + 86_400_000).toISOString(),
+    })
+    expect(insC.error?.message).toBe('milk_rpc_only')
+    for (const patch of [
+      { remaining_ml: 50 },
+      { amount_ml: 500, remaining_ml: 500 },
+      { voided_at: now },
+      { expires_at: new Date(Date.now() + 9e9).toISOString() },
+      { label: 'M78' },
+    ]) {
+      const { error } = await f.client
+        .from('milk_containers')
+        .update(patch)
+        .eq('id', p.container.id)
+      expect(error?.message, JSON.stringify(patch)).toBe('milk_rpc_only')
+    }
+
+    const insD = await f.client.from('milk_drawdowns').insert({
+      family_id: f.familyId,
+      baby_id: f.babyId,
+      container_id: p.container.id,
+      feeding_id: fd.id,
+      amount_ml: 5,
+    })
+    expect(insD.error?.message).toBe('milk_rpc_only')
+    for (const patch of [{ amount_ml: 1 }, { voided_at: now }]) {
+      const { error } = await f.client.from('milk_drawdowns').update(patch).eq('id', dd!.id)
+      expect(error?.message, JSON.stringify(patch)).toBe('milk_rpc_only')
+    }
+    expect(await snapshot()).toEqual(before)
+  })
+
+  // ---------------------------------------------------------------- (c)
+  it('feedings: una toma vieja no gana desglose, una con desglose no cambia bebé ni desglose, y no se inserta desglose directo', async () => {
+    const legacyId = randomUUID()
+    expect(
+      (
+        await f.client.from('feedings').insert({
+          id: legacyId,
+          baby_id: f.babyId,
+          logged_by: f.userId,
+          feeding_type: 'bottle',
+          amount_ml: 90,
+          fed_at: new Date().toISOString(),
+        })
+      ).error,
+    ).toBeNull()
+    const p = await pumpOk(f, 30, 30, 'M4')
+    const fd = feed(f, [[p.container.id, 20]], 10)
+    expect(await sendOpWith(f.client, fd.op, 'write')).toEqual({ error: null })
+    const before = await snapshot()
+    const beforeSibling = await snapshot(sibling.babyId)
+
+    for (const patch of [
+      { breast_milk_ml: 90 },
+      { formula_ml: 90 },
+      { breast_milk_ml: 60, formula_ml: 30 },
+    ]) {
+      const { error } = await f.client.from('feedings').update(patch).eq('id', legacyId)
+      expect(error?.message, `legacy ${JSON.stringify(patch)}`).toBe('milk_rpc_only')
+    }
+    for (const patch of [
+      { baby_id: sibling.babyId },
+      { breast_milk_ml: 25 },
+      { formula_ml: 5 },
+      { breast_milk_ml: null, formula_ml: null },
+    ]) {
+      const { error } = await f.client.from('feedings').update(patch).eq('id', fd.id)
+      expect(error?.message, `desglose ${JSON.stringify(patch)}`).toBe('milk_rpc_only')
+    }
+    for (const extra of [
+      { breast_milk_ml: 60, formula_ml: 30 },
+      { breast_milk_ml: 90 },
+      { formula_ml: 90 },
+      { breast_milk_ml: 0, formula_ml: 0 },
+    ]) {
+      const id = randomUUID()
+      const { error } = await f.client.from('feedings').insert({
+        id,
+        baby_id: f.babyId,
+        logged_by: f.userId,
+        feeding_type: 'bottle',
+        amount_ml: 90,
+        fed_at: new Date().toISOString(),
+        ...extra,
+      })
+      expect(error?.message, `insert ${JSON.stringify(extra)}`).toBe('milk_rpc_only')
+    }
+    expect(await snapshot()).toEqual(before)
+    expect(await snapshot(sibling.babyId)).toEqual(beforeSibling)
+  })
+
+  // ---------------------------------------------------------------- (d)
+  it('log_bottle_feed rechaza un contenedor anulado, uno vencido y uno de otro bebé de la familia; la base no cambia', async () => {
+    // Anulado: extracción borrada sin servir.
+    const voided = await pumpOk(f, 20, 20, 'M5')
+    expect((await f.client.rpc('void_pumping_session', { p_id: voided.id })).error).toBeNull()
+    // Vencido por la regla de heladera (4 días): extraída hace 5 días.
+    const old = new Date(Date.now() - 5 * 86_400_000).toISOString()
+    const expired = await pumpOk(f, 20, 20, 'M6', old)
+    expect(Date.parse(expired.container.expires_at)).toBeLessThanOrEqual(Date.now())
+    // Fresco, pero servido con una hora posterior a su vencimiento.
+    const fresh = await pumpOk(f, 20, 20, 'M7')
+    const afterExpiry = new Date(Date.parse(fresh.container.expires_at) + 1000).toISOString()
+    const atExpiry = fresh.container.expires_at
+    // De otro bebé de la misma familia.
+    const sib = await pumpOk(sibling, 20, 20, 'M1')
+
+    const before = await snapshot()
+    const beforeSibling = await snapshot(sibling.babyId)
+    const cases: [string, string, string | null, string][] = [
+      ['anulado', voided.container.id, null, 'milk_container_unusable:M5'],
+      ['vencido por la regla', expired.container.id, null, 'milk_container_unusable:M6'],
+      [
+        'fed_at después del vencimiento',
+        fresh.container.id,
+        afterExpiry,
+        'milk_container_unusable:M7',
+      ],
+      [
+        'fed_at justo en el vencimiento',
+        fresh.container.id,
+        atExpiry,
+        'milk_container_unusable:M7',
+      ],
+      ['otro bebé de la familia', sib.container.id, null, 'milk_container_unusable:M1'],
+    ]
+    for (const [name, containerId, fedAt, code] of cases) {
+      const fd = feed(f, [[containerId, 5]], 10)
+      if (fedAt) (fd.op as { args: Record<string, unknown> }).args.p_fed_at = fedAt
+      expect((await sendOpWith(f.client, fd.op, 'write')).error, name).toBe(code)
+      // Mezclado con una porción buena: tampoco entra nada.
+      const usable = await pumpOk(f, 10, null, `M${8 + cases.findIndex((c) => c[0] === name)}`)
+      const before2 = await snapshot()
+      const mixed = feed(f, [
+        [usable.container.id, 5],
+        [containerId, 5],
+      ])
+      if (fedAt) (mixed.op as { args: Record<string, unknown> }).args.p_fed_at = fedAt
+      const err = (await sendOpWith(f.client, mixed.op, 'write')).error
+      expect(err, `${name} + porción buena`).toMatch(/^milk_container_unusable:M\d+$/)
+      expect(await snapshot(), `${name} + porción buena`).toEqual(before2)
+      // Limpiar el contenedor de apoyo para que el "antes" global siga valiendo.
+      expect((await f.client.rpc('void_pumping_session', { p_id: usable.id })).error).toBeNull()
+    }
+    const after = await snapshot()
+    // Lo único que cambió: los contenedores de apoyo, creados y anulados.
+    const supportIds = new Set(
+      after
+        .containers!.filter((c) => !before.containers!.some((b) => b.id === c.id))
+        .map((c) => c.id),
+    )
+    expect(after.containers!.filter((c) => !supportIds.has(c.id))).toEqual(before.containers)
+    expect(after.containers!.filter((c) => supportIds.has(c.id)).every((c) => c.voided_at)).toBe(
+      true,
+    )
+    expect(after.drawdowns).toEqual(before.drawdowns)
+    expect(after.feedings).toEqual(before.feedings)
+    expect(await snapshot(sibling.babyId)).toEqual(beforeSibling)
+  })
+
+  // ---------------------------------------------------------------- (e)
+  it('log_bottle_feed reenviado con la misma carga: no-op, una toma, porciones sin duplicar, restante igual', async () => {
+    const x = await pumpOk(f, 30, 30, 'M20')
+    const y = await pumpOk(f, 20, 10, 'M21')
+    const fd = feed(
+      f,
+      [
+        [x.container.id, 25],
+        [y.container.id, 30],
+      ],
+      15,
+    )
+    expect(await sendOpWith(f.client, fd.op, 'write')).toEqual({ error: null })
+    const before = await snapshot()
+    for (let i = 0; i < 3; i++) {
+      expect(await sendOpWith(f.client, fd.op, 'replay'), `replay ${i + 1}`).toEqual({
+        error: null,
+      })
+    }
+    // Mismo payload por la llamada directa (no la de la cola) también es no-op.
+    expect(
+      (await f.client.rpc('log_bottle_feed', (fd.op as { args: object }).args)).error,
+    ).toBeNull()
+    expect(await snapshot()).toEqual(before)
+    const { data: rows } = await admin().from('feedings').select('id, amount_ml').eq('id', fd.id)
+    expect(rows).toEqual([{ id: fd.id, amount_ml: 70 }])
+    const { data: dds } = await admin()
+      .from('milk_drawdowns')
+      .select('container_id, amount_ml')
+      .eq('feeding_id', fd.id)
+    expect(dds!.map((d) => Number(d.amount_ml)).sort((p, q) => p - q)).toEqual([25, 30])
+    const { data: cs } = await admin()
+      .from('milk_containers')
+      .select('label, remaining_ml')
+      .in('id', [x.container.id, y.container.id])
+      .order('label')
+    expect(cs!.map((c) => [c.label, Number(c.remaining_ml)])).toEqual([
+      ['M20', 35],
+      ['M21', 0],
+    ])
+  })
+
+  // ---------------------------------------------------------------- (f)
+  it('anular una extracción ya anulada es no-op; editar una anulada o inexistente da milk_session_gone', async () => {
+    const p = await pumpOk(f, 15, 15, 'M30')
+    const at = '2026-10-01T10:00:00.000Z'
+    expect(
+      (await f.client.rpc('void_pumping_session', { p_id: p.id, p_voided_at: at })).error,
+    ).toBeNull()
+    const before = await snapshot()
+    expect((await f.client.rpc('void_pumping_session', { p_id: p.id })).error).toBeNull()
+    expect(
+      (
+        await f.client.rpc('void_pumping_session', {
+          p_id: p.id,
+          p_voided_at: new Date().toISOString(),
+        })
+      ).error,
+    ).toBeNull()
+    expect(await snapshot()).toEqual(before)
+    const s = before.sessions!.find((r) => r.id === p.id)!
+    expect(Date.parse(s.voided_at!)).toBe(Date.parse(at))
+
+    for (const [name, id] of [
+      ['anulada', p.id],
+      ['inexistente', randomUUID()],
+    ]) {
+      const { error } = await f.client.rpc('update_pumping_session', {
+        ...updateArgs(id, 50, 50),
+        p_container_id: randomUUID(),
+        p_container_label: 'M31',
+      })
+      expect(error?.message, name).toBe('milk_session_gone')
+    }
+    // Y la de otra familia se ve como inexistente.
+    const { error: foreign } = await other.client.rpc(
+      'update_pumping_session',
+      updateArgs(p.id, 1, 1),
+    )
+    expect(foreign?.message).toBe('milk_session_gone')
+    expect(await snapshot()).toEqual(before)
+  })
+
+  // ---------------------------------------------------------------- (g)
+  it('una familia con solo extracciones viejas (alta directa) tiene reserva 0', async () => {
+    for (const ml of [120, 80]) {
+      const { error } = await legacyOnly.client.from('pumping_sessions').insert({
+        id: randomUUID(),
+        baby_id: legacyOnly.babyId,
+        logged_by: legacyOnly.userId,
+        side: 'both',
+        amount_ml: ml,
+        notes: null,
+        pumped_at: new Date().toISOString(),
+      })
+      expect(error).toBeNull()
+    }
+    const { data: sessions } = await admin()
+      .from('pumping_sessions')
+      .select('amount_ml')
+      .eq('baby_id', legacyOnly.babyId)
+      .is('voided_at', null)
+    expect(sessions!.reduce((s, r) => s + Number(r.amount_ml), 0)).toBe(200)
+    const { data: live } = await admin()
+      .from('milk_containers')
+      .select('remaining_ml')
+      .eq('family_id', legacyOnly.familyId)
+      .is('voided_at', null)
+    expect(live!.reduce((s, r) => s + Number(r.remaining_ml), 0)).toBe(0)
+    const { data: listed, error } = await listContainers(legacyOnly.babyId, legacyOnly.client)
+    expect(error).toBeNull()
+    expect(listed).toEqual([])
+    expect(stashMl(listed, Date.now())).toBe(0)
   })
 })
 
