@@ -198,6 +198,7 @@ export const en = {
   'sync.thing.doctor_appointments': 'Appointment',
   'sync.thing.babies': 'Baby profile',
   'sync.thing.other': 'Entry',
+  'sync.thing.milk_discards': 'Discarded milk',
   'sync.nothingSaved':
     'Offline — nothing is saved on this device yet. It will show up once there’s a connection.',
 
@@ -371,9 +372,12 @@ export const en = {
   'milk.legacyHint':
     'Logged before left and right were separate: its {amount} total stays as it is unless you type the sides.',
   'milk.deletedPending': 'Deleted on this device — not synced yet.',
+  'milk.bottleNeeded': 'Choose which bottle the milk went into.',
+  'milk.discardedLine': 'Discarded milk · {label} · {amount}',
 
   // ------------------------------------------------------------ bottle (0014)
   'bottle.formulaPart': 'formula {amount}',
+  'bottle.leftoverPart': '{amount} left over',
   'bottle.panelTitle': 'Bottle',
   'bottle.planFormula': '{amount} of formula',
   'bottle.stashLeft': 'Breast milk left: {amount}',
@@ -430,10 +434,6 @@ export const en = {
     '{label} can’t be used for this bottle: it was deleted, it ran out, or it had expired by then. Choose another.',
   'milkError.containerUnknown':
     'One of the containers in this bottle no longer exists or isn’t this baby’s. Choose again.',
-  'milkError.labelTaken':
-    'The tape {label} is already on another container — another phone may have just used it. Nothing was saved: try again with another number.',
-  'milkError.labelTakenQueued':
-    'The tape {label} is already on another container — another phone used it, or this one picked it without a connection. This session never reached the server: tap “Discard this entry” and log it again with another number.',
   'milkError.alreadyServed':
     'Milk from {label} was already served. Delete those bottles first; then this session can be changed.',
   'milkError.servedExceedsAmount':
@@ -447,6 +447,29 @@ export const en = {
   'milkError.notSignedIn': 'You’re signed out. Sign in again and try again.',
   'milkError.sessionGone':
     'That session no longer exists — it may have been deleted on another phone.',
+  'milkError.bottleTaken':
+    'Bottle {label} already has milk from another pumping session — another phone may have just used it. Nothing was saved: choose another bottle.',
+  'milkError.bottleTakenQueued':
+    'Bottle {label} already has milk from another pumping session — another phone used it, or this one picked it without a connection. This session never reached the server: tap “Discard this entry” and log it again in another bottle.',
+
+  // ------------------------------------------------------------ milk errors (0015)
+  'milkError.notExpired':
+    'By the server’s clock, the milk in {label} hasn’t expired yet. Nothing was thrown out.',
+  'milkError.notExpiredUnknown':
+    'By the server’s clock, this milk hasn’t expired yet. Nothing was thrown out.',
+  'milkError.notEnough':
+    'There isn’t that much breast milk that could be used at that time — only {amount}. Nothing was changed.',
+  'milkError.notEnoughUnknown':
+    'There isn’t that much breast milk that could be used at that time. Nothing was changed.',
+  'milkError.editConflict':
+    'This feeding was changed on another phone while you were editing it. Nothing was saved: open it again to see how it is now.',
+  'milkError.futureTime': 'That time is in the future. Check the time and try again.',
+  'milkError.feedingGone':
+    'That feeding no longer exists — it may have been deleted on another phone.',
+  'milkError.notInventory':
+    'This feeding is from before milk was counted bottle by bottle, so its milk and formula can’t be changed here. Its time, total and note can.',
+  'milkError.invariantBroken':
+    'The milk totals don’t add up on the server. Nothing was changed — let whoever looks after the app know.',
 
   // ------------------------------------------------------------ growth
   'growth.title': 'Growth',
@@ -520,6 +543,7 @@ export const en = {
   'history.kind.pumping': 'Pumping',
   'history.rowOptions': 'Options: {kind}, {time}',
   'history.kind.growth': 'Growth',
+  'history.kind.discard': 'Discarded milk',
 
   // ------------------------------------------------------------ version
   'version.title': 'Version history',

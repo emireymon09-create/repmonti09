@@ -20,13 +20,16 @@
  */
 
 import { createClient } from '@/lib/supabaseClient'
-import { formatVolume } from '@/lib/format'
+import { formatMilkOz, formatVolume } from '@/lib/format'
 import {
   containerExpiresAt,
-  suggestContainerLabel,
   type BottleFeedArgs,
+  type DiscardArgs,
+  type EditBottleArgs,
   type PumpingArgs,
 } from '@/lib/milk'
+import { effectiveBottleCount, planBottleEdit } from '@/lib/milkBottles'
+import { estimateLegacySplit, type LegacySplit } from '@/lib/milkEstimate'
 import type { FamilySettings } from '@/lib/schedule'
 import { documentLang, translate, type Lang, type MessageKey } from '@/lib/i18n'
 import {
@@ -55,8 +58,10 @@ import type {
   FeedingType,
   GrowthMeasurement,
   MilkContainer,
+  MilkDiscard,
   MilkDrawdown,
   MilkRules,
+  MilkSettings,
   NursingSession,
   PumpingSession,
   PumpSide,
@@ -128,14 +133,20 @@ export async function sendOpWith(
   op: PendingOp,
   mode: 'write' | 'replay',
   signal?: AbortSignal,
-): Promise<{ error: string | null }> {
+): Promise<{ error: string | null; data?: unknown }> {
   if (op.kind === 'rpc') {
     // The milk functions are idempotent by the id the device made (same id and
     // same payload = no-op), so the replay sends exactly what the first try
-    // did: there is no ON CONFLICT to add.
+    // did: there is no ON CONFLICT to add. `data` is what the function
+    // returned — the jsonb of void_bottle_feed / edit_bottle_feed (0015), the
+    // milk that went back and the milk that could not (D-9).
     const call = db.rpc(op.fn, op.args)
-    const { error } = await (signal ? call.abortSignal(signal) : call)
-    return { error: error ? error.message : null }
+    const { data: returned, error } = await (signal ? call.abortSignal(signal) : call)
+    // Left out (undefined) when there is nothing: most functions return void.
+    return {
+      error: error ? error.message : null,
+      data: error ? undefined : (returned ?? undefined),
+    }
   }
   const table = db.from(op.table)
   const query =
@@ -162,6 +173,20 @@ async function write(
   op: PendingOp,
   opts?: { queueOnly?: boolean },
 ): Promise<Result<null>> {
+  const result = await send(label, op, opts)
+  return { ...result, data: null }
+}
+
+/**
+ * `write`, keeping what the server answered: the jsonb of void_bottle_feed and
+ * edit_bottle_feed (0015). Null when it was queued — then the page says what
+ * happens "by what this phone knows" (applyPendingInventory), §8.2.
+ */
+async function send(
+  label: string,
+  op: PendingOp,
+  opts?: { queueOnly?: boolean },
+): Promise<Result<unknown>> {
   // `queueOnly`: the row this update targets is itself still an insert in
   // the queue, so the server has never seen its id. A direct UPDATE would
   // match zero rows, which PostgREST reports as success — the page would
@@ -173,8 +198,8 @@ async function write(
     return enqueue(label, op)
   }
 
-  const { error } = await sendOpWith(data(), op, 'write')
-  if (!error) return ok(null)
+  const { error, data: returned } = await sendOpWith(data(), op, 'write')
+  if (!error) return ok(returned ?? null)
   if (looksOffline(error)) return enqueue(label, op)
   return { data: null, error }
 }
@@ -243,6 +268,7 @@ const THING: Record<string, MessageKey> = {
   growth_measurements: 'sync.thing.growth_measurements',
   doctor_appointments: 'sync.thing.doctor_appointments',
   babies: 'sync.thing.babies',
+  milk_discards: 'sync.thing.milk_discards',
 }
 
 /**
@@ -458,11 +484,12 @@ export function recordBirth(babyId: string, birthDate: string): Promise<Result<n
 // --------------------------------------------------------------- feedings
 
 /**
- * The breakdown columns (0014) are read only here and in lastBottleFeeding:
- * `feedingsSince` keeps its columns, so the totals and their integration
- * tests do not depend on 0014.
+ * The breakdown columns (0014) and "sobró" (`leftover_ml`, 0015) are read only
+ * here and in lastBottleFeeding: `feedingsSince` keeps its columns, so the
+ * totals and their integration tests do not depend on 0014/0015.
  */
-const FEEDING_COLUMNS = 'id, fed_at, feeding_type, amount_ml, notes, breast_milk_ml, formula_ml'
+const FEEDING_COLUMNS =
+  'id, fed_at, feeding_type, amount_ml, notes, breast_milk_ml, formula_ml, leftover_ml'
 
 export async function recentFeedings(babyId: string, limit = 20): Promise<Result<Feeding[]>> {
   const { data: rows, error } = await data()
@@ -480,10 +507,22 @@ export async function recentFeedings(babyId: string, limit = 20): Promise<Result
 // logBottleFeed, which writes its breakdown and takes the milk from its
 // containers. Solids stopped being created on 23 sep 2026.
 
-/** Edit a past feeding — correcting the type, amount, or time after the fact. */
+/**
+ * Edit a past feeding — correcting the type, amount, or time after the fact.
+ * Only for a feeding WITHOUT a breakdown (legacy, D-11b): that one is still a
+ * plain row, "sobró" (`leftover_ml`) included. A bottle with a breakdown is
+ * edited with editBottleFeed; the database refuses anything but its time and
+ * note here (`milk_rpc_only`). A leftover above the total is refused by the
+ * table's check (23514) — the page validates it first (validateLeftover).
+ */
 export function updateFeeding(
   id: string,
-  patch: Partial<{ feeding_type: FeedingType; amount_ml: number | null; fed_at: string }>,
+  patch: Partial<{
+    feeding_type: FeedingType
+    amount_ml: number | null
+    fed_at: string
+    leftover_ml: number | null
+  }>,
   opts?: { queueOnly?: boolean },
 ): Promise<Result<null>> {
   return write('Edit feeding', { kind: 'update', table: 'feedings', id, patch }, opts)
@@ -759,40 +798,46 @@ function totalOf(input: PumpingInput): number {
   return (input.left_ml ?? 0) + (input.right_ml ?? 0)
 }
 
+/** A queued call to one of the milk functions. */
+type RpcOp = Extract<PendingOp, { kind: 'rpc' }>
+
 /**
- * A new container for `pumpedAt`: the next M label and the expiry the
- * server will also compute (it recomputes it with the family's rules as
- * they are then — this one is what the screen shows until it syncs).
+ * Not a server code: the page asked to store milk without choosing the bottle
+ * it went into. v4 never makes a number up (X-1, AJ-5) — the selector
+ * (`bottleSlots`) is the only way to name one — so nothing is sent.
+ * milkErrorText says it as `milk.bottleNeeded`.
  */
-function newContainer(ctx: MilkContext, pumpedAt: string, label?: string) {
+export const MILK_BOTTLE_NEEDED = 'milk_bottle_needed'
+
+/**
+ * A new container for `pumpedAt`, in the bottle the person chose, with the
+ * expiry the server will also compute (it recomputes it with the family's
+ * rules as they are then — this one is what the screen shows until it syncs).
+ */
+function newContainer(ctx: Pick<MilkContext, 'rules'>, pumpedAt: string, label: string) {
   return {
     id: newId(),
-    label: label ?? suggestContainerLabel(ctx.containers),
+    label,
     expires_at: containerExpiresAt(pumpedAt, 'fridge', ctx.rules),
   }
 }
 
 /**
- * Log a pumping session, left and right each on its own. With an amount the
- * server fills a new container (M1, M2…) in the same transaction; with none,
- * it is a session and nothing else. Returns the container's label, so the
- * page can say which number to write on the tape.
- *
- * `label` is the tape the person chose (already normalized and checked by
- * the page with `normalizeTapeLabel`/`tapeInUse`); without one it is the
- * suggestion. The server still has the last word: a tape a live container
- * holds comes back as `milk_label_taken:M#`, never renumbered.
+ * The queued call that logs a pumping session (log_pumping_session). Null when
+ * it has an amount and no bottle was chosen. `id` is only for the tests, which
+ * send the same op twice.
  */
-export async function logPumpingSession(
+export function logPumpingOp(
   babyId: string,
   userId: string | null,
   input: PumpingInput,
-  ctx: MilkContext,
-  label?: string,
-): Promise<Result<{ label: string | null }>> {
-  const id = newId()
+  ctx: Pick<MilkContext, 'rules'>,
+  label: string | null | undefined,
+  id: string = newId(),
+): { op: RpcOp; label: string | null } | null {
   const total = totalOf(input)
-  const container = total > 0 ? newContainer(ctx, input.pumped_at, label) : null
+  if (total > 0 && !label) return null
+  const container = total > 0 && label ? newContainer(ctx, input.pumped_at, label) : null
   const args: PumpingArgs = {
     p_id: id,
     p_baby_id: babyId,
@@ -805,35 +850,64 @@ export async function logPumpingSession(
     p_container_label: container?.label ?? null,
     p_container_expires_at: container?.expires_at ?? null,
   }
-  const result = await write('Pumping', {
-    kind: 'rpc',
-    fn: 'log_pumping_session',
-    args,
-    table: 'pumping_sessions',
-    id,
-    effect: 'insert',
-    row: {
+  return {
+    label: container?.label ?? null,
+    op: {
+      kind: 'rpc',
+      fn: 'log_pumping_session',
+      args,
+      table: 'pumping_sessions',
       id,
-      ...scope(babyId, userId),
-      pumped_at: input.pumped_at,
-      side: args.p_side,
-      amount_ml: total > 0 ? total : null,
-      left_ml: input.left_ml,
-      right_ml: input.right_ml,
-      notes: input.notes,
+      effect: 'insert',
+      row: {
+        id,
+        ...scope(babyId, userId),
+        pumped_at: input.pumped_at,
+        side: args.p_side,
+        amount_ml: total > 0 ? total : null,
+        left_ml: input.left_ml,
+        right_ml: input.right_ml,
+        notes: input.notes,
+      },
+      creates: container ? [container.id] : [],
     },
-    creates: container ? [container.id] : [],
-  })
-  return { ...result, data: { label: container?.label ?? null } }
+  }
+}
+
+/**
+ * Log a pumping session, left and right each on its own. With an amount the
+ * server fills a new container in the same transaction, in the bottle the
+ * person chose from the selector (M1…MN): `label` is required then, and
+ * without it nothing is sent (`MILK_BOTTLE_NEEDED`). With no amount it is a
+ * session and nothing else. Returns the bottle's label for "Logged in M3."
+ *
+ * The server still has the last word: a bottle another live container holds
+ * comes back as `milk_label_taken:M#` (online), or as that rejection in the
+ * sync banner (queued) — never renumbered.
+ */
+export async function logPumpingSession(
+  babyId: string,
+  userId: string | null,
+  input: PumpingInput,
+  ctx: MilkContext,
+  label?: string | null,
+): Promise<Result<{ label: string | null }>> {
+  const built = logPumpingOp(babyId, userId, input, ctx, label)
+  if (!built) return { data: { label: null }, error: MILK_BOTTLE_NEEDED }
+  const result = await write('Pumping', built.op)
+  return { ...result, data: { label: built.label } }
 }
 
 /**
  * Correct a session. Its container follows (never below what was already
- * served — the server refuses that), and a session that had no amount gets
- * its container now. `pending`: the session itself is still a queued insert,
- * so this has to queue behind it (see `write`).
+ * served — the server refuses that), and a session that had no container gets
+ * one now, in the bottle chosen with the selector (`opts.label`, AJ-5:
+ * required then, or nothing is sent). A session whose container was emptied
+ * or discarded keeps it: it is still its container. `pending`: the session
+ * itself is still a queued insert, so this has to queue behind it (see
+ * `write`).
  */
-export function updatePumpingSession(
+export async function updatePumpingSession(
   id: string,
   input: PumpingInput,
   ctx: MilkContext,
@@ -845,12 +919,17 @@ export function updatePumpingSession(
      * (and the screen shows it kept), never erases it or splits it 50/50.
      */
     legacy?: boolean
+    /** The bottle chosen for a session that gets its first container (AJ-5). */
+    label?: string | null
   },
 ): Promise<Result<null>> {
   const total = totalOf(input)
   const keepLegacy = !!opts?.legacy && input.left_ml == null && input.right_ml == null
   const live = ctx.containers.find((c) => c.source_session_id === id && !c.voided_at)
-  const container = total > 0 && !live ? newContainer(ctx, input.pumped_at) : null
+  const needsContainer = total > 0 && !live && !keepLegacy
+  if (needsContainer && !opts?.label) return { data: null, error: MILK_BOTTLE_NEEDED }
+  const container =
+    needsContainer && opts?.label ? newContainer(ctx, input.pumped_at, opts.label) : null
   const side = sideOf(input)
   return write(
     'Edit pumping',
@@ -889,8 +968,9 @@ export function updatePumpingSession(
 }
 
 /**
- * Soft-delete a session and its container. The server refuses it while any
- * of its milk is in a bottle that still stands (`milk_already_served`).
+ * Soft-delete a session and its container (and the container's discard, if it
+ * had one: the "discarded milk" total goes down). The server refuses it while
+ * any of its milk is in a bottle that still stands (`milk_already_served`).
  */
 export function voidPumpingSession(
   id: string,
@@ -912,7 +992,12 @@ export function voidPumpingSession(
   )
 }
 
-/** Every container still on the list (not voided), oldest first. No limit: the stash is a total. */
+/**
+ * Every container still on the list (not voided), oldest first: occupied,
+ * expired, emptied and discarded alike — `released_at` and the discards say
+ * which (lib/milkBottles.ts). No limit: the stash is a total, and the bottle
+ * selector needs every occupied number however old (AJ-18).
+ */
 export async function listContainers(
   babyId: string,
   db: Db = data(),
@@ -920,7 +1005,7 @@ export async function listContainers(
   const { data: rows, error } = await db
     .from('milk_containers')
     .select(
-      'id, source_session_id, label, amount_ml, remaining_ml, stored_at, location, expires_at',
+      'id, source_session_id, label, amount_ml, remaining_ml, stored_at, location, expires_at, released_at, lost_ml',
     )
     .eq('baby_id', babyId)
     .is('voided_at', null)
@@ -931,6 +1016,8 @@ export async function listContainers(
       ...c,
       amount_ml: Number(c.amount_ml),
       remaining_ml: Number(c.remaining_ml),
+      released_at: c.released_at ?? null,
+      lost_ml: Number(c.lost_ml ?? 0),
     })),
   )
 }
@@ -961,6 +1048,113 @@ export async function listDrawdowns(
 }
 
 /**
+ * Every live discard (0015), oldest first, with its bottle's number. No limit:
+ * "Discarded milk" is a total over all of them (D-13), and History lists each.
+ */
+export async function listDiscards(
+  babyId: string,
+  db: Db = data(),
+): Promise<Result<MilkDiscard[]>> {
+  const { data: rows, error } = await db
+    .from('milk_discards')
+    .select('id, container_id, amount_ml, discarded_at, reason, milk_containers(label)')
+    .eq('baby_id', babyId)
+    .is('voided_at', null)
+    .order('discarded_at', { ascending: true })
+  if (error) return fail([] as MilkDiscard[], error)
+  type Row = MilkDiscard & { milk_containers?: { label: string } | { label: string }[] | null }
+  return ok(
+    ((rows ?? []) as unknown as Row[]).map(({ milk_containers: c, ...d }) => ({
+      ...d,
+      amount_ml: Number(d.amount_ml),
+      label: (Array.isArray(c) ? c[0]?.label : c?.label) ?? null,
+      voided_at: null,
+    })),
+  )
+}
+
+/**
+ * What the estimate of an old bottle's milk and formula is made from (2B,
+ * D-14, lib/milkEstimate.ts). Plain arrays, so it can go into the saved copy
+ * of lib/lastSeen.ts; `estimateLegacySplits` turns it into the estimate.
+ */
+export type LegacySplitInputs = {
+  /** Every live bottle, with and without a breakdown. */
+  feedings: Pick<
+    Feeding,
+    'id' | 'fed_at' | 'feeding_type' | 'amount_ml' | 'breast_milk_ml' | 'formula_ml'
+  >[]
+  /** Every live pumping session with an amount. */
+  pumping: Pick<PumpingSession, 'id' | 'pumped_at' | 'amount_ml'>[]
+  /** Sessions that filled a container (occupied, emptied or discarded). */
+  containerSessionIds: string[]
+}
+
+/**
+ * The reads behind the estimate, with NO limit (AJ-19): which old pumping
+ * fed which old bottle depends on everything before it, so a list cut at the
+ * newest N rows would give another split, quietly.
+ */
+export async function legacySplitInputs(
+  babyId: string,
+  db: Db = data(),
+): Promise<Result<LegacySplitInputs>> {
+  const empty: LegacySplitInputs = { feedings: [], pumping: [], containerSessionIds: [] }
+  const [feedings, pumping, containers] = await Promise.all([
+    db
+      .from('feedings')
+      .select('id, fed_at, feeding_type, amount_ml, breast_milk_ml, formula_ml')
+      .eq('baby_id', babyId)
+      .is('voided_at', null)
+      .eq('feeding_type', 'bottle')
+      .order('fed_at', { ascending: true }),
+    db
+      .from('pumping_sessions')
+      .select('id, pumped_at, amount_ml')
+      .eq('baby_id', babyId)
+      .is('voided_at', null)
+      .gt('amount_ml', 0)
+      .order('pumped_at', { ascending: true }),
+    db
+      .from('milk_containers')
+      .select('source_session_id')
+      .eq('baby_id', babyId)
+      .is('voided_at', null),
+  ])
+  const error = feedings.error ?? pumping.error ?? containers.error
+  if (error) return fail(empty, error)
+  const num = (x: unknown) => (x == null ? null : Number(x))
+  return ok({
+    feedings: ((feedings.data ?? []) as LegacySplitInputs['feedings']).map((f) => ({
+      ...f,
+      amount_ml: num(f.amount_ml),
+      breast_milk_ml: num(f.breast_milk_ml),
+      formula_ml: num(f.formula_ml),
+    })),
+    pumping: ((pumping.data ?? []) as LegacySplitInputs['pumping']).map((p) => ({
+      ...p,
+      amount_ml: num(p.amount_ml),
+    })),
+    containerSessionIds: ((containers.data ?? []) as { source_session_id: string | null }[])
+      .map((c) => c.source_session_id)
+      .filter((id): id is string => !!id),
+  })
+}
+
+/** The estimate for every bottle without a breakdown ("≈ … (estimated)"). Nothing is written. */
+export function estimateLegacySplits(
+  inputs: LegacySplitInputs,
+  fridgeDays: number,
+): Map<string, LegacySplit> {
+  return estimateLegacySplit({
+    feedings: inputs.feedings,
+    pumping: inputs.pumping,
+    sessionsWithContainer: new Set(inputs.containerSessionIds),
+    fridgeDays,
+  })
+}
+
+/**
  * The last bottle with an amount — what the next bottle suggestion starts
  * from. Its own read, because the screens read only the newest few feedings
  * and those can all be something else.
@@ -979,33 +1173,114 @@ export async function lastBottleFeeding(babyId: string): Promise<Result<Feeding 
   return ok(((rows ?? [])[0] as Feeding | undefined) ?? null)
 }
 
-// --------------------------------------------------------------- bottles (0014)
+// --------------------------------------------------------------- discarding (0015)
+
+/**
+ * The queued call that throws out an expired container (discard_container).
+ * `id` is the discard's own id, made here: sending it twice leaves one
+ * discard. It refers to the container, so discarding a rejected pumping
+ * session in the sync banner takes this along (dependentsOf).
+ */
+export function discardContainerOp(
+  babyId: string,
+  userId: string | null,
+  container: Pick<MilkContainer, 'id' | 'label' | 'remaining_ml'>,
+  at: string = new Date().toISOString(),
+  id: string = newId(),
+): RpcOp {
+  const args: DiscardArgs = { p_id: id, p_container_id: container.id, p_discarded_at: at }
+  return {
+    kind: 'rpc',
+    fn: 'discard_container',
+    args,
+    table: 'milk_discards',
+    id,
+    effect: 'insert',
+    row: {
+      id,
+      ...scope(babyId, userId),
+      container_id: container.id,
+      amount_ml: container.remaining_ml,
+      discarded_at: at,
+      reason: 'expired',
+      label: container.label,
+      voided_at: null,
+    },
+    refs: [container.id],
+  }
+}
+
+/**
+ * Throw out what is left in an expired container (D-6). Whether it has
+ * expired is the DATABASE's call (D-15): a phone whose clock runs ahead gets
+ * `milk_not_expired:M#`. Two phones discarding the same one leave one discard
+ * and no rejection. `pending`: the container is still a queued insert (its
+ * pumping session has not synced), so this queues behind it.
+ */
+export function discardContainer(
+  babyId: string,
+  userId: string | null,
+  container: Pick<MilkContainer, 'id' | 'label' | 'remaining_ml'>,
+  opts?: { pending?: boolean },
+): Promise<Result<null>> {
+  return write('Discard milk', discardContainerOp(babyId, userId, container), {
+    queueOnly: !!opts?.pending,
+  })
+}
+
+// --------------------------------------------------------------- bottles (0014, 0015)
 
 export type BottleInput = {
   fed_at: string
   notes: string | null
   formula_ml: number
   portions: { container_id: string; amount_ml: number }[]
+  /**
+   * "Sobró" (0015, D-10): statistics only, never back into a container. Null
+   * or left out = not known. The page checks it first (validateLeftover).
+   */
+  leftover_ml?: number | null
 }
 
+/** What a bottle's milk did when it went back (void, or less milk in an edit). */
+export type MilkMoved = { label: string; ml: number }
 /**
- * Log a bottle: breast-milk portions, each from one container, plus formula.
- * The server takes each portion from its container, refuses to take more
- * than is left (`milk_overdraw` — two phones serving from the same one), and
- * writes the totals itself. Formula has no inventory: it is just a number.
- *
- * `containersPending`: a portion comes from a container whose pumping
- * session is still in the queue. The server doesn't know it yet, so the
- * bottle queues behind it instead of being rejected as unknown.
+ * The answer of void_bottle_feed (0015): the milk that went back into its
+ * containers, and the milk that could not (D-9: the number has another
+ * pumping in it, or it was discarded) — the page says that one.
  */
-export async function logBottleFeed(
+export type MilkReturn = { returned_ml: number; lost: MilkMoved[] }
+/** The answer of edit_bottle_feed: the same, plus the milk the edit took. */
+export type MilkEditResult = MilkReturn & { taken: MilkMoved[] }
+
+function movedOf(value: unknown): MilkMoved[] {
+  if (!Array.isArray(value)) return []
+  return value.map((m: { label?: unknown; ml?: unknown }) => ({
+    label: String(m?.label ?? '?'),
+    ml: Number(m?.ml ?? 0),
+  }))
+}
+
+/** The jsonb of void_bottle_feed / edit_bottle_feed, typed. Null if it isn't one. */
+export function milkResultOf(value: unknown): MilkEditResult | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const v = value as Record<string, unknown>
+  return {
+    returned_ml: Number(v.returned_ml ?? 0),
+    lost: movedOf(v.lost),
+    taken: movedOf(v.taken),
+  }
+}
+
+/** The queued call that logs a bottle (log_bottle_feed). `id` is for the tests. */
+export function logBottleFeedOp(
   babyId: string,
   userId: string | null,
   input: BottleInput,
-  opts?: { containersPending?: boolean },
-): Promise<Result<null>> {
-  const id = newId()
+  id: string = newId(),
+): RpcOp {
   const breast = input.portions.reduce((sum, p) => sum + p.amount_ml, 0)
+  const leftover = input.leftover_ml ?? null
   const args: BottleFeedArgs = {
     p_id: id,
     p_baby_id: babyId,
@@ -1013,89 +1288,287 @@ export async function logBottleFeed(
     p_notes: input.notes,
     p_formula_ml: input.formula_ml,
     p_portions: input.portions,
+    p_leftover_ml: leftover,
   }
-  return write(
-    'Bottle',
-    {
-      kind: 'rpc',
-      fn: 'log_bottle_feed',
-      args,
-      table: 'feedings',
+  return {
+    kind: 'rpc',
+    fn: 'log_bottle_feed',
+    args,
+    table: 'feedings',
+    id,
+    effect: 'insert',
+    row: {
       id,
-      effect: 'insert',
-      row: {
-        id,
-        ...scope(babyId, userId),
-        fed_at: input.fed_at,
-        feeding_type: 'bottle',
-        amount_ml: breast + input.formula_ml,
-        breast_milk_ml: breast,
-        formula_ml: input.formula_ml,
-        notes: input.notes,
-      },
-      refs: input.portions.map((p) => p.container_id),
+      ...scope(babyId, userId),
+      fed_at: input.fed_at,
+      feeding_type: 'bottle',
+      amount_ml: breast + input.formula_ml,
+      breast_milk_ml: breast,
+      formula_ml: input.formula_ml,
+      leftover_ml: leftover,
+      notes: input.notes,
     },
-    { queueOnly: !!opts?.containersPending },
-  )
+    refs: input.portions.map((p) => p.container_id),
+  }
+}
+
+/**
+ * Log a bottle: breast-milk portions, each from one container, plus formula,
+ * plus what was left over ("sobró", statistics only). The server takes each
+ * portion from its container, refuses to take more than is left
+ * (`milk_overdraw` — two phones serving from the same one, or one that was
+ * just discarded), and writes the totals itself. Formula has no inventory.
+ *
+ * `containersPending`: a portion comes from a container whose pumping
+ * session is still in the queue. The server doesn't know it yet, so the
+ * bottle queues behind it instead of being rejected as unknown.
+ */
+export function logBottleFeed(
+  babyId: string,
+  userId: string | null,
+  input: BottleInput,
+  opts?: { containersPending?: boolean },
+): Promise<Result<null>> {
+  return write('Bottle', logBottleFeedOp(babyId, userId, input), {
+    queueOnly: !!opts?.containersPending,
+  })
+}
+
+/** The queued call that deletes a bottle (void_bottle_feed). */
+export function voidBottleFeedOp(id: string, at: string = new Date().toISOString()): RpcOp {
+  return {
+    kind: 'rpc',
+    fn: 'void_bottle_feed',
+    args: { p_feeding_id: id, p_voided_at: at },
+    table: 'feedings',
+    id,
+    effect: 'delete',
+    patch: { voided_at: at },
+  }
 }
 
 /**
  * Delete a bottle and give every portion back to its container, in one
- * operation. Formula has nothing to give back.
+ * operation. Formula has nothing to give back. Online, `data` says what went
+ * back and what could not (D-9: "the milk did not go back to M3"); queued,
+ * it is null and the page says it from applyPendingInventory's `lost`, "by
+ * what this phone knows" (§8.2).
  */
-export function voidBottleFeed(id: string, opts?: { pending?: boolean }): Promise<Result<null>> {
-  const at = new Date().toISOString()
-  return write(
-    'Delete feeding',
-    {
-      kind: 'rpc',
-      fn: 'void_bottle_feed',
-      args: { p_feeding_id: id, p_voided_at: at },
-      table: 'feedings',
-      id,
-      effect: 'delete',
-      patch: { voided_at: at },
-    },
-    { queueOnly: !!opts?.pending },
-  )
+export async function voidBottleFeed(
+  id: string,
+  opts?: { pending?: boolean },
+): Promise<Result<MilkReturn | null>> {
+  const result = await send('Delete feeding', voidBottleFeedOp(id), {
+    queueOnly: !!opts?.pending,
+  })
+  const r = milkResultOf(result.data)
+  return { ...result, data: r ? { returned_ml: r.returned_ml, lost: r.lost } : null }
 }
 
-// --------------------------------------------------------------- milk rules (0014)
+/** The final state of a bottle edit (2A): absolute values, never deltas. */
+export type BottleEditInput = {
+  fed_at: string
+  breast_ml: number
+  formula_ml: number
+  leftover_ml: number | null
+  notes: string | null
+}
+
+/** What this phone knows of the inventory, queued writes folded in (applyPendingInventory). */
+export type BottleEditContext = {
+  containers: WithPending<MilkContainer>[]
+  drawdowns: WithPending<MilkDrawdown>[]
+  discards: WithPending<MilkDiscard>[]
+}
+
+/**
+ * The queued call that edits a bottle (edit_bottle_feed). `feeding` is the row
+ * as the screen showed it when the panel opened: it becomes `p_expected`, so
+ * an edit made meanwhile on the other phone wins (`milk_edit_conflict`, regla
+ * 21). `opId` is THIS edit's id — a new one per attempt to save, so a replay
+ * of the same attempt is a no-op and a later attempt is a new edit (AJ-3).
+ *
+ * `refs` are the containers it touches — its current portions and the ones the
+ * plan takes from (planBottleEdit, the server's rule) — so discarding a
+ * rejected pumping session in the sync banner takes this edit along.
+ */
+export function editBottleFeedOp(
+  feeding: Feeding,
+  input: BottleEditInput,
+  ctx: BottleEditContext,
+  opId: string = newId(),
+  atMs: number = Date.now(),
+): RpcOp {
+  const args: EditBottleArgs = {
+    p_op_id: opId,
+    p_feeding_id: feeding.id,
+    p_fed_at: input.fed_at,
+    p_breast_ml: input.breast_ml,
+    p_formula_ml: input.formula_ml,
+    p_leftover_ml: input.leftover_ml,
+    p_notes: input.notes,
+    p_expected: {
+      // As read: the server compares it to the millisecond.
+      fed_at: feeding.fed_at,
+      breast_milk_ml: Number(feeding.breast_milk_ml ?? 0),
+      formula_ml: Number(feeding.formula_ml ?? 0),
+      leftover_ml: feeding.leftover_ml == null ? null : Number(feeding.leftover_ml),
+    },
+  }
+  const plan = planBottleEdit(
+    feeding,
+    ctx.drawdowns,
+    ctx.containers,
+    ctx.discards,
+    {
+      fed_at: input.fed_at,
+      breast_milk_ml: input.breast_ml,
+      formula_ml: input.formula_ml,
+      leftover_ml: input.leftover_ml,
+      notes: input.notes,
+    },
+    atMs,
+  )
+  const refs = new Set(
+    ctx.drawdowns
+      .filter((d) => d.feeding_id === feeding.id && !d.voided_at)
+      .map((d) => d.container_id),
+  )
+  if (plan.ok) for (const m of plan.taken) refs.add(m.containerId)
+  return {
+    kind: 'rpc',
+    fn: 'edit_bottle_feed',
+    args,
+    table: 'feedings',
+    id: feeding.id,
+    effect: 'update',
+    patch: {
+      fed_at: input.fed_at,
+      breast_milk_ml: input.breast_ml,
+      formula_ml: input.formula_ml,
+      amount_ml: input.breast_ml + input.formula_ml,
+      leftover_ml: input.leftover_ml,
+      notes: input.notes,
+    },
+    refs: [...refs],
+  }
+}
+
+/**
+ * Whether a bottle edit has to wait behind the queue: the bottle itself is
+ * pending (a queued insert, or already a queued change), or a container the
+ * edit touches is (its pumping session has not synced).
+ */
+export function editMustQueue(
+  feeding: WithPending<Feeding>,
+  op: RpcOp,
+  ctx: Pick<BottleEditContext, 'containers'>,
+): boolean {
+  if (feeding.pending) return true
+  return (op.refs ?? []).some((id) => ctx.containers.find((c) => c.id === id)?.pending)
+}
+
+/**
+ * The full edit of a past bottle with a breakdown (2A): time, milk, formula,
+ * "sobró" and note. Less milk goes back to the newest container first (D-17);
+ * more milk comes from the oldest one usable at the bottle's time (D-18), or
+ * the server answers `milk_not_enough:<ml>` and nothing changes.
+ *
+ * Queued behind (`queueOnly`) when the bottle is still a queued insert or
+ * already has a queued change (`feeding.pending` — the row the page shows,
+ * merged with the queue), or when a container it touches is still queued:
+ * sent ahead, the server would not know the row (and an UPDATE on an unknown
+ * id is no error), or would compare `p_expected` with a state it never had.
+ *
+ * Online, `data` is what moved (returned, lost, taken); queued, null.
+ */
+export async function editBottleFeed(
+  feeding: WithPending<Feeding>,
+  input: BottleEditInput,
+  ctx: BottleEditContext,
+  opts?: { pending?: boolean },
+): Promise<Result<MilkEditResult | null>> {
+  const op = editBottleFeedOp(feeding, input, ctx)
+  const queueOnly = !!opts?.pending || editMustQueue(feeding, op, ctx)
+  const result = await send('Edit feeding', op, { queueOnly })
+  return { ...result, data: milkResultOf(result.data) }
+}
+
+// --------------------------------------------------------------- milk rules (0014, 0015)
 
 /*
- * The pediatrician's storage rules. Like the countdown thresholds (0012) they
- * belong to the family, both parents see the same numbers, and they do NOT go
- * through the offline queue: a rule applied late could overwrite what the
- * other parent set meanwhile. Offline, Settings says so and saves nothing.
+ * The pediatrician's storage rules, and how many physical bottles there are
+ * (N, 0015, D-23). Like the countdown thresholds (0012) they belong to the
+ * family, both parents see the same numbers, and they do NOT go through the
+ * offline queue: a rule applied late could overwrite what the other parent
+ * set meanwhile. Offline, Settings says so and saves nothing.
+ *
+ * `db` is only for the integration tests (a signed-in parent's client).
  */
 
-export async function milkRules(babyId: string): Promise<Result<MilkRules | null>> {
-  const { data: row, error } = await data()
+export async function milkRules(
+  babyId: string,
+  db: Db = data(),
+): Promise<Result<MilkSettings | null>> {
+  const { data: row, error } = await db
     .from('babies')
-    .select('milk_room_hours, milk_fridge_days, milk_freezer_months')
+    .select('milk_room_hours, milk_fridge_days, milk_freezer_months, milk_bottle_count')
     .eq('id', babyId)
     .maybeSingle()
   if (error) return fail(null, error)
   if (!row) return ok(null)
-  const r = row as MilkRules
+  const r = row as MilkSettings
   return ok({
     milk_room_hours: Number(r.milk_room_hours),
     milk_fridge_days: Number(r.milk_fridge_days),
     milk_freezer_months: Number(r.milk_freezer_months),
+    milk_bottle_count: effectiveBottleCount(r.milk_bottle_count),
   })
 }
 
-export async function saveMilkRules(babyId: string, rules: MilkRules): Promise<Result<null>> {
+/** One update of `babies` that has to match exactly the one row, or it is an error. */
+async function saveBabyMilk(
+  babyId: string,
+  patch: Record<string, number>,
+  db: Db,
+): Promise<Result<null>> {
   // `.select` so an update that matched nothing (a baby RLS doesn't show this
   // parent) is an error, not a "Saved" that saved nothing (§5.5).
-  const { data: rows, error } = await data()
-    .from('babies')
-    .update(rules)
-    .eq('id', babyId)
-    .select('id')
+  const { data: rows, error } = await db.from('babies').update(patch).eq('id', babyId).select('id')
   if (error) return fail(null, error)
   if (!rows || rows.length !== 1) return fail(null, { message: 'milk_baby_not_found' })
   return ok(null)
+}
+
+/**
+ * Save the rules — and N too when given (AJ-17: same card, same button, one
+ * save). Only these columns are written, whatever else the object carries.
+ */
+export function saveMilkRules(
+  babyId: string,
+  rules: MilkRules | MilkSettings,
+  db: Db = data(),
+): Promise<Result<null>> {
+  const patch: Record<string, number> = {
+    milk_room_hours: rules.milk_room_hours,
+    milk_fridge_days: rules.milk_fridge_days,
+    milk_freezer_months: rules.milk_freezer_months,
+  }
+  if ('milk_bottle_count' in rules) patch.milk_bottle_count = rules.milk_bottle_count
+  return saveBabyMilk(babyId, patch, db)
+}
+
+/**
+ * Save only N, the number of bottles (1–30, checked by the page with
+ * validateBottleCount and by the table's CHECK). Same rules as saveMilkRules:
+ * no queue, an update that matched nothing is an error.
+ */
+export function saveMilkBottleCount(
+  babyId: string,
+  count: number,
+  db: Db = data(),
+): Promise<Result<null>> {
+  return saveBabyMilk(babyId, { milk_bottle_count: count }, db)
 }
 
 // --------------------------------------------------------------- milk errors
@@ -1103,7 +1576,9 @@ export async function saveMilkRules(babyId: string, rules: MilkRules): Promise<R
 const MILK_ERRORS: Record<string, MessageKey> = {
   milk_overdraw: 'milkError.overdraw',
   milk_container_unusable: 'milkError.containerUnusable',
-  milk_label_taken: 'milkError.labelTaken',
+  // The wire code stays the one of 0014 (AJ-1: a cached v3 app translates
+  // it); the words are about bottles now.
+  milk_label_taken: 'milkError.bottleTaken',
   milk_already_served: 'milkError.alreadyServed',
   milk_served_exceeds_amount: 'milkError.servedExceedsAmount',
   milk_idempotency_conflict: 'milkError.idempotencyConflict',
@@ -1112,11 +1587,22 @@ const MILK_ERRORS: Record<string, MessageKey> = {
   milk_baby_not_found: 'milkError.babyNotFound',
   milk_not_signed_in: 'milkError.notSignedIn',
   milk_session_gone: 'milkError.sessionGone',
+  // 0015
+  milk_not_expired: 'milkError.notExpired',
+  milk_not_enough: 'milkError.notEnough',
+  milk_edit_conflict: 'milkError.editConflict',
+  milk_future_time: 'milkError.futureTime',
+  milk_feeding_gone: 'milkError.feedingGone',
+  milk_not_inventory: 'milkError.notInventory',
+  milk_invariant_broken: 'milkError.invariantBroken',
+  // Not from the server: see MILK_BOTTLE_NEEDED.
+  milk_bottle_needed: 'milk.bottleNeeded',
 }
 
 /**
  * A rejection from one of the milk functions, in words. They answer with a
- * stable code, sometimes followed by a container's tape ("milk_overdraw:M3");
+ * stable code, sometimes followed by a bottle's number ("milk_overdraw:M3")
+ * or, for `milk_not_enough`, the ml there were (shown in oz, AJ-12);
  * anything else is passed through as it came (and framed by the page).
  */
 export function milkErrorText(
@@ -1125,7 +1611,7 @@ export function milkErrorText(
   /**
    * 'sync': the rejection of a QUEUED entry, in the sync banner. There the
    * entry exists only on this device and "Discard" is the way out, so a
-   * taken tape says that (QA, 6 oct 2026: it said "another phone… delete
+   * taken bottle says that (QA, 6 oct 2026: it said "another phone… delete
    * this session" — it may have been this phone offline, and there was
    * nothing to delete).
    */
@@ -1135,11 +1621,18 @@ export function milkErrorText(
   const match = /^(milk_[a-z_]+)(?::(.+))?$/.exec(message.trim())
   let key = match ? MILK_ERRORS[match[1]] : undefined
   if (!key) return message
-  const label = match![2]
-  // Without a tape to name, the "which one" sentence would have a hole in it.
-  if (key === 'milkError.containerUnusable' && !label) key = 'milkError.containerUnknown'
-  if (key === 'milkError.labelTaken' && context === 'sync') key = 'milkError.labelTakenQueued'
-  return translate(lang, key, { label: label ?? '' })
+  const suffix = match![2]
+  if (key === 'milkError.notEnough') {
+    const ml = Number(suffix)
+    // Without a number the sentence would say "only NaN oz".
+    if (!Number.isFinite(ml)) key = 'milkError.notEnoughUnknown'
+    return translate(lang, key, { amount: Number.isFinite(ml) ? formatMilkOz(ml) : '' })
+  }
+  // Without a number to name, the "which one" sentence would have a hole in it.
+  if (key === 'milkError.containerUnusable' && !suffix) key = 'milkError.containerUnknown'
+  if (key === 'milkError.notExpired' && !suffix) key = 'milkError.notExpiredUnknown'
+  if (key === 'milkError.bottleTaken' && context === 'sync') key = 'milkError.bottleTakenQueued'
+  return translate(lang, key, { label: suffix ?? '' })
 }
 
 // --------------------------------------------------------------- growth
@@ -1358,6 +1851,36 @@ export function buildActivity(
         Number(!!b.ongoing) - Number(!!a.ongoing) ||
         new Date(b.at).getTime() - new Date(a.at).getTime(),
     )
+}
+
+/**
+ * History's rows for the milk that was thrown out (0015, V4-37): "Discarded
+ * milk · M3 · 1.5 oz" at the time it was discarded. Not editable and not
+ * deletable in v4 (D-11). Its own function rather than one more argument of
+ * buildActivity, whose last argument has to stay `lang` (§5.7); History merges
+ * these in and sorts everything by time, as it already does.
+ */
+export function discardActivity(
+  discards: WithPending<MilkDiscard>[],
+  since: number,
+  lang: Lang = 'en',
+): ActivityEntry[] {
+  const out: ActivityEntry[] = []
+  for (const d of discards) {
+    if (d.voided_at || new Date(d.discarded_at).getTime() < since) continue
+    const vars = { label: d.label ?? '?', amount: formatMilkOz(d.amount_ml) }
+    let what = translate(lang, 'milk.discardedLine', vars)
+    // History already labels the kind ("Discarded milk"): the number and the
+    // amount are all that is left to say, and they have no words to translate.
+    let detail = `${vars.label} · ${vars.amount}`
+    if (d.pending) {
+      const mark = translate(lang, 'activity.notSynced')
+      what = `${what} · ${mark}`
+      detail = `${detail} · ${mark}`
+    }
+    out.push({ id: d.id, at: d.discarded_at, kind: 'discard', what, detail })
+  }
+  return out.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
 }
 
 // --------------------------------------------------- family settings (0012)

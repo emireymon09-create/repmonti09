@@ -284,7 +284,8 @@ export function isInventoryBottleFeed(f: Feeding): boolean {
 }
 
 /**
- * "M3 1.75 oz + M4 0.5 oz + formula 0.75 oz": where a bottle came from. Null
+ * "M3 1.75 oz + M4 0.5 oz + formula 0.75 oz": where a bottle came from, then
+ * " · 1 oz left over" when that is known. Null
  * for a feeding with no breakdown — there is nothing to say beyond its total.
  */
 export function describeBottle(
@@ -301,7 +302,11 @@ export function describeBottle(
   if (formula > 0 || parts.length === 0) {
     parts.push(translate(lang, 'bottle.formulaPart', { amount: formatMilkOz(formula) }))
   }
-  return parts.join(' + ')
+  const line = parts.join(' + ')
+  // "Sobró" (V4-44), when it is known: statistics, it took nothing back.
+  if (feeding.leftover_ml == null) return line
+  const leftover = formatMilkOz(Number(feeding.leftover_ml))
+  return `${line} · ${translate(lang, 'bottle.leftoverPart', { amount: leftover })}`
 }
 
 // ------------------------------------------------------------- rules

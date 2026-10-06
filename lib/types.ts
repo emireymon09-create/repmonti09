@@ -229,10 +229,9 @@ export type WithPending<T> = T & { pending?: boolean }
 export type ActivityEntry = {
   id: string
   at: string
-  // v4 (docs/arquitectura-v4.md §7.4) adds 'discard' here, together with the
-  // keys `history.kind.discard` / `activity.discard` (lib/i18n) — not before:
-  // app/history/page.tsx builds an i18n key from this union.
-  kind: 'feeding' | 'nursing' | 'diaper' | 'sleep' | 'pumping' | 'growth'
+  // 'discard' (0015): milk thrown out, never editable. app/history/page.tsx
+  // builds an i18n key from this union — `history.kind.discard` exists.
+  kind: 'feeding' | 'nursing' | 'diaper' | 'sleep' | 'pumping' | 'growth' | 'discard'
   /** Stands on its own: "Diaper · wet". */
   what: string
   /** For a view that already labels the kind: "Wet". */

@@ -24,7 +24,7 @@ Ninguna rama remota tiene una migración 0015: se usa `0015_milk_phase1_2.sql`.
 | H0 integración de PR + línea base | hecho | `2aebe24` (respuestas del papá), `436de96` (merge PR #1), `7e94c65` (merge PR #2) |
 | H1 spec + arquitectura + plan de pruebas | hecho | ver `git log` |
 | H2 migración 0015 + lógica pura | hecho | ver `git log` |
-| H3 capa de datos y cola | pendiente | |
+| H3 capa de datos y cola | hecho | ver `git log` |
 | H4 interfaz | pendiente | |
 | H5 QA | pendiente | |
 | H6 auditorías | pendiente | |
@@ -89,3 +89,20 @@ subagentes a la vez (1 si hay build/integración/navegador); vitest
   una cantidad → error 22P02 de PostgREST, sin escritura; `milk_feeding_edits`
   solo select/insert (registro inmutable); `supabase/schema.sql` no se toca
   (el repo lo dejó en 0013).
+
+## H3 [VERIFICADO por el director]
+
+- `lib/db.ts`: lecturas sin limit (`listContainers` con `released_at`/`lost_ml`,
+  `listDiscards`, `legacySplitInputs`), N en `milkRules`/`saveMilkBottleCount`
+  (sin cola), escrituras por la cola `rpc`: `logPumpingSession` (biberón
+  obligatorio, `milk_bottle_needed`), `updatePumpingSession`, `discardContainer`,
+  `logBottleFeed` con `p_leftover_ml`, `editBottleFeed` (`p_op_id` nuevo por
+  intento, `p_expected`, `queueOnly` si algo sigue en cola), `voidBottleFeed`
+  que devuelve la leche que no volvió (D-9). `milkErrorText` traduce los 7
+  códigos nuevos (EN+ES).
+- Verificación (16:20): `tsc` OK, `lint` OK, `format:check` OK, unitarias
+  **537/537** ×4 TZ, integración **293/293**.
+- **Riesgo anotado [NO VERIFICADO]:** Supabase en la nube limita por defecto
+  cada lectura a 1000 filas (`max_rows`); en local no hay tope. Las lecturas
+  "sin limit" (contenedores, desechos, tomas para la estimación) podrían
+  cortarse en producción. Va al runbook como chequeo.

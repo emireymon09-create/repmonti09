@@ -200,6 +200,7 @@ export const es: Dictionary = {
   'sync.thing.doctor_appointments': 'Turno',
   'sync.thing.babies': 'Perfil del bebé',
   'sync.thing.other': 'Registro',
+  'sync.thing.milk_discards': 'Leche desechada',
   'sync.nothingSaved':
     'Sin conexión: todavía no hay datos guardados en este dispositivo. Van a aparecer cuando vuelva la conexión.',
 
@@ -365,9 +366,12 @@ export const es: Dictionary = {
   'milk.legacyHint':
     'Registrada antes de que izquierdo y derecho fueran por separado: su total de {amount} queda como está, salvo que escribas los lados.',
   'milk.deletedPending': 'Borrada en este dispositivo — sin sincronizar todavía.',
+  'milk.bottleNeeded': 'Elegí en qué biberón quedó.',
+  'milk.discardedLine': 'Leche desechada · {label} · {amount}',
 
   // ------------------------------------------------------------ bottle (0014)
   'bottle.formulaPart': 'fórmula {amount}',
+  'bottle.leftoverPart': 'sobró {amount}',
   'bottle.panelTitle': 'Biberón',
   'bottle.planFormula': '{amount} de fórmula',
   'bottle.stashLeft': 'Leche materna que queda: {amount}',
@@ -425,10 +429,6 @@ export const es: Dictionary = {
     '{label} no se puede usar para este biberón: se borró, se terminó o ya había caducado a esa hora. Elegí otra.',
   'milkError.containerUnknown':
     'Una de las extracciones de este biberón ya no existe o no es de este bebé. Elegí de nuevo.',
-  'milkError.labelTaken':
-    'La cinta {label} ya está en otra extracción — puede que otro teléfono la acabe de usar. No se guardó nada: probá de nuevo con otro número.',
-  'milkError.labelTakenQueued':
-    'La cinta {label} ya está en otra extracción — la usó otro teléfono, o este la eligió sin conexión. Esta sesión nunca llegó al servidor: tocá “Descartar este registro” y registrala de nuevo con otro número.',
   'milkError.alreadyServed':
     'De {label} ya se sirvió leche. Primero borrá esas tomas; después se puede cambiar esta sesión.',
   'milkError.servedExceedsAmount':
@@ -443,6 +443,28 @@ export const es: Dictionary = {
   'milkError.notSignedIn': 'Se cerró tu sesión. Volvé a entrar y probá de nuevo.',
   'milkError.sessionGone':
     'Esa sesión ya no existe; puede que se haya borrado desde otro teléfono.',
+  'milkError.bottleTaken':
+    'El biberón {label} ya tiene leche de otra extracción — puede que otro teléfono lo acabe de usar. No se guardó nada: elegí otro biberón.',
+  'milkError.bottleTakenQueued':
+    'El biberón {label} ya tiene leche de otra extracción — lo usó otro teléfono, o este lo eligió sin conexión. Esta sesión nunca llegó al servidor: tocá “Descartar este registro” y registrala de nuevo en otro biberón.',
+
+  // ------------------------------------------------------------ milk errors (0015)
+  'milkError.notExpired':
+    'Según el servidor, la leche de {label} todavía no venció. No se desechó nada.',
+  'milkError.notExpiredUnknown':
+    'Según el servidor, esta leche todavía no venció. No se desechó nada.',
+  'milkError.notEnough':
+    'A esa hora no había tanta leche materna que se pudiera usar — solo {amount}. No se cambió nada.',
+  'milkError.notEnoughUnknown':
+    'A esa hora no había tanta leche materna que se pudiera usar. No se cambió nada.',
+  'milkError.editConflict':
+    'Esta toma se cambió desde otro teléfono mientras la editabas. No se guardó nada: abrila de nuevo para ver cómo quedó.',
+  'milkError.futureTime': 'Esa hora todavía no llegó. Revisá la hora y probá de nuevo.',
+  'milkError.feedingGone': 'Esa toma ya no existe; puede que se haya borrado desde otro teléfono.',
+  'milkError.notInventory':
+    'Esta toma es de antes de que la leche se contara por biberón: acá no se puede cambiar su leche ni su fórmula. Sí la hora, el total y la nota.',
+  'milkError.invariantBroken':
+    'Las cuentas de la leche no cierran en el servidor. No se cambió nada: avisale a quien se ocupa de la app.',
 
   // ------------------------------------------------------------ growth
   'growth.title': 'Crecimiento',
@@ -515,6 +537,7 @@ export const es: Dictionary = {
   'history.kind.pumping': 'Extracción',
   'history.rowOptions': 'Opciones: {kind}, {time}',
   'history.kind.growth': 'Crecimiento',
+  'history.kind.discard': 'Leche desechada',
 
   // ------------------------------------------------------------ version
   'version.title': 'Historial de versiones',
