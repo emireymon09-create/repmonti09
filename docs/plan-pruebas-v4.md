@@ -258,30 +258,30 @@ otra cosa, **INV = 0 filas al final**.
 
 | ID | Caso | Resultado esperado | Req/Dec | Resultado | Evidencia |
 |---|---|---|---|---|---|
-| C-01 | Suite de integración de **v0.12.1 pura** sobre 0001–0015 | **118/118** | CLAUDE §0.1, compat §2 | | |
-| C-02 | Suite de integración de **v3-release** sobre 0001–0015 | **151/151**; toda diferencia justificada contra ARQ §9.2 | ARQ §9.2 | | |
-| C-03 | v0.12.1 alta/edición/borrado de extracción legada | entra; sin contenedor; no ocupa biberón; alimenta el pozo | compat B4, D-21, CL-35 | | |
-| C-04 | v0.12.1 alta de biberón | toma legada, estimada en v4; "Lo que hay" igual | CL-35 | | |
-| C-05 | v0.12.1 borra/edita cantidad de toma con desglose | `milk_rpc_only`, base igual | compat B1/B2 | | |
-| C-06 | v0.12.1 cambia solo la hora, a hora válida / a hora con leche vencida | entra / `milk_container_unusable:M#`, base igual | compat B2c, CL-34 | | |
-| C-07 | v0.12.1 borra/edita toma **editada con `edit_bottle_feed`** | `milk_rpc_only` | ARQ §9.1 | | |
-| C-08 | v0.12.1 borra/edita extracción creada **con selector** | `milk_rpc_only` | compat B3 | | |
-| C-09 | v0.12.1 borra/edita extracción **desechada** o **libre** | `milk_rpc_only`, desecho intacto | ARQ §9.1 | | |
-| C-10 | v0.12.1 baja el total de una toma legada por debajo del sobró puesto por v4 | `23514` visible, base igual | D-11b | | |
-| C-11 | v0.12.1 pasa a `nursing` una toma legada con sobró | entra; v4 no muestra el sobró | ARQ §3.11 | | |
-| C-12 | v0.12.1 cola offline (extracción + biberón + pañal) sobre 0015 | 3 filas, sin duplicados | compat B5 | | |
-| C-13 | cola **v4** inyectada en v0.12.1 (`discard_container`, `edit_bottle_feed`) | rechazo, Descartar, nada escrito | ARQ §9.1 | | |
-| C-14 | v3 registra con cinta M15 (N=6) | entra, "fuera de M1–M6" en v4 | D-1 | | |
-| C-15 | v3 registra con la cinta de un contenedor ocupado | `milk_label_taken:M#`, traducido por v3 | AJ-1 | | |
-| C-16 | v3 sirve y anula biberones (6 args) con M3 reusado | anula; `lost_ml`; v3 sin error | AJ-7, D-9 | | |
-| C-17 | v3 cambia la hora de una toma con desglose | re-valida (C-06) | V4-58 | | |
-| C-18 | v3 Historial con extracción desechada | se muestra "servido" de más y bloquea borrar en el cliente; nada escrito | ARQ §9.2 | | |
-| C-19 | v3 edita la división de una extracción desechada | entra; desecho intacto (Δ=0) | D-8 | | |
-| C-20 | cola v4 inyectada en v3 con la base en 0015 | `discard_container` y `edit_bottle_feed` se aplican | ARQ §9.2 | | |
-| C-21 | cola v4 inyectada en v3 con la base revertida | `PGRST202` → Descartar, nada escrito | ARQ §9.2 | | |
-| C-22 | v4 edita/borra lo de v0.12.1 (toma legada 2→2,5 oz + sobró; nota de extracción legada; borrar ambos) | entra; inventario igual | compat B6, D-11b | | |
+| C-01 | Suite de integración de **v0.12.1 pura** sobre 0001–0015 | **118/118** | CLAUDE §0.1, compat §2 | OK | `../amelia_app-v0121-check` (`0cbe798`) `vitest run tests/integration --maxWorkers=2` contra local 0001–0015 (15 filas en `schema_migrations`): **Tests 118 passed (118)** |
+| C-02 | Suite de integración de **v3-release** sobre 0001–0015 | **151/151**; toda diferencia justificada contra ARQ §9.2 | ARQ §9.2 | OK (150/151; la diferencia es D-15) | `../amelia_app-v3check` (`71d4d0c`) contra local 0001–0015: **150 passed, 1 failed (151)**. Falla `milk.test.ts` "log_bottle_feed rechaza un contenedor anulado, uno vencido…": `p_fed_at = expires_at + 1 s` (4 días al futuro) espera `milk_container_unusable:M7` y recibe `milk_future_time` (A9/D-15, tope 10 min). Con solo el código esperado cambiado: 1/1. No es regresión, pero ARQ §9.2 no la listaba. Detalle: `docs/compatibilidad-v4.md` §1 |
+| C-03 | v0.12.1 alta/edición/borrado de extracción legada | entra; sin contenedor; no ocupa biberón; alimenta el pozo | compat B4, D-21, CL-35 | OK | mezclas SQL como `authenticated` en el stack local (release, 6 oct): alta legada ×2 (`on conflict do nothing`) → 1 fila, 0 contenedores; editar y borrar → entra. PostgREST: `milkV4Compat.test.ts` C-03 ✓ |
+| C-04 | v0.12.1 alta de biberón | toma legada, estimada en v4; "Lo que hay" igual | CL-35 | OK | mezclas SQL como `authenticated` en el stack local (release, 6 oct): alta de biberón ×2 → 1 fila sin desglose; foto del inventario igual. `milkV4Compat.test.ts` C-04 ✓ |
+| C-05 | v0.12.1 borra/edita cantidad de toma con desglose | `milk_rpc_only`, base igual | compat B1/B2 | OK | mezclas SQL como `authenticated` en el stack local (release, 6 oct): `{voided_at}`, `amount_ml=100`, `nursing` sobre toma con desglose, sobró y editada → `milk_rpc_only`, md5 de la foto igual antes/después. C-05 ✓ |
+| C-06 | v0.12.1 cambia solo la hora, a hora válida / a hora con leche vencida | entra / `milk_container_unusable:M#`, base igual | compat B2c, CL-34 | OK | mezclas SQL como `authenticated` en el stack local (release, 6 oct): solo hora válida (mismo amount) → `UPDATE 1`; a antes de M1 → `milk_container_unusable:M1`; +1 h → `milk_future_time`; foto igual en los rechazos. C-06 ✓ |
+| C-07 | v0.12.1 borra/edita toma **editada con `edit_bottle_feed`** | `milk_rpc_only` | ARQ §9.1 | OK | mezclas SQL como `authenticated` en el stack local (release, 6 oct): toma editada: `{voided_at}` y `{leftover_ml:null}` → `milk_rpc_only`, foto igual. C-07 ✓ |
+| C-08 | v0.12.1 borra/edita extracción creada **con selector** | `milk_rpc_only` | compat B3 | OK | mezclas SQL como `authenticated` en el stack local (release, 6 oct): extracción M1 elegida: borrar, total 100, nota con total redondeado → `milk_rpc_only`, foto igual. C-08 ✓ |
+| C-09 | v0.12.1 borra/edita extracción **desechada** o **libre** | `milk_rpc_only`, desecho intacto | ARQ §9.1 | OK | mezclas SQL como `authenticated` en el stack local (release, 6 oct): M2 desechada (borrar, total 10), M4 libre servida y M3 libre con `lost_ml` (borrar) → `milk_rpc_only`; desecho intacto. C-09 ✓ |
+| C-10 | v0.12.1 baja el total de una toma legada por debajo del sobró puesto por v4 | `23514` visible, base igual | D-11b | OK | mezclas SQL como `authenticated` en el stack local (release, 6 oct): sobró 30 en legada de 90, bajar a 20 → `23514 feedings_leftover_le_amount`, foto igual. C-10/C-11 ✓ |
+| C-11 | v0.12.1 pasa a `nursing` una toma legada con sobró | entra; v4 no muestra el sobró | ARQ §3.11 | OK (base); pantalla NO VERIFICADO | mezclas SQL como `authenticated` en el stack local (release, 6 oct): pasar a `nursing` → `UPDATE 1`. Que v4 no muestre el sobró no se miró en pantalla |
+| C-12 | v0.12.1 cola offline (extracción + biberón + pañal) sobre 0015 | 3 filas, sin duplicados | compat B5 | OK | `milkV4Compat.test.ts` C-12 ✓ (PostgREST, upsert ×2 → 1 fila por tabla, 0 contenedores) y mezclas SQL como `authenticated` en el stack local (release, 6 oct): 3 altas ×2 |
+| C-13 | cola **v4** inyectada en v0.12.1 (`discard_container`, `edit_bottle_feed`) | rechazo, Descartar, nada escrito | ARQ §9.1 | OK (servidor); banner Descartar NO VERIFICADO | Por PostgREST con la petición exacta de `sendOpWith` de v0.12.1 (`lib/db.ts:114-131`, `kind:'rpc'` = alta): `POST milk_discards` → **400 P0001 milk_rpc_only**; `edit_bottle_feed` (sin `row`) → **400 PGRST102**; foto igual. El banner en un teléfono no se probó |
+| C-14 | v3 registra con cinta M15 (N=6) | entra, "fuera de M1–M6" en v4 | D-1 | OK | mezclas SQL como `authenticated` en el stack local (release, 6 oct): `log_pumping_session` M15 (N=6) → entra. C-14 ✓ |
+| C-15 | v3 registra con la cinta de un contenedor ocupado | `milk_label_taken:M#`, traducido por v3 | AJ-1 | OK | mezclas SQL como `authenticated` en el stack local (release, 6 oct): cinta de M3 ocupado → `milk_label_taken:M3`, foto igual; v3 lo traduce (`MILK_ERRORS` de `71d4d0c` `lib/db.ts`). C-15 ✓ |
+| C-16 | v3 sirve y anula biberones (6 args) con M3 reusado | anula; `lost_ml`; v3 sin error | AJ-7, D-9 | OK | mezclas SQL como `authenticated` en el stack local (release, 6 oct): void de toma de M5 libre con número libre → re-ocupa; void de toma de M4 viejo con M4 reusado → `lost_ml` 20; INV 0. C-16 ✓ |
+| C-17 | v3 cambia la hora de una toma con desglose | re-valida (C-06) | V4-58 | OK | mezclas SQL como `authenticated` en el stack local (release, 6 oct): `{fed_at}` válido sobre toma editada → entra; C-06 cubre el rechazo. C-17 ✓ |
+| C-18 | v3 Historial con extracción desechada | se muestra "servido" de más y bloquea borrar en el cliente; nada escrito | ARQ §9.2 | NO VERIFICADO en navegador (OK por código) | `71d4d0c`: `listContainers` no lee `released_at`, `servedMl = amount − remaining` (`lib/milk.ts:528`) y `app/history/page.tsx:497` bloquea borrar con `milk_already_served` sin escribir. No se abrió la pantalla |
+| C-19 | v3 edita la división de una extracción desechada | entra; desecho intacto (Δ=0) | D-8 | OK | mezclas SQL como `authenticated` en el stack local (release, 6 oct): `update_pumping_session` de M6 desechado, 20/30 (mismo total) → entra, desecho intacto; subir a 70 → desecho 70 (D-8). C-19 ✓ |
+| C-20 | cola v4 inyectada en v3 con la base en 0015 | `discard_container` y `edit_bottle_feed` se aplican | ARQ §9.2 | OK | `milkV4Compat.test.ts` C-20 ✓ (local 0001–0015) |
+| C-21 | cola v4 inyectada en v3 con la base revertida | `PGRST202` → Descartar, nada escrito | ARQ §9.2 | OK (servidor); banner NO VERIFICADO | Stack local tras `rollback-leche-v4.sql`, PostgREST: `discard_container`, `edit_bottle_feed` y `log_bottle_feed` con `p_leftover_ml` → **404 PGRST202**; tras `pnpm db:reset` → llegan a la función (400 P0001 de negocio) |
+| C-22 | v4 edita/borra lo de v0.12.1 (toma legada 2→2,5 oz + sobró; nota de extracción legada; borrar ambos) | entra; inventario igual | compat B6, D-11b | OK | `milkV4Schema.test.ts -t "C-22\|C-23\|I-96"` → 3 passed (local 0001–0015) |
 | C-23 | v4 da cantidad (lados) a una extracción legada eligiendo M2 | nace M2 ocupado | AJ-5, S-22 | PASS | `e_corregir.mjs` E-38: extracción legada + izq 1 oz + M1 → nace M1 ocupado 29.5735 |
-| C-24 | `notify pgrst` tras 0015: RPC nueva 404 → 200 | medido en local; nube NO VERIFICADO | compat §3.3 | | |
+| C-24 | `notify pgrst` tras 0015: RPC nueva 404 → 200 | medido en local; nube NO VERIFICADO | compat §3.3 | OK en local; nube NO VERIFICADO | Tras el `COMMIT`/`NOTIFY` de la reversa en local, la primera llamada (≈0,5 s) ya daba 404 PGRST202; tras `db:reset` (0015) 400 de negocio. Nube sin credenciales |
 | C-25 | `/api/quick/*` y `/api/ingest` con 0015 | sin cambios (no escriben leche) | §1 compat | PASS | `e_regresion.mjs` E-Reg-quick-api: `/api/quick/nurse` ×2, `/api/quick/diaper`, `/api/quick/status` → 200; sin token 401; contenedores iguales |
 
 ## 4. Usuario real en navegador (E)
@@ -383,18 +383,18 @@ valores esperados en la base). INV al final de cada uno. 390 y 1440; EN y ES
 
 | ID | Caso | Resultado esperado | Req/Dec | Resultado | Evidencia |
 |---|---|---|---|---|---|
-| R-01 | Base A (0001–0014 de cero) vs base B (0001–0015 + datos E-xx + `rollback-leche-v4.sql`): `pg_dump --schema-only --schema=public --no-owner` | `diff` vacío | ARQ §10.3 | NO VERIFICADO: `docs/rollback-leche-v4.sql` no existe en `ac3f77b` | — |
-| R-02 | Rollback dos veces seguidas | sin error | ARQ §10.1 | NO VERIFICADO: `docs/rollback-leche-v4.sql` no existe en `ac3f77b` | — |
-| R-03 | Datos con números reusados (dos M3 no anulados) | índice `milk_containers_label_live` se recrea sin conflicto | ARQ §10.1 paso 3c | NO VERIFICADO: `docs/rollback-leche-v4.sql` no existe en `ac3f77b` | — |
-| R-04 | Contenedores desechados y liberados con `lost_ml` | anulados por el rollback; v3 `void_bottle_feed` de sus tomas no resucita leche en "Lo que hay" | ARQ §10.1 paso 3 | NO VERIFICADO: `docs/rollback-leche-v4.sql` no existe en `ac3f77b` | — |
-| R-05 | Pre-chequeo: ocupado con `lost_ml > 0` | `notice` lo lista; rollback sigue | ARQ §10.1 paso 1 | NO VERIFICADO: `docs/rollback-leche-v4.sql` no existe en `ac3f77b` | — |
-| R-06 | Después del rollback: `remaining = amount − servido` para todo no anulado (salvo R-05) | 0 filas | ARQ §10.3 | NO VERIFICADO: `docs/rollback-leche-v4.sql` no existe en `ac3f77b` | — |
-| R-07 | Suite de v3-release contra B | **151/151** | ARQ §10.3 | NO VERIFICADO: `docs/rollback-leche-v4.sql` no existe en `ac3f77b` | — |
-| R-08 | Suite de v0.12.1 contra B | **118/118** | ARQ §10.3 | NO VERIFICADO: `docs/rollback-leche-v4.sql` no existe en `ac3f77b` | — |
-| R-09 | Bloque opcional `milk_backup_v4`: conteos = lo perdido (desechos, sobró, N, released, lost, ediciones); no visible por PostgREST | coinciden; `anon`/`authenticated` sin acceso | ARQ §10.2 | NO VERIFICADO: `docs/rollback-leche-v4.sql` no existe en `ac3f77b` | — |
-| R-10 | Re-aplicar 0015 sobre B | entra; INV 0 filas | ARQ §10.3 | NO VERIFICADO: `docs/rollback-leche-v4.sql` no existe en `ac3f77b` | — |
-| R-11 | Tomas editadas por v4 sobreviven con su desglose final y porciones | INV-6 en B | ARQ §10.2 | NO VERIFICADO: `docs/rollback-leche-v4.sql` no existe en `ac3f77b` | — |
-| R-12 | `rollback-leche.sql` (0014) después de `rollback-leche-v4.sql` | deja 0001–0013 (encadenable) | docs/rollback-leche.sql | NO VERIFICADO: `docs/rollback-leche-v4.sql` no existe en `ac3f77b` | — |
+| R-01 | Base A (0001–0014 de cero) vs base B (0001–0015 + datos E-xx + `rollback-leche-v4.sql`): `pg_dump --schema-only --schema=public --no-owner` | `diff` vacío | ARQ §10.3 | OK | Postgres efímero (`--network none`, imagen del stack), 0001–0015 + `seed` v4 por RPC como `authenticated` (M1 editado con sobró, M2 servido y desechado, M4 desechado, M3/M5 reusados, M6 libre con lost, M7 ocupado con lost, M8 polvo, legada con sobró, N=8) → `rollback-leche-v4.sql` → `pg_dump --schema-only --schema=public --no-owner` (sin líneas `\restrict`) vs 0001–0014 de cero: **diff 0 líneas** |
+| R-02 | Rollback dos veces seguidas | sin error | ARQ §10.1 | OK | Segunda corrida: exit 0, solo NOTICE "does not exist, skipping"; diff 0 líneas |
+| R-03 | Datos con números reusados (dos M3 no anulados) | índice `milk_containers_label_live` se recrea sin conflicto | ARQ §10.1 paso 3c | OK | Dos M3 y dos M5 no anulados → `milk_containers_label_live` recreado; cintas dobles no anuladas: 0 |
+| R-04 | Contenedores desechados y liberados con `lost_ml` | anulados por el rollback; v3 `void_bottle_feed` de sus tomas no resucita leche en "Lo que hay" | ARQ §10.1 paso 3 | OK | M2 desechado, M3/M5 viejos anulados por la reversa; `void_bottle_feed` de v3 (0014) de f2, f3, f5a: "Lo que hay" 155 → 155 las tres veces |
+| R-05 | Pre-chequeo: ocupado con `lost_ml > 0` | `notice` lo lista; rollback sigue | ARQ §10.1 paso 1 | OK | `NOTICE: ocupado con leche perdida: M7 (bebé …, contenedor …) lost_ml=30` / `pre-chequeo: 1`; la reversa sigue (exit 0) |
+| R-06 | Después del rollback: `remaining = amount − servido` para todo no anulado (salvo R-05) | 0 filas | ARQ §10.3 | OK | `remaining <> amount − servido` en vivos: 1 → M7 (= R-05) |
+| R-07 | Suite de v3-release contra B | **151/151** | ARQ §10.3 | OK (en el stack local) | Reversa aplicada al stack local (comprobado 127.0.0.1) → `../amelia_app-v3check` `vitest run tests/integration`: **151 passed (151)**. No se apuntó la suite al efímero |
+| R-08 | Suite de v0.12.1 contra B | **118/118** | ARQ §10.3 | OK (en el stack local) | Ídem, `../amelia_app-v0121-check`: **118 passed (118)**; y tras `rollback-leche.sql` (0013): 118/118 |
+| R-09 | Bloque opcional `milk_backup_v4`: conteos = lo perdido (desechos, sobró, N, released, lost, ediciones); no visible por PostgREST | coinciden; `anon`/`authenticated` sin acceso | ARQ §10.2 | OK | Bloque opcional descomentado: respaldo desechos 2, ediciones 1, sobró 2, contenedores 8, bebés 1 = lo sembrado; `has_schema_privilege(anon\|authenticated, milk_backup_v4, usage)` = false |
+| R-10 | Re-aplicar 0015 sobre B | entra; INV 0 filas | ARQ §10.3 | FALLA (defecto de diseño de la reversa) | `begin; 0015; rollback;` sobre la base revertida → `milk_invariant_broken`, "4 fila(s); la primera: INV-1 cuenta" (M7 de R-05 + 3 × INV-4: M2, M3 y M5 viejos anulados con porciones vivas). No aplica nada. Con datos sin esos casos (seed simple): entra, INV 0 filas. `docs/compatibilidad-v4.md` §5.3 |
+| R-11 | Tomas editadas por v4 sobreviven con su desglose final y porciones | INV-6 en B | ARQ §10.2 | OK | Tras la reversa: 6 tomas vivas con desglose, 6 porciones vivas, 0 que no cierran (INV-6) |
+| R-12 | `rollback-leche.sql` (0014) después de `rollback-leche-v4.sql` | deja 0001–0013 (encadenable) | docs/rollback-leche.sql | OK | `rollback-leche.sql` tras `rollback-leche-v4.sql`: exit 0; diff contra 0001–0013 de cero **0 líneas**; 2ª corrida exit 0. `rollback-leche-v4.sql` sobre 0013: aborta sin cambios (diff 0) |
 
 ## 6. Conteo
 

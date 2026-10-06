@@ -165,3 +165,24 @@ unitarias **542/542** ×4 TZ, integración **293/293**.
 
 NO VERIFICADO: iPhone/WebKit, PWA instalada, red real; tope `max_rows` de la
 nube.
+
+## H5b — compatibilidad y reversa (ingeniero de release)
+
+- **C-01** suite de integración de v0.12.1 pura (worktree desacoplado en
+  `0cbe798`) sobre la base 0001–0015: **118/118**.
+- **C-02** suite de v3-release (`71d4d0c`) sobre 0001–0015: **150/151**. La
+  falla es deliberada (D-15, tope de 10 min al futuro): la prueba de v3 manda una
+  toma 4 días en el futuro y espera `milk_container_unusable`; recibe
+  `milk_future_time`. Con solo el código esperado cambiado pasa. La app v3
+  cacheada mostraría ese código crudo (no lo traduce) — solo si un teléfono
+  manda una toma >10 min en el futuro.
+- Mezclas viejo/nuevo: 23 escrituras de la app vieja/v3 sobre lo creado por v4
+  rechazadas con la base idéntica (md5 antes/después); invariante en 0 filas.
+- Reversa en Postgres efímero (`--network none`): `pg_dump --schema-only`
+  0001–0014 vs 0001–0015+datos+reversa → **diff 0 líneas**; idempotente;
+  cadena con `rollback-leche.sql` → diff 0 contra 0001–0013; suites v3 151/151 y
+  v0.12.1 118/118 sobre la base revertida.
+- **Defecto R-10 (abierto):** reaplicar 0015 después de la reversa, con datos
+  reales de v4 (número reusado tras servir, o desechado tras servir), aborta con
+  `milk_invariant_broken` (falla cerrado, no aplica nada). Se corrige en la
+  migración antes del cierre.
