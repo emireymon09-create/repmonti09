@@ -4,6 +4,11 @@ Every version of Amelia, newest first. The current version is the `version`
 field in `package.json`; this file is the history. A test fails if the two
 disagree. Shown in the app under the settings gear → Version history.
 
+## [0.12.4] - 2026-10-06
+
+- **Nothing in the app changed.** A short agent brief (`GROK.md`) was added so Grok Bot /
+  the Amelia App agent has a role-specific checklist. Hard rules still live in `CLAUDE.md`.
+
 ## [0.12.1] - 2026-10-05
 
 - **The changing-table screen can update itself.** Its new firmware is published here, and the
