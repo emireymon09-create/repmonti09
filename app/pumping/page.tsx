@@ -26,14 +26,17 @@ import { looksOffline, type PendingWrite } from '@/lib/queue'
 import {
   DEFAULT_MILK_RULES,
   EMPTY_ML,
+  SERVED_EPSILON_ML,
   activeContainers,
   applyPendingInventory,
+  isLegacyPumping,
   isUsable,
   keepMl,
   nextContainerLabel,
   normalizeTapeLabel,
   ozText,
   parseAmountMl,
+  servedMl,
   stashMl,
   tapeInUse,
   type TapeCheck,
@@ -96,13 +99,6 @@ function writeTimer(babyId: string, value: string | null) {
   } catch {
     /* the timer just won't survive a reload */
   }
-}
-
-const SERVED_EPSILON_ML = 0.01
-
-/** Logged before left and right existed (0013): a total, no sides. */
-function isLegacy(row: PumpingSession): boolean {
-  return row.left_ml == null && row.right_ml == null && row.amount_ml != null
 }
 
 export default function PumpingPage() {
@@ -240,8 +236,7 @@ export default function PumpingPage() {
   const tapeTaken = (label: string) => tapeInUse(label, live) || label === justSaved
   const tapeText = tape ?? suggestedTape
   const containerOf = (sessionId: string) => live.find((c) => c.source_session_id === sessionId)
-  const servedFrom = (c: MilkContainer | undefined) =>
-    c ? Math.max(0, c.amount_ml - c.remaining_ml) : 0
+  const servedFrom = servedMl
 
   function readSides(l: string, r: string, u: VolumeUnit) {
     const pl = parseAmountMl(l, u)
@@ -394,7 +389,7 @@ export default function PumpingPage() {
       editing.id,
       { left_ml: l.ml, right_ml: r.ml, notes: eNotes.trim() || null, pumped_at: pumpedAt },
       ctx,
-      { pending: !!editing.pending, legacy: isLegacy(editing) },
+      { pending: !!editing.pending, legacy: isLegacyPumping(editing) },
     )
     setBusy(false)
     if (error) {
@@ -655,7 +650,7 @@ export default function PumpingPage() {
                 {editing?.id === row.id ? (
                   <div className="stack">
                     <Label>{t('milk.editSession')}</Label>
-                    {isLegacy(row) && (
+                    {isLegacyPumping(row) && (
                       <p className="meta">
                         {t('milk.legacyHint', { amount: formatMilkOz(row.amount_ml ?? 0) })}
                       </p>

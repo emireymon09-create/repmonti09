@@ -13,6 +13,7 @@ import {
   listDrawdowns,
   mergePending,
   milkErrorText,
+  milkRules,
   pendingWrites,
   recentDiapers,
   recentFeedings,
@@ -22,13 +23,13 @@ import {
   updateDiaper,
   updateFeeding,
   updateNursing,
-  updatePumping,
+  updatePumpingSession,
   updateSleep,
   voidBottleFeed,
   voidDiaper,
   voidFeeding,
   voidNursing,
-  voidPumping,
+  voidPumpingSession,
   voidSleep,
 } from '@/lib/db'
 import { useSync } from '@/lib/useSync'
@@ -36,7 +37,17 @@ import { useT } from '@/lib/i18n/react'
 import { useReturnFocus } from '@/lib/useReturnFocus'
 import type { Lang } from '@/lib/i18n'
 import { looksOffline, type PendingWrite } from '@/lib/queue'
-import { applyPendingInventory, describeBottle, isInventoryBottleFeed } from '@/lib/milk'
+import {
+  DEFAULT_MILK_RULES,
+  SERVED_EPSILON_ML,
+  applyPendingInventory,
+  describeBottle,
+  isInventoryBottleFeed,
+  isLegacyPumping,
+  keepMl,
+  ozText,
+  servedMl,
+} from '@/lib/milk'
 import type {
   ActivityEntry,
   DiaperChange,
@@ -45,9 +56,9 @@ import type {
   FeedingType,
   MilkContainer,
   MilkDrawdown,
+  MilkRules,
   NursingSession,
   PumpingSession,
-  PumpSide,
   Side,
   SleepSession,
   WithPending,
@@ -55,6 +66,7 @@ import type {
 import {
   clockTime,
   DISPLAY_UNIT,
+  formatMilkOz,
   fromHouseholdInputValue,
   householdToday,
   longDate,
@@ -118,8 +130,10 @@ function groupByHouseholdDay(entries: ActivityEntry[], lang: Lang): Day[] {
 
 /**
  * The kinds with a raw row + edit/void functions behind them. Pumping joined
- * them so that /pumping can stay a plain log: History is the one place where
- * any entry gets corrected or removed.
+ * them so History is a place where any entry gets corrected or removed. A
+ * pumping session goes through the same milk-aware functions as /pumping
+ * (update_pumping_session / void_pumping_session, 0013): its container
+ * follows the edit, and milk already served is never edited away.
  */
 type EditKind = 'feeding' | 'diaper' | 'nursing' | 'sleep' | 'pumping'
 type EditTarget = { kind: EditKind; id: string }
@@ -134,8 +148,6 @@ function isEditable(kind: ActivityEntry['kind']): kind is EditKind {
   )
 }
 
-const PUMP_SIDES: PumpSide[] = ['left', 'right', 'both']
-
 export default function HistoryPage() {
   const { baby, loading, unreachable } = useBaby()
   const { t, lang } = useT()
@@ -143,6 +155,12 @@ export default function HistoryPage() {
   const [days, setDays] = useState<Day[]>([])
   const [feedings, setFeedings] = useState<WithPending<Feeding>[]>([])
   const [drawdowns, setDrawdowns] = useState<WithPending<MilkDrawdown>[]>([])
+  // The containers, queue folded in: a pumping session's edit and delete
+  // check what was already served from its container, like /pumping does.
+  const [containers, setContainers] = useState<WithPending<MilkContainer>[]>([])
+  // Only for the expiry of a container a corrected session creates offline;
+  // the server computes the real one. Defaults until they arrive.
+  const [rules, setRules] = useState<MilkRules>(DEFAULT_MILK_RULES)
   const [diapers, setDiapers] = useState<WithPending<DiaperChange>[]>([])
   const [nursing, setNursing] = useState<WithPending<NursingSession>[]>([])
   const [sleep, setSleep] = useState<WithPending<SleepSession>[]>([])
@@ -168,8 +186,12 @@ export default function HistoryPage() {
   const [nEnd, setNEnd] = useState('')
   const [sStart, setSStart] = useState('')
   const [sEnd, setSEnd] = useState('')
-  const [pSide, setPSide] = useState<PumpSide>('both')
-  const [pAmount, setPAmount] = useState('')
+  // Left and right on their own, as on /pumping (0013): the side is derived
+  // from which breast gave milk, never picked. `pBase` is what the fields
+  // were prefilled with, so an untouched field keeps the exact stored ml.
+  const [pLeft, setPLeft] = useState('')
+  const [pRight, setPRight] = useState('')
+  const [pBase, setPBase] = useState({ left: '', right: '' })
   const [pNotes, setPNotes] = useState('')
   const [pAt, setPAt] = useState('')
 
@@ -206,9 +228,9 @@ export default function HistoryPage() {
       const mPumping = mergePending(rows.pumping, 'pumping_sessions', queued)
 
       setFeedings(mFeedings)
-      setDrawdowns(
-        applyPendingInventory(rows.containers ?? [], rows.drawdowns ?? [], queued).drawdowns,
-      )
+      const inventory = applyPendingInventory(rows.containers ?? [], rows.drawdowns ?? [], queued)
+      setDrawdowns(inventory.drawdowns)
+      setContainers(inventory.containers)
       setDiapers(mDiapers)
       setNursing(mNursing)
       setSleep(mSleep)
@@ -307,6 +329,21 @@ export default function HistoryPage() {
     if (baby) refresh(baby.id)
   }, [baby, refresh])
 
+  useEffect(() => {
+    if (!baby) return
+    let cancelled = false
+    milkRules(baby.id).then((res) => {
+      if (!cancelled && res.data) setRules(res.data)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [baby])
+
+  const liveContainers = containers.filter((c) => !c.voided_at)
+  const containerOf = (sessionId: string) =>
+    liveContainers.find((c) => c.source_session_id === sessionId)
+
   function startEdit(entry: ActivityEntry) {
     if (!isEditable(entry.kind)) return
     setErr(null)
@@ -336,8 +373,12 @@ export default function HistoryPage() {
     } else {
       const row = pumping.find((r) => r.id === entry.id)
       if (!row) return
-      setPSide(row.side)
-      setPAmount(row.amount_ml != null ? String(mlToUnit(row.amount_ml, DISPLAY_UNIT)) : '')
+      // A session from before left/right carries only a total: it goes in
+      // neither field, so nothing is split 50/50 behind anyone's back.
+      const base = { left: ozText(row.left_ml), right: ozText(row.right_ml) }
+      setPBase(base)
+      setPLeft(base.left)
+      setPRight(base.right)
       setPNotes(row.notes ?? '')
       setPAt(toHouseholdInputValue(new Date(row.pumped_at)))
     }
@@ -396,20 +437,40 @@ export default function HistoryPage() {
         ended_at: fromHouseholdInputValue(sEnd),
       })
     } else {
-      // Same parsing as the log form on /pumping: blank means "no amount".
-      const trimmed = pAmount.trim()
-      const amount = trimmed === '' ? null : Number(trimmed)
-      if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
-        setErr(t('history.amountNotNumber', { unit: t(`unit.${DISPLAY_UNIT}`) }))
+      // The same path as the edit on /pumping (0013): through
+      // update_pumping_session, so the container follows the new amount and
+      // is never left below what already went into bottles.
+      const row = pumping.find((r) => r.id === editing.id)
+      if (!row) {
         setBusy(false)
         return
       }
-      result = await updatePumping(editing.id, {
-        side: pSide,
-        amount_ml: amount === null ? null : Number(unitToMl(amount, DISPLAY_UNIT).toFixed(1)),
-        notes: pNotes.trim() || null,
-        pumped_at: fromHouseholdInputValue(pAt),
-      })
+      const l = keepMl(pLeft, pBase.left, row.left_ml)
+      const r = keepMl(pRight, pBase.right, row.right_ml)
+      if (l.problem || r.problem) {
+        setErr(t('milk.amountNotNumber'))
+        setBusy(false)
+        return
+      }
+      const pumpedAt = fromHouseholdInputValue(pAt)
+      if (Date.parse(pumpedAt) > Date.now()) {
+        setErr(t('past.inFuture'))
+        setBusy(false)
+        return
+      }
+      const container = containerOf(row.id)
+      const served = servedMl(container)
+      if (container && served > SERVED_EPSILON_ML && (l.ml ?? 0) + (r.ml ?? 0) < served) {
+        setErr(milkErrorText(`milk_served_exceeds_amount:${container.label}`, lang))
+        setBusy(false)
+        return
+      }
+      result = await updatePumpingSession(
+        row.id,
+        { left_ml: l.ml, right_ml: r.ml, notes: pNotes.trim() || null, pumped_at: pumpedAt },
+        { containers: liveContainers, rules },
+        { pending: !!row.pending, legacy: isLegacyPumping(row) },
+      )
     }
 
     if (result.error) {
@@ -428,6 +489,14 @@ export default function HistoryPage() {
     const { kind, id } = entry
     const feed = kind === 'feeding' ? feedings.find((r) => r.id === id) : undefined
     const inventory = !!feed && isInventoryBottleFeed(feed)
+    const pump = kind === 'pumping' ? pumping.find((r) => r.id === id) : undefined
+    // A session whose milk already went into a bottle can't go: the server
+    // refuses it too (milk_already_served), but saying so here works offline.
+    const pumpContainer = pump ? containerOf(pump.id) : undefined
+    if (pumpContainer && servedMl(pumpContainer) > SERVED_EPSILON_ML) {
+      setErr(milkErrorText(`milk_already_served:${pumpContainer.label}`, lang))
+      return
+    }
     // A pumping session also comes out of the stash total on /pumping, and a
     // bottle with a breakdown gives its milk back: each confirmation says so —
     // "nothing else changes" would be false there.
@@ -454,7 +523,7 @@ export default function HistoryPage() {
               ? await voidNursing(id)
               : kind === 'sleep'
                 ? await voidSleep(id)
-                : await voidPumping(id)
+                : await voidPumpingSession(id, { pending: !!pump?.pending })
 
     if (result.error) {
       setErr(t('common.couldNotDelete', { error: milkErrorText(result.error, lang) }))
@@ -517,6 +586,10 @@ export default function HistoryPage() {
                     entry.kind === 'feeding' ? feedings.find((r) => r.id === entry.id) : undefined
                   const locked = !!feedRow && isInventoryBottleFeed(feedRow)
                   const breakdown = locked ? describeBottle(feedRow!, drawdowns, lang) : null
+                  const pumpRow =
+                    isEditing && entry.kind === 'pumping'
+                      ? pumping.find((r) => r.id === entry.id)
+                      : undefined
                   return (
                     <div key={`${entry.kind}-${entry.id}`}>
                       <div className="feed-item">
@@ -723,31 +796,46 @@ export default function HistoryPage() {
 
                       {isEditing && editing.kind === 'pumping' && (
                         <div className="edit-panel">
-                          {/* row-wrap: "Izquierdo / Derecho / Ambos" no entra
-                              en una línea en la pared — lo mismo que /pumping. */}
-                          <div className="row row-wrap">
-                            {PUMP_SIDES.map((s) => (
-                              <Btn
-                                key={s}
-                                variant={pSide === s ? 'action' : 'quiet'}
-                                onClick={() => setPSide(s)}
-                              >
-                                {t(`sideButton.${s}`)}
-                              </Btn>
-                            ))}
+                          {pumpRow && isLegacyPumping(pumpRow) && (
+                            <p className="meta">
+                              {t('milk.legacyHint', {
+                                amount: formatMilkOz(pumpRow.amount_ml ?? 0),
+                              })}
+                            </p>
+                          )}
+                          {/* Left and right on their own, as on /pumping.
+                              row-wrap: two labelled fields don't always fit
+                              one line in the wall's large type. */}
+                          <div className="row-tight row-wrap">
+                            <div>
+                              <label className="label" htmlFor="history-pump-left">
+                                {t('side.left')}
+                              </label>
+                              <input
+                                id="history-pump-left"
+                                className="input narrow"
+                                value={pLeft}
+                                onChange={(e) => setPLeft(e.target.value)}
+                                inputMode="decimal"
+                                placeholder={t('unit.oz')}
+                                aria-label={t('milk.left', { unit: t('unit.oz') })}
+                              />
+                            </div>
+                            <div>
+                              <label className="label" htmlFor="history-pump-right">
+                                {t('side.right')}
+                              </label>
+                              <input
+                                id="history-pump-right"
+                                className="input narrow"
+                                value={pRight}
+                                onChange={(e) => setPRight(e.target.value)}
+                                inputMode="decimal"
+                                placeholder={t('unit.oz')}
+                                aria-label={t('milk.right', { unit: t('unit.oz') })}
+                              />
+                            </div>
                           </div>
-                          <input
-                            className="input narrow"
-                            value={pAmount}
-                            onChange={(e) => setPAmount(e.target.value)}
-                            inputMode="decimal"
-                            placeholder={t('common.unitOptional', {
-                              unit: t(`unit.${DISPLAY_UNIT}`),
-                            })}
-                            aria-label={t('history.amountIn', {
-                              unit: t(`unit.${DISPLAY_UNIT}`),
-                            })}
-                          />
                           <input
                             className="input"
                             value={pNotes}

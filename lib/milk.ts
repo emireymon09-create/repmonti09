@@ -26,6 +26,7 @@ import type {
   MilkDrawdown,
   MilkLocation,
   MilkRules,
+  PumpingSession,
   VolumeUnit,
   WithPending,
 } from '@/lib/types'
@@ -509,4 +510,19 @@ export function keepMl(
 ): ReturnType<typeof parseAmountMl> {
   if (text.trim() === prefilled.trim()) return { ml: storedMl ?? null }
   return parseAmountMl(text, 'oz')
+}
+
+// ------------------------------------------------------------- pumping edits
+
+/** Below this, what was served from a container is rounding, not milk. */
+export const SERVED_EPSILON_ML = 0.01
+
+/** Logged before left and right existed (0013): a total, no sides. */
+export function isLegacyPumping(row: PumpingSession): boolean {
+  return row.left_ml == null && row.right_ml == null && row.amount_ml != null
+}
+
+/** How much of a container already went into bottles (0 for none). */
+export function servedMl(c: MilkContainer | undefined): number {
+  return c ? Math.max(0, c.amount_ml - c.remaining_ml) : 0
 }
