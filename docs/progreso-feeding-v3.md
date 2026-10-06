@@ -361,3 +361,20 @@ Rama `feat/milk-inventory-v3-release` desde `0cbe798` (v0.12.1). Detalle en
 | IMPORT. (seguridad) | Un biberón de la app vieja no descuenta: "Lo que hay" infla | **Corregido en documentos**: regla de la ventana (runbook paso 0) y consulta de control (paso 9); dicho en compatibilidad §3/§5/§7 |
 | MENOR | `lock_timeout`, contraseña en la línea de `pg_dump`, nota de *Promote*, encabezado viejo de 0014 | **Corregido** |
 | MENOR | Caducidad contra `fed_at` del cliente; mover `pumped_at` de una servida; porciones minúsculas; `log_pumping_session` idempotente sin verificar contenedor | **Aceptados y declarados** (handoff §5.4): son reglas de negocio, no del despliegue; cambiarlas toca la semántica de las RPC |
+
+**Re-revisión independiente de lo corregido** (sobre `fc858ea`): 0 bloqueantes.
+
+| Sev. | Hallazgo | Resolución |
+|---|---|---|
+| IMPORT. | La consulta de control del runbook filtraba por hora del evento: la app vieja puede registrar con hora pasada y su cola reenvía la hora original | **Corregido**: filtra por `created_at` |
+| IMPORT. | Si 0011 da `false` en la nube (no confirmado, `CLAUDE.md` §7.6) el runbook mandaba frenar | **Corregido**: 0011 = `false` se anota y no bloquea |
+| MENOR | `AND` sin orden garantizado frente a `cron.job` ausente | **Corregido**: `CASE` |
+| MENOR | "al pie de la letra" contradecía el ejemplo con contraseña de `seguridad-operacional.md` | **Corregido** en el runbook |
+| MENOR | Tras un error en 3b la sesión queda en transacción abortada | **Corregido**: `rollback;` |
+| MENOR | Evidencia de navegador no reproducible desde el repo | **Corregido**: rotulada como evidencia de la sesión |
+| MENOR | `snapshot()` ignoraba errores de lectura (comparación vacía) | **Corregido**: `expect(error).toBeNull()`; 151/151 |
+| MENOR | En el caso mixto no se fija qué contenedor falla | **Aceptado**: la aserción de "la base no cambia" sigue valiendo |
+
+Estas correcciones de segunda vuelta se verificaron con comandos (las dos
+consultas en transacción `READ ONLY` contra la base local, integración 151/151);
+no pasaron por una tercera revisión de agente.

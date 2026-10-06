@@ -33,8 +33,9 @@ Documentos: `docs/compatibilidad-leche.md` (qué pasa con teléfonos viejos),
 
 ## 1. Respaldo de producción — `pg_dump`
 
-Seguí `docs/seguridad-operacional.md` §10.2 al pie de la letra (conexión directa,
-no el pooler; formato custom; `pg_dump` de versión ≥ la del servidor):
+Seguí `docs/seguridad-operacional.md` §10.2 (conexión directa, no el pooler;
+formato custom; `pg_dump` de versión ≥ la del servidor), pero sin poner la
+contraseña en la URL como hace el ejemplo de allá:
 
 ```
 pg_dump -Fc -h db.<ref>.supabase.co -p 5432 -U postgres -d postgres -f "amelia-prod-2026-MM-DD-pre-leche.dump"
@@ -59,7 +60,8 @@ Esperado:
 
 | Fila | Esperado | Si no |
 |---|---|---|
-| 0001 … 0012 | `true` | **Pará.** Producción no está donde creemos; no sigas sin revisar |
+| 0001 … 0012, salvo 0011 | `true` | **Pará.** Producción no está donde creemos; no sigas sin revisar |
+| 0011_push_cron | `true` o `false` | `false` = el aviso push por `pg_cron` no está configurado en la nube (`CLAUDE.md` §7.6 ya lo daba por no confirmado). **No bloquea** la leche: anotalo y seguí |
 | 0013_changer_display_scopes | `true` o `false` | `false` → hacé el paso 3a |
 | 0014_milk_inventory (DEBE dar false) | `false` | `true` → **pará**: alguien aplicó parte del inventario |
 
@@ -102,7 +104,8 @@ El `lock_timeout` hace que, si una escritura de un teléfono tiene tomada la
 tabla, la migración falle limpia a los 5 s en vez de dejar colgadas las
 escrituras de todos (los `alter table` piden un bloqueo exclusivo). Si pasa,
 esperá un minuto y volvé a correrla. Esperado: termina sin `ERROR`. Si aparece un error, el `begin` hace que no quede
-nada aplicado: anotá el mensaje y **no sigas** (no pushees).
+nada aplicado: corré `rollback;` para cerrar la transacción abortada, anotá el
+mensaje y **no sigas** (no pushees).
 
 Verificá corriendo otra vez `docs/verificar-antes-leche.sql`: la fila 0014 ahora
 da **`true`** (es lo esperado *después*), y 0001–0013 siguen en `true`.
@@ -241,16 +244,18 @@ Y en el SQL Editor, solo lectura:
 Para limpiar la prueba: borrá desde la app lo que registraste (no a mano en SQL).
 
 **Lo que registraron aparatos viejos durante la ventana** (solo lectura;
-reemplazá la hora por la del paso 3b, en UTC):
+reemplazá la hora por la del paso 3b, en UTC). Filtra por `created_at` (cuándo
+llegó a la base), no por la hora de la toma: la app vieja puede registrar con
+hora pasada y su cola offline reenvía la hora original:
 
 ```sql
 select 'biberón sin desglose' as que, id, fed_at as cuando, amount_ml
 from feedings where feeding_type = 'bottle' and breast_milk_ml is null and formula_ml is null
-  and voided_at is null and fed_at > 'AAAA-MM-DD HH:MM+00'
+  and voided_at is null and created_at > 'AAAA-MM-DD HH:MM+00'
 union all
 select 'extracción legada', id, pumped_at, amount_ml
 from pumping_sessions where left_ml is null and right_ml is null and amount_ml is not null
-  and voided_at is null and pumped_at > 'AAAA-MM-DD HH:MM+00';
+  and voided_at is null and created_at > 'AAAA-MM-DD HH:MM+00';
 ```
 
 Si sale algo: si fue leche materna, borrala desde Historial (⋯ → Borrar) y

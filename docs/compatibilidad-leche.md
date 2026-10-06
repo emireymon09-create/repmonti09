@@ -6,7 +6,9 @@ teléfono o pantalla de pared con la PWA vieja abierta o en caché. Este documen
 dice qué pasa en ese tramo, con evidencia.
 
 Etiquetas: **[VERIFICADO]** = con prueba ejecutada el 6 oct 2026 en local
-(127.0.0.1) y contrastada con SQL. **[NO VERIFICADO]** = con motivo.
+(127.0.0.1) y contrastada con SQL (los recorridos de navegador son evidencia de
+la sesión: sus scripts no están en el repo; lo reproducible son las pruebas de
+integración de `tests/integration/milk.test.ts`). **[NO VERIFICADO]** = con motivo.
 
 Montaje de la prueba: base local migrada desde cero 0001–0014 (`pnpm db:reset`
 desde la rama de release); build de producción de **v0.12.1 pura** (worktree

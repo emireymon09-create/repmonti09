@@ -12,7 +12,8 @@
 -- una por vez.
 --
 -- Resultado esperado en producción v0.12.1 ANTES del despliegue:
---   0001 … 0012 → true
+--   0001 … 0012 → true (salvo 0011: puede dar false si el aviso push nunca se
+--        terminó de configurar en la nube; NO bloquea la leche, ver runbook)
 --   0013_changer_display_scopes → true SI ya se aplicó (si da false, se aplica
 --        primero: runbook paso 3a)
 --   0014_milk_inventory → false en TODAS sus columnas (si alguna da true, PARÁ:
@@ -56,10 +57,11 @@ from (values
      exists (select 1 from information_schema.columns where table_schema='public' and table_name='push_subscriptions' and column_name='consecutive_403'),
      'push_subscriptions.consecutive_403'),
   ('0011_push_cron',
-     to_regclass('cron.job') is not null
-       and exists (select 1 from pg_extension where extname='pg_net')
-       and (xpath('/row/n/text()', query_to_xml(
-              'select count(*) as n from cron.job where jobname = ''nursing-check''', false, true, '')))[1]::text::int > 0,
+     case when to_regclass('cron.job') is null then false
+          else exists (select 1 from pg_extension where extname='pg_net')
+               and (xpath('/row/n/text()', query_to_xml(
+                      'select count(*) as n from cron.job where jobname = ''nursing-check''', false, true, '')))[1]::text::int > 0
+     end,
      'job ''nursing-check'' en cron.job + pg_net'),
   ('0012_schedule_appointments_calendar',
      to_regclass('public.family_settings') is not null and to_regclass('public.calendar_feeds') is not null

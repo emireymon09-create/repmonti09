@@ -615,6 +615,8 @@ describe.skipIf(!ready)('ramas de 0014 sin cubrir (auditoría 6 oct 2026) — ne
         .eq('baby_id', babyId)
         .order('id'),
     ])
+    // A failed read would give null on both sides and make "unchanged" pass for nothing.
+    for (const r of [c, d, fe, p]) expect(r.error).toBeNull()
     return { containers: c.data, drawdowns: d.data, feedings: fe.data, sessions: p.data }
   }
   async function pumpOk(
