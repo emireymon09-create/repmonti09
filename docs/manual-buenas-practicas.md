@@ -172,8 +172,10 @@ campo todavía, así que el bug estaba latente. Lo agarró un test, no una lectu
 - Los tokens de escala **se re-apuntan** en el breakpoint de 1180px. No se
   bifurcan los componentes: el mismo `<Card>` sirve al teléfono y a la pantalla
   de pared, y lo que cambia es el valor del token.
-- El objetivo **primario** de diseño es la pantalla de 27" leída desde el otro
-  lado del cuarto. El teléfono es el caso a una mano, de madrugada.
+- El objetivo **primario** de diseño es el teléfono: a una mano, de madrugada.
+  Después vienen la pantalla táctil del cambiador y, tercera, la pared de 27",
+  donde Amelia es una tarjeta del dashboard de Home Assistant, no un kiosco
+  (decisión de Emilio, 6 oct 2026).
 
 Detalles completos en `design.md`.
 

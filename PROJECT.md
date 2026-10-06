@@ -38,14 +38,21 @@ This app — **Amelia** — is the first one being built and deployed.
 │  THE HOUSE — two boxes, not one                        │
 │                                                        │
 │  NUC — vision/visor, the HMI, meal-prep BPM, house     │
-│        control, Brother QL-600 label printer           │
+│        control, Brother QL-600 label printer, Frigate  │
+│        (OpenVINO on the iGPU) for the nursery camera:  │
+│        Reolink E1 Zoom (RTSP local only, P2P/cloud     │
+│        disabled on the camera)                         │
 │                                                        │
 │  HA Green — Home Assistant: sensors, automations,      │
-│        Frigate, Reolink Argus 3 Pro (RTSP local only,  │
-│        P2P/cloud disabled on the camera), Aqara via    │
-│        ZBT-1, HomeKit bridge. At littleneighborssj.com │
+│        Aqara via ZBT-1, HomeKit bridge.                │
+│        At littleneighborssj.com                        │
 └─────────────────────────────────────────────────────┘
 ```
+
+> **Camera corrected 2026-10-06:** this diagram used to say Reolink Argus 3
+> Pro with Frigate on the HA Green. The camera is a Reolink E1 Zoom and
+> Frigate runs on the NUC (OpenVINO is Intel-only), per
+> `proposals/nursery-camera-integration.md`.
 
 > **Open question (FAMILY_HUB.md §4.2):** which of the two boxes derives
 > sleep events and calls `/api/ingest` is not decided yet. Earlier
@@ -291,8 +298,12 @@ ever disagree.
 Hub surface first and a standalone app second:
 
 - `app/globals.css` — every size, color and radius is a token. The
-  27" wall screen is the primary target (`CONVENTIONS.md` §3), so the
-  scale tokens re-point above 1180px and the *same components* render
+  phone is the primary target; second is the changing-table touchscreen
+  (`proposals/changer-display.md`, its own firmware); third is the 27"
+  Home Assistant wall hub, where Amelia is **one** card/panel of Emilio's
+  HA dashboard, not a dedicated full-screen kiosk (Emilio's decision,
+  2026-10-06; until then the wall was primary, per `CONVENTIONS.md` §3).
+  The scale tokens re-point above 1180px and the *same components* render
   as a one-handed phone column or as a display readable across the
   living room. Tap targets are 52px on a phone and 84px on the wall,
   against a 44px floor.
@@ -317,10 +328,11 @@ Hub surface first and a standalone app second:
   2026-09-22 it is what `/history` and the three section pages render.
 
 **Installable, and it survives bad wifi.** `app/manifest.ts` +
-`public/sw.js` make it an installed app on a phone home screen and a
-standalone kiosk on the wall screen. The service worker only caches the
-same-origin app shell — never a Supabase response, which would put auth
-tokens in a cache on a shared screen.
+`public/sw.js` make it an installed app on a phone home screen, the
+primary surface. On the wall it is one panel of the Home Assistant
+dashboard, not a standalone kiosk (2026-10-06). The service worker only
+caches the same-origin app shell — never a Supabase response, which
+would put auth tokens in a cache on a shared screen.
 
 Writes that can't reach the server are kept on the device
 (`lib/queue.ts`, IndexedDB) and replayed in order when it's back. Rows

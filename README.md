@@ -4,10 +4,13 @@ Seguimiento de una bebé para uso doméstico: tomas, lactancia, pañales, sueño
 extracción de leche, crecimiento y turnos médicos. La usan dos padres, cada uno
 con su propio login, sobre una base con RLS.
 
-**Dos superficies, un solo set de componentes.** El objetivo **primario** de
-diseño es una pantalla de pared de 27" en modo kiosco, leída desde el otro lado
-del cuarto. El teléfono es secundario, y su caso de uso es a una mano, a las 3
-de la mañana, con wifi malo. Si estás por tocar algo visual, `design.md` primero.
+**Prioridad de pantallas (decisión de Emilio, 6 oct 2026).** El objetivo
+**primario** de diseño es el teléfono: a una mano, a las 3 de la mañana, con
+wifi malo. Segunda, la pantalla táctil del cambiador
+(`proposals/changer-display.md`). Tercera, el hub de pared de 27" de Home
+Assistant, donde Amelia es **una** tarjeta del dashboard de HA, no un kiosco a
+pantalla completa. Teléfono y pared usan un solo set de componentes. Si estás
+por tocar algo visual, `design.md` primero.
 
 Todo corre **local**: Postgres, Auth y API de verdad, en Docker, sin cuentas en
 la nube y sin nada desplegado todavía.

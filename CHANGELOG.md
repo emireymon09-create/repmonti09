@@ -4,6 +4,14 @@ Every version of Amelia, newest first. The current version is the `version`
 field in `package.json`; this file is the history. A test fails if the two
 disagree. Shown in the app under the settings gear → Version history.
 
+## [0.12.3] - 2026-10-06
+
+- **Nothing in the app changed.** The project notes now say the phone comes first, then the
+  touchscreen at the changing table, then the wall screen, where Amelia is one panel of the Home
+  Assistant dashboard instead of taking over the whole screen.
+- The notes about the nursery camera are corrected: it's a Reolink E1 Zoom, and the software that
+  watches it runs on the NUC.
+
 ## [0.12.1] - 2026-10-05
 
 - **The changing-table screen can update itself.** Its new firmware is published here, and the
