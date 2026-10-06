@@ -96,11 +96,19 @@ batch, cuando haya un batch": la unidad es **el push**.
 lactancia, pañales, sueño, extracción de leche, crecimiento y turnos
 médicos. La usan dos padres, cada uno con su login propio.
 
-Dos superficies, **un mismo set de componentes**:
+Tres pantallas, en este orden de prioridad (decisión de Emilio, 6 oct 2026):
 
-- **Teléfono** — uso a una mano, a las 3 de la mañana, con wifi malo.
-- **Pantalla de pared de 27"** — kiosco, se lee desde el otro lado del
-  cuarto. Es el objetivo **primario** de diseño (ver `design.md`).
+- **Teléfono** — el objetivo **primario** de diseño. Uso a una mano, a las 3
+  de la mañana, con wifi malo.
+- **Pantalla táctil del cambiador** — segunda. Un control remoto chico al
+  costado del cambiador, no una app aparte (`proposals/changer-display.md`).
+- **Hub de pared de Home Assistant (27")** — tercera. Amelia es **una**
+  tarjeta/panel dentro del dashboard de HA de Emilio, **no** un kiosco propio
+  a pantalla completa. Se lee desde el otro lado del cuarto.
+
+Teléfono y pared comparten **un mismo set de componentes** (ver `design.md`);
+el cambiador es firmware propio que habla con la API de dispositivos. Hasta el
+6 oct 2026 la pared de 27" en modo kiosco era el objetivo primario.
 
 Es la **primera pieza de un ecosistema mayor ("Family Hub")**. Tiene su
 propio deploy, pero **no** su propia base de datos: a futuro comparte un

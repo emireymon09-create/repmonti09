@@ -37,8 +37,13 @@ real**, así que `env(safe-area-inset-*)` vale 0 en todas esas cifras: los
 
 **Dos superficies, un solo set de componentes.**
 
-La pantalla de pared de 27" es el objetivo **primario**; el teléfono es
-secundario. No hay componentes bifurcados: la hoja de estilos
+El **teléfono** es el objetivo **primario** (decisión de Emilio, 6 oct
+2026). Segunda, la pantalla táctil del cambiador
+(`proposals/changer-display.md`), que es firmware propio y no usa estos
+componentes. Tercera, el hub de pared de 27" de Home Assistant, donde Amelia
+es **una** tarjeta/panel del dashboard de HA de Emilio, no un kiosco dedicado
+a pantalla completa. Hasta esa fecha la pared era el objetivo primario y el
+teléfono el secundario. No hay componentes bifurcados: la hoja de estilos
 **re-apunta los tokens de escala** por encima de 1180px y el mismo markup
 se renderiza como columna de teléfono o como display legible desde el
 otro lado del living.
@@ -1006,7 +1011,7 @@ que viva adentro. Medido con `<text>` adentro, antes de corregirlo:
 | 390px | 3,24 | 3,04 | 1,07× | 34,1 × 18,4 px |
 | 1440px | 4,01 | 2,86 | **1,40×** | 42,2 × 16,4 px |
 
-O sea: en **la pared**, que es el objetivo primario de diseño (§1), las letras
+O sea: en **la pared**, que entonces era el objetivo primario de diseño (§1), las letras
 salían 40 % más anchas que altas y con 14,3 px de alto efectivo — **más chicas
 que en el teléfono**, exactamente al revés de lo que esa pantalla necesita.
 Sacándolas del SVG el texto vuelve a ser texto de la página: sin deformar y
