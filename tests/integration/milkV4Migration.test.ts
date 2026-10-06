@@ -146,9 +146,14 @@ describe.skipIf(!available)('v4 · la migración 0015 sobre datos (I-104, I-105)
   it('I-105 sobre datos que no cierran: aborta con milk_invariant_broken y no aplica nada', () => {
     // Un contenedor que dice tener más de lo que le entró menos lo servido: lo
     // que 0014 nunca escribiría, sembrado a mano. Todo en UNA transacción que
-    // se cae entera.
+    // se cae entera. (Hasta R-10 esto sembraba remaining 70 de 90, que es lo
+    // CONTRARIO: menos de lo que dice la cuenta. Esa forma la deja la reversa
+    // en un ocupado con leche perdida, y 0015 ahora la recupera como lost_ml —
+    // tests/integration/milkV4Reapply.test.ts. La que tiene que abortar es
+    // ésta: leche que no puede existir — M2, de 60 ml y con 60 servidos, que
+    // dice tener 20.)
     const broken = seedV3(`
-      update milk_containers set remaining_ml = 70 where id = '${ids.m1}';`)
+      update milk_containers set remaining_ml = 20 where id = '${ids.m2}';`)
     const r = psql(wrapped(broken + migration(m0015)))
     expect(r.ok).toBe(false)
     expect(r.err).toMatch(/milk_invariant_broken/)

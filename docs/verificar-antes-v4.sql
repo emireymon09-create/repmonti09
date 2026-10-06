@@ -163,21 +163,25 @@ from (values
 --    OJO: si 0015 YA está aplicada, la fila INV-1 cuenta como falla todo
 --    contenedor con desecho o leche perdida; ahí usá la consulta completa de
 --    docs/arquitectura-v4.md §2.4.
+--    Sobre una base que pasó por docs/rollback-leche-v4.sql, 0015 REPARA antes
+--    de contar (R-10): los anulados con porciones vivas vuelven liberados y la
+--    leche que falta en un vivo va a lost_ml. Por eso acá INV-1 cuenta solo lo
+--    que sobra (remaining MAYOR que amount − servido) y lo reparable está en
+--    la consulta 4, no acá. INV-8 sí mira también a los que 0015 va a
+--    devolver.
 select c.chequeo,
        case when to_regclass('public.milk_containers') is null then null
             else (xpath('/row/n/text()', query_to_xml(c.sql, false, true, '')))[1]::text::int
        end as filas
 from (values
-  ('INV-1 vivo con remaining <> amount - servido',
-   'select count(*) as n from milk_containers c where c.voided_at is null and abs(c.amount_ml - coalesce((select sum(d.amount_ml) from milk_drawdowns d where d.container_id = c.id and d.voided_at is null), 0) - c.remaining_ml) > 1e-9'),
+  ('INV-1 vivo con remaining > amount - servido (leche que no puede existir)',
+   'select count(*) as n from milk_containers c where c.voided_at is null and c.amount_ml - coalesce((select sum(d.amount_ml) from milk_drawdowns d where d.container_id = c.id and d.voided_at is null), 0) - c.remaining_ml < -1e-9'),
   ('INV-2 dos vivos con leche y la misma cinta',
    'select count(*) as n from (select 1 from milk_containers where voided_at is null and remaining_ml >= 0.15 group by baby_id, label having count(*) > 1) x'),
-  ('INV-4 anulado con porciones vivas',
-   'select count(*) as n from milk_containers c where c.voided_at is not null and exists (select 1 from milk_drawdowns d where d.container_id = c.id and d.voided_at is null)'),
   ('INV-6 toma con desglose que no cierra',
    'select count(*) as n from feedings f where f.voided_at is null and (f.breast_milk_ml is not null or f.formula_ml is not null) and (abs(coalesce(f.breast_milk_ml, 0) - coalesce((select sum(d.amount_ml) from milk_drawdowns d where d.feeding_id = f.id and d.voided_at is null), 0)) > 1e-9 or abs(f.amount_ml - coalesce(f.breast_milk_ml, 0) - coalesce(f.formula_ml, 0)) > 1e-9)'),
   ('INV-8 extracción viva con total distinto a su contenedor',
-   'select count(*) as n from milk_containers c join pumping_sessions ps on ps.id = c.source_session_id where c.voided_at is null and ps.voided_at is null and ps.amount_ml is distinct from c.amount_ml'),
+   'select count(*) as n from milk_containers c join pumping_sessions ps on ps.id = c.source_session_id where (c.voided_at is null or exists (select 1 from milk_drawdowns d where d.container_id = c.id and d.voided_at is null)) and ps.voided_at is null and ps.amount_ml is distinct from c.amount_ml'),
   ('INV-9 porción viva de una toma anulada',
    'select count(*) as n from milk_drawdowns d join feedings f on f.id = d.feeding_id where d.voided_at is null and f.voided_at is not null')
 ) as c(chequeo, sql);
@@ -199,8 +203,12 @@ from (values
    'select count(*) as n from milk_containers where voided_at is null and remaining_ml >= 0.15 and expires_at <= now()'),
   ('ocupados con cinta > M6',
    'select count(*) as n from milk_containers where voided_at is null and remaining_ml >= 0.15 and substring(label from 2)::numeric > 6'),
-  ('contenedores anulados (no cambian)',
-   'select count(*) as n from milk_containers where voided_at is not null'),
+  ('contenedores anulados sin porciones vivas (no cambian)',
+   'select count(*) as n from milk_containers c where c.voided_at is not null and not exists (select 1 from milk_drawdowns d where d.container_id = c.id and d.voided_at is null)'),
+  ('anulados CON porciones vivas (los deja la reversa v4): 0015 los devuelve liberados',
+   'select count(*) as n from milk_containers c where c.voided_at is not null and exists (select 1 from milk_drawdowns d where d.container_id = c.id and d.voided_at is null)'),
+  ('vivos con remaining < amount - servido (los deja la reversa v4): la diferencia va a lost_ml',
+   'select count(*) as n from milk_containers c where c.voided_at is null and c.amount_ml - coalesce((select sum(d.amount_ml) from milk_drawdowns d where d.container_id = c.id and d.voided_at is null), 0) - c.remaining_ml > 1e-9'),
   ('tomas vivas con desglose',
    'select count(*) as n from feedings where voided_at is null and (breast_milk_ml is not null or formula_ml is not null)'),
   ('biberones vivos sin desglose (legados; v4 los estima)',

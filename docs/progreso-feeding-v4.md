@@ -182,7 +182,25 @@ nube.
   0001–0014 vs 0001–0015+datos+reversa → **diff 0 líneas**; idempotente;
   cadena con `rollback-leche.sql` → diff 0 contra 0001–0013; suites v3 151/151 y
   v0.12.1 118/118 sobre la base revertida.
-- **Defecto R-10 (abierto):** reaplicar 0015 después de la reversa, con datos
+- **Defecto R-10 (corregido, ver abajo):** reaplicar 0015 después de la reversa, con datos
   reales de v4 (número reusado tras servir, o desechado tras servir), aborta con
   `milk_invariant_broken` (falla cerrado, no aplica nada). Se corrige en la
   migración antes del cierre.
+
+### Correcciones R-10 y tope de 1000 filas [VERIFICADO]
+
+- **R-10:** 0015 gana la sección "VOLVER A v4 TRAS LA REVERSA": un contenedor
+  anulado con porciones vivas (forma que solo produce la reversa) vuelve como
+  liberado, y el sobrante de la cuenta va a `lost_ml`, nunca a "Lo que hay".
+  `rollback-leche-v4.sql` solo cambió comentarios (0 líneas de SQL). Prueba
+  `tests/integration/milkV4Reapply.test.ts`: el director la corrió con la 0015
+  anterior → **2 failed** (`milk_invariant_broken`); con la corrección → **2
+  passed**. El mismo test re-verifica en cada ciclo el diff de esquema contra
+  0001–0014 y la cadena a 0001–0013.
+- **Tope `max_rows` (1000):** `lib/readAll.ts` lee en páginas de 1000 con orden
+  estable; lo usan las lecturas que suman (`*Since`, contenedores, porciones,
+  desechos, estimación, crecimiento, turnos). Pruebas `tests/unit/readAll.test.ts`
+  (4/4 fallaban antes con un cliente que corta en 1000) y
+  `tests/integration/readAll.test.ts` (>1000 filas reales, página de 7).
+- Verificación del director: `tsc`/`lint`/`format:check` OK, unitarias
+  **550/550** ×4 TZ, integración **298/298**.

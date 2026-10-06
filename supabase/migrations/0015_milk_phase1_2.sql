@@ -32,7 +32,9 @@
 --     migración entera se aborta con `milk_invariant_broken`.
 --
 -- Aditiva: nada se renumera, nada se anula, ninguna fila v3 cambia salvo la
--- marca `released_at` de los contenedores ya vacíos (ARQ §6).
+-- marca `released_at` de los contenedores ya vacíos (ARQ §6). Sobre una base
+-- que pasó por docs/rollback-leche-v4.sql, además deshace lo que esa reversa
+-- tuvo que hacer para v3 (sección VOLVER A v4 TRAS LA REVERSA, R-10).
 
 -- Los UPDATE del backfill de abajo pasan por la guarda de milk_containers
 -- (0014), que solo deja escribir con esta bandera. Es local a la transacción.
@@ -88,6 +90,54 @@ drop index milk_containers_label_live;
 create unique index milk_containers_label_occupied
   on milk_containers (baby_id, label)
   where voided_at is null and released_at is null;
+
+-- ================================================================ VOLVER A v4 TRAS LA REVERSA
+
+-- docs/rollback-leche-v4.sql (la reversa de esta migración) deja dos formas que
+-- v3 tolera y la invariante de abajo no (R-10, docs/compatibilidad-v4.md
+-- §5.3). Las dos SOLO las produce esa reversa: ninguna función de 0014 las
+-- escribe (v3 nunca anula un contenedor servido y siempre deja remaining =
+-- amount − servido). Sobre datos v3 comunes los dos UPDATE no tocan una fila.
+--
+-- 1. Anulado con porciones vivas: el contenedor viejo de un número reusado, o
+--    uno desechado después de servir, que la reversa anuló porque v3 exige una
+--    cinta viva por bebé o le devolvería leche tirada. Vuelve como LIBERADO
+--    (nunca ocupado: su número puede tenerlo otro, y físicamente ya no tiene
+--    leche), con la hora de liberado que la reversa guardó en voided_at.
+--    Conserva el polvo (< 0,15 ml) si lo tenía; si una toma de v3 anulada le
+--    "devolvió" leche mientras estaba anulado, esa leche no está en ningún
+--    biberón: remaining 0, y el resto lo pone el paso 2 en lost_ml.
+--    Va DESPUÉS del índice nuevo: con el viejo (una cinta no anulada por bebé)
+--    el M3 viejo chocaría con el M3 que la ocupa hoy.
+update milk_containers c
+   set voided_at = null,
+       released_at = c.voided_at,
+       remaining_ml = case when c.remaining_ml < 0.15
+                           then least(c.remaining_ml, greatest(c.amount_ml - s.ml, 0))
+                           else 0 end
+  from (select container_id, sum(amount_ml) as ml
+          from milk_drawdowns where voided_at is null group by container_id) s
+ where s.container_id = c.id and c.voided_at is not null;
+
+-- 2. Leche que no está en el biberón ni se sirvió: amount − servido −
+--    remaining > 0 en un contenedor vivo. La reversa tira `lost_ml` y los
+--    desechos, así que eso es: la leche perdida de un ocupado (el NOTICE de la
+--    reversa) y la desechada o perdida de los que devolvió el paso 1. Va a
+--    lost_ml, que es lo que es: nunca a remaining, así que "Lo que hay" no se
+--    mueve ni un ml. El residuo NEGATIVO (dice tener más de lo que le entró
+--    menos lo servido) no se toca: no lo produce nada nuestro, y la invariante
+--    de abajo aborta la migración (I-105).
+--    El desecho NO se reconstruye: la reversa lo borró (está escrito en ella) y
+--    ya no se distingue de la leche perdida; vuelve como perdida.
+update milk_containers c
+   set lost_ml = r.residual
+  from (select c2.id,
+               c2.amount_ml - c2.remaining_ml - coalesce((
+                 select sum(d.amount_ml) from milk_drawdowns d
+                  where d.container_id = c2.id and d.voided_at is null), 0) as residual
+          from milk_containers c2
+         where c2.voided_at is null) r
+ where r.id = c.id and r.residual > 1e-9 and r.residual < 100000;
 
 -- ================================================================ DESECHOS
 

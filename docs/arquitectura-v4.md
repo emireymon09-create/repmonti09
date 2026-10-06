@@ -682,6 +682,16 @@ Orden dentro de la transacción:
 5. `drop index milk_containers_label_live; create unique index
    milk_containers_label_occupied …`. No puede fallar: el índice viejo era más
    estricto (todos los no anulados), así que entre los ocupados no hay dobles.
+5b. **Volver a v4 tras la reversa (R-10, agregado el 6 oct 2026).** Dos UPDATE
+   que sobre datos v3 comunes no tocan una fila, porque solo
+   `docs/rollback-leche-v4.sql` produce lo que corrigen: (1) contenedor
+   **anulado con porciones vivas** → `voided_at = null`, `released_at` = su
+   `voided_at`, `remaining` = su polvo (< 0,15) o 0 — liberado, nunca ocupado;
+   va después del paso 5 porque con el índice viejo chocaría con el que ocupa
+   su número; (2) contenedor vivo con `amount − servido − remaining > 0` →
+   ese residuo a `lost_ml` (nunca a `remaining`: "Lo que hay" no cambia). El
+   residuo negativo no se toca y la invariante (paso 8) aborta. Detalle:
+   `docs/compatibilidad-v4.md` §5.3.
 6. Tablas nuevas, RLS, grants, triggers.
 7. Funciones (create or replace / drop + create), revoke/grant.
 8. Chequeo de la invariante (§2.4) en un `do` que aborta con
@@ -697,6 +707,8 @@ Qué queda de cada tipo de contenedor v3:
 | Con leche, vencido | caducada (Desechar disponible) |
 | Vaciado (`remaining < 0.15`) | libre; su número vuelve al selector |
 | Anulado | anulado (sin cambio) |
+| Anulado **con porciones vivas** (solo lo deja la reversa v4) | libre, con su polvo o 0 (paso 5b) |
+| Vivo con `remaining < amount − servido` (solo lo deja la reversa v4) | igual, con la diferencia en `lost_ml` (paso 5b) |
 | Extracción legada sin contenedor | sigue sin contenedor; alimenta el pozo de 2B (D-21) |
 
 ---
@@ -745,6 +757,15 @@ ciclo: `EMPTY_ML` se **mueve** acá y `lib/milk.ts` lo re-exporta).
   `DiscardArgs`, `EditBottleArgs`.
 
 ### 7.2 `lib/db.ts`
+
+**"Sin limit" quiere decir también "más allá de `max_rows`"** (MAXROWS, 6 oct
+2026). Supabase en la nube corta cada respuesta de PostgREST en 1000 filas, sin
+error; el stack local no tiene tope. Toda lectura de abajo marcada "sin limit"
+—y las `*Since`, `listDrawdowns`, `listGrowth` y `listAppointments`— pasa por
+`readAll` (`lib/readAll.ts`): `.range()` en páginas de 1000 hasta que una venga
+corta, con `.order('id')` de desempate (sin orden único el paginado repite y
+pierde filas) y sin repetir un `id`. Si el `max_rows` del proyecto se bajara de
+1000, hay que bajar `PAGE_SIZE` con él.
 
 | Función | Cambio |
 |---|---|
@@ -1025,7 +1046,8 @@ En un Postgres efímero con la misma imagen del stack local:
 4. En B: invariante v3 (`remaining = amount − servido` para no anulados, salvo
    los del pre-chequeo) y el índice viejo sin conflicto.
 5. Suite de v3-release (151/151) y de v0.12.1 (118/118) contra B.
-6. Volver a aplicar 0015 sobre B: entra y la invariante v4 da 0 filas.
+6. Volver a aplicar 0015 sobre B: entra y la invariante v4 da 0 filas (lo
+   hace posible el paso 5b de §6; `tests/integration/milkV4Reapply.test.ts`).
 
 ---
 
@@ -1080,5 +1102,5 @@ En un Postgres efímero con la misma imagen del stack local:
 | AJ-15 | V4-34 no-op "ya desechado o anulado" | También no-op si está **libre** (vaciado) | No hay nada que tirar ni número que liberar |
 | AJ-16 | V4-02/D-19 convertir "si se puede sin copia" | Se puede: `convertAmountText` se extrae de `BottleBuilder` a `lib/milk.ts` | Se elige **convertir** en los tres lugares |
 | AJ-17 | V4-10 tarjeta "Conservación" o hermana | Mismo card y mismo botón que las reglas | Una validación conjunta, un solo `saveMilkRules` |
-| AJ-18 | (implícito) `listContainers` sin limit | Crece con cada extracción (los liberados no se anulan) | Aceptado: ~1–3 filas/día; se mide en E-xx (tiempo de lectura con 2 000 contenedores) |
+| AJ-18 | (implícito) `listContainers` sin limit | Crece con cada extracción (los liberados no se anulan) | Aceptado: ~1–3 filas/día; se mide en E-xx (tiempo de lectura con 2 000 contenedores). Paginado en 1000 por el `max_rows` de la nube (§7.2) |
 | AJ-19 | V4-60 estimación "al leer" | Necesita una lectura **sin limit** nueva (`legacySplitInputs`) | Historial lee 20–100 filas; el pozo depende de todo lo anterior |

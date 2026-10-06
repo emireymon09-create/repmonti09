@@ -65,16 +65,28 @@
 -- lost_ml > 0 (caso raro: perdió leche cuando su número estaba tomado y
 -- después lo re-ocupó). En v3 remaining = amount − servido, así que la
 -- próxima toma o anulación de v3 sobre él le "devolvería" esa leche perdida.
--- Si el NOTICE lista alguno, corregilo a mano en v3 (anotar la diferencia) o
--- anulalo antes.
+-- Si te quedás en v3 y el NOTICE lista alguno, corregilo a mano en v3 (anotar
+-- la diferencia) o anulalo antes. Si vas a volver a v4, no hace falta: 0015
+-- se la devuelve a `lost_ml` (mientras v3 no la haya "devuelto" antes).
 --
--- OJO, VOLVER A v4 DESPUÉS DE ESTO: 0015 no vuelve a entrar si esta reversa
--- anuló algún contenedor del que se sirvió leche (el viejo de un número
--- reusado, o uno desechado después de servir) o si quedó un ocupado del
--- NOTICE: aborta con `milk_invariant_broken` sin aplicar nada (probado,
--- docs/compatibilidad-v4.md §5.3). La consulta 3 de
--- docs/verificar-antes-v4.sql lo anticipa. Si pensás volver a v4, guardá el
--- respaldo opcional de abajo.
+-- VOLVER A v4 DESPUÉS DE ESTO (días después, con la app v3 andando en el
+-- medio): se vuelve a aplicar 0015 tal cual, sin tocar nada a mano. 0015 deshace
+-- lo que esta reversa tuvo que hacer (sección "VOLVER A v4 TRAS LA REVERSA" de
+-- la migración, R-10): los contenedores que se anularon acá CON porciones
+-- vivas (el viejo de un número reusado, el desechado después de servir)
+-- vuelven como LIBERADOS, y la leche que no está en ningún biberón ni se sirvió
+-- (la perdida de un ocupado del NOTICE, la desechada) vuelve a `lost_ml`.
+-- "Lo que hay" no se mueve ni un ml. Lo que NO vuelve: los desechos (quedan
+-- como leche perdida), el sobró, N (vuelve a 6), las ediciones y las marcas de
+-- liberado de los que no tenían porciones (siguen anulados). Probado en
+-- Postgres efímero: tests/integration/milkV4Reapply.test.ts, y
+-- docs/compatibilidad-v4.md §5.3. Si querés recuperar desechos, sobró o N,
+-- guardá el respaldo opcional de abajo.
+--
+-- Hasta el 6 oct 2026 esto no funcionaba: 0015 abortaba con
+-- `milk_invariant_broken` (INV-4 por los anulados con porciones, INV-1 por el
+-- ocupado del NOTICE). Este script NO cambió para arreglarlo — el arreglo vive
+-- en 0015 — así que el esquema que deja sigue siendo el de 0001…0014.
 --
 -- Requiere 0014 puesta: sobre una base sin 0014 aborta sin cambiar nada.
 --

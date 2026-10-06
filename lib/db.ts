@@ -29,6 +29,7 @@ import {
   type PumpingArgs,
 } from '@/lib/milk'
 import { effectiveBottleCount, planBottleEdit } from '@/lib/milkBottles'
+import { PAGE_SIZE, readAll } from '@/lib/readAll'
 import { estimateLegacySplit, type LegacySplit } from '@/lib/milkEstimate'
 import type { FamilySettings } from '@/lib/schedule'
 import { documentLang, translate, type Lang, type MessageKey } from '@/lib/i18n'
@@ -382,7 +383,10 @@ export function keepLastGood<T extends Record<string, unknown>>(
  * still running) is read too.
  *
  * `db` is only for the integration tests, which run the same query as a
- * signed-in parent (tests/integration/since.test.ts).
+ * signed-in parent (tests/integration/since.test.ts). NO limit also means
+ * past the cloud's `max_rows` (1000 per response): every read here goes
+ * through readAll (lib/readAll.ts), a page at a time; `pageSize` is for the
+ * tests.
  */
 
 /** A PostgREST `or` filter: started, ended, or still running since `sinceIso`. */
@@ -394,14 +398,21 @@ export async function feedingsSince(
   babyId: string,
   sinceIso: string,
   db: Db = data(),
+  pageSize = PAGE_SIZE,
 ): Promise<Result<Feeding[]>> {
-  const { data: rows, error } = await db
-    .from('feedings')
-    .select('id, fed_at, feeding_type, amount_ml, notes')
-    .eq('baby_id', babyId)
-    .is('voided_at', null)
-    .gte('fed_at', sinceIso)
-    .order('fed_at', { ascending: false })
+  const { data: rows, error } = await readAll(
+    (from, to) =>
+      db
+        .from('feedings')
+        .select('id, fed_at, feeding_type, amount_ml, notes')
+        .eq('baby_id', babyId)
+        .is('voided_at', null)
+        .gte('fed_at', sinceIso)
+        .order('fed_at', { ascending: false })
+        .order('id')
+        .range(from, to),
+    pageSize,
+  )
   if (error) return fail([] as Feeding[], error)
   return ok((rows ?? []) as Feeding[])
 }
@@ -410,14 +421,21 @@ export async function nursingSince(
   babyId: string,
   sinceIso: string,
   db: Db = data(),
+  pageSize = PAGE_SIZE,
 ): Promise<Result<NursingSession[]>> {
-  const { data: rows, error } = await db
-    .from('nursing_sessions')
-    .select('id, side, started_at, ended_at')
-    .eq('baby_id', babyId)
-    .is('voided_at', null)
-    .or(overlapsSince(sinceIso))
-    .order('started_at', { ascending: false })
+  const { data: rows, error } = await readAll(
+    (from, to) =>
+      db
+        .from('nursing_sessions')
+        .select('id, side, started_at, ended_at')
+        .eq('baby_id', babyId)
+        .is('voided_at', null)
+        .or(overlapsSince(sinceIso))
+        .order('started_at', { ascending: false })
+        .order('id')
+        .range(from, to),
+    pageSize,
+  )
   if (error) return fail([] as NursingSession[], error)
   return ok((rows ?? []) as NursingSession[])
 }
@@ -426,14 +444,21 @@ export async function diapersSince(
   babyId: string,
   sinceIso: string,
   db: Db = data(),
+  pageSize = PAGE_SIZE,
 ): Promise<Result<DiaperChange[]>> {
-  const { data: rows, error } = await db
-    .from('diaper_changes')
-    .select('id, changed_at, diaper_type')
-    .eq('baby_id', babyId)
-    .is('voided_at', null)
-    .gte('changed_at', sinceIso)
-    .order('changed_at', { ascending: false })
+  const { data: rows, error } = await readAll(
+    (from, to) =>
+      db
+        .from('diaper_changes')
+        .select('id, changed_at, diaper_type')
+        .eq('baby_id', babyId)
+        .is('voided_at', null)
+        .gte('changed_at', sinceIso)
+        .order('changed_at', { ascending: false })
+        .order('id')
+        .range(from, to),
+    pageSize,
+  )
   if (error) return fail([] as DiaperChange[], error)
   return ok((rows ?? []) as DiaperChange[])
 }
@@ -442,14 +467,21 @@ export async function sleepSince(
   babyId: string,
   sinceIso: string,
   db: Db = data(),
+  pageSize = PAGE_SIZE,
 ): Promise<Result<SleepSession[]>> {
-  const { data: rows, error } = await db
-    .from('sleep_sessions')
-    .select('id, started_at, ended_at, source')
-    .eq('baby_id', babyId)
-    .is('voided_at', null)
-    .or(overlapsSince(sinceIso))
-    .order('started_at', { ascending: false })
+  const { data: rows, error } = await readAll(
+    (from, to) =>
+      db
+        .from('sleep_sessions')
+        .select('id, started_at, ended_at, source')
+        .eq('baby_id', babyId)
+        .is('voided_at', null)
+        .or(overlapsSince(sinceIso))
+        .order('started_at', { ascending: false })
+        .order('id')
+        .range(from, to),
+    pageSize,
+  )
   if (error) return fail([] as SleepSession[], error)
   return ok((rows ?? []) as SleepSession[])
 }
@@ -996,20 +1028,28 @@ export function voidPumpingSession(
  * Every container still on the list (not voided), oldest first: occupied,
  * expired, emptied and discarded alike — `released_at` and the discards say
  * which (lib/milkBottles.ts). No limit: the stash is a total, and the bottle
- * selector needs every occupied number however old (AJ-18).
+ * selector needs every occupied number however old (AJ-18). Read a page at a
+ * time (lib/readAll.ts): the cloud cuts each response at 1000 rows.
  */
 export async function listContainers(
   babyId: string,
   db: Db = data(),
+  pageSize = PAGE_SIZE,
 ): Promise<Result<MilkContainer[]>> {
-  const { data: rows, error } = await db
-    .from('milk_containers')
-    .select(
-      'id, source_session_id, label, amount_ml, remaining_ml, stored_at, location, expires_at, released_at, lost_ml',
-    )
-    .eq('baby_id', babyId)
-    .is('voided_at', null)
-    .order('stored_at', { ascending: true })
+  const { data: rows, error } = await readAll(
+    (from, to) =>
+      db
+        .from('milk_containers')
+        .select(
+          'id, source_session_id, label, amount_ml, remaining_ml, stored_at, location, expires_at, released_at, lost_ml',
+        )
+        .eq('baby_id', babyId)
+        .is('voided_at', null)
+        .order('stored_at', { ascending: true })
+        .order('id')
+        .range(from, to),
+    pageSize,
+  )
   if (error) return fail([] as MilkContainer[], error)
   return ok(
     ((rows ?? []) as MilkContainer[]).map((c) => ({
@@ -1025,17 +1065,24 @@ export async function listContainers(
 /**
  * Every portion still standing, with its container's tape. No limit, for the
  * same reason as listContainers: giving back a voided bottle's milk offline
- * needs that bottle's portions, however old.
+ * needs that bottle's portions, however old. A page at a time (lib/readAll.ts).
  */
 export async function listDrawdowns(
   babyId: string,
   db: Db = data(),
+  pageSize = PAGE_SIZE,
 ): Promise<Result<MilkDrawdown[]>> {
-  const { data: rows, error } = await db
-    .from('milk_drawdowns')
-    .select('id, feeding_id, container_id, amount_ml, milk_containers(label)')
-    .eq('baby_id', babyId)
-    .is('voided_at', null)
+  const { data: rows, error } = await readAll(
+    (from, to) =>
+      db
+        .from('milk_drawdowns')
+        .select('id, feeding_id, container_id, amount_ml, milk_containers(label)')
+        .eq('baby_id', babyId)
+        .is('voided_at', null)
+        .order('id')
+        .range(from, to),
+    pageSize,
+  )
   if (error) return fail([] as MilkDrawdown[], error)
   type Row = MilkDrawdown & { milk_containers?: { label: string } | { label: string }[] | null }
   return ok(
@@ -1050,17 +1097,25 @@ export async function listDrawdowns(
 /**
  * Every live discard (0015), oldest first, with its bottle's number. No limit:
  * "Discarded milk" is a total over all of them (D-13), and History lists each.
+ * A page at a time (lib/readAll.ts).
  */
 export async function listDiscards(
   babyId: string,
   db: Db = data(),
+  pageSize = PAGE_SIZE,
 ): Promise<Result<MilkDiscard[]>> {
-  const { data: rows, error } = await db
-    .from('milk_discards')
-    .select('id, container_id, amount_ml, discarded_at, reason, milk_containers(label)')
-    .eq('baby_id', babyId)
-    .is('voided_at', null)
-    .order('discarded_at', { ascending: true })
+  const { data: rows, error } = await readAll(
+    (from, to) =>
+      db
+        .from('milk_discards')
+        .select('id, container_id, amount_ml, discarded_at, reason, milk_containers(label)')
+        .eq('baby_id', babyId)
+        .is('voided_at', null)
+        .order('discarded_at', { ascending: true })
+        .order('id')
+        .range(from, to),
+    pageSize,
+  )
   if (error) return fail([] as MilkDiscard[], error)
   type Row = MilkDiscard & { milk_containers?: { label: string } | { label: string }[] | null }
   return ok(
@@ -1093,33 +1148,53 @@ export type LegacySplitInputs = {
 /**
  * The reads behind the estimate, with NO limit (AJ-19): which old pumping
  * fed which old bottle depends on everything before it, so a list cut at the
- * newest N rows would give another split, quietly.
+ * newest N rows would give another split, quietly. Each of the three is read
+ * a page at a time (lib/readAll.ts): the cloud cuts every response at 1000.
  */
 export async function legacySplitInputs(
   babyId: string,
   db: Db = data(),
+  pageSize = PAGE_SIZE,
 ): Promise<Result<LegacySplitInputs>> {
   const empty: LegacySplitInputs = { feedings: [], pumping: [], containerSessionIds: [] }
   const [feedings, pumping, containers] = await Promise.all([
-    db
-      .from('feedings')
-      .select('id, fed_at, feeding_type, amount_ml, breast_milk_ml, formula_ml')
-      .eq('baby_id', babyId)
-      .is('voided_at', null)
-      .eq('feeding_type', 'bottle')
-      .order('fed_at', { ascending: true }),
-    db
-      .from('pumping_sessions')
-      .select('id, pumped_at, amount_ml')
-      .eq('baby_id', babyId)
-      .is('voided_at', null)
-      .gt('amount_ml', 0)
-      .order('pumped_at', { ascending: true }),
-    db
-      .from('milk_containers')
-      .select('source_session_id')
-      .eq('baby_id', babyId)
-      .is('voided_at', null),
+    readAll(
+      (from, to) =>
+        db
+          .from('feedings')
+          .select('id, fed_at, feeding_type, amount_ml, breast_milk_ml, formula_ml')
+          .eq('baby_id', babyId)
+          .is('voided_at', null)
+          .eq('feeding_type', 'bottle')
+          .order('fed_at', { ascending: true })
+          .order('id')
+          .range(from, to),
+      pageSize,
+    ),
+    readAll(
+      (from, to) =>
+        db
+          .from('pumping_sessions')
+          .select('id, pumped_at, amount_ml')
+          .eq('baby_id', babyId)
+          .is('voided_at', null)
+          .gt('amount_ml', 0)
+          .order('pumped_at', { ascending: true })
+          .order('id')
+          .range(from, to),
+      pageSize,
+    ),
+    readAll(
+      (from, to) =>
+        db
+          .from('milk_containers')
+          .select('id, source_session_id')
+          .eq('baby_id', babyId)
+          .is('voided_at', null)
+          .order('id')
+          .range(from, to),
+      pageSize,
+    ),
   ])
   const error = feedings.error ?? pumping.error ?? containers.error
   if (error) return fail(empty, error)
@@ -1637,13 +1712,25 @@ export function milkErrorText(
 
 // --------------------------------------------------------------- growth
 
-export async function listGrowth(babyId: string): Promise<Result<GrowthMeasurement[]>> {
-  const { data: rows, error } = await data()
-    .from('growth_measurements')
-    .select('id, measured_at, weight_kg, height_cm, notes')
-    .eq('baby_id', babyId)
-    .is('voided_at', null)
-    .order('measured_at', { ascending: false })
+/** Every measurement, newest first. A page at a time (lib/readAll.ts): a cut
+ * would drop the oldest points of the curve, quietly. */
+export async function listGrowth(
+  babyId: string,
+  db: Db = data(),
+  pageSize = PAGE_SIZE,
+): Promise<Result<GrowthMeasurement[]>> {
+  const { data: rows, error } = await readAll(
+    (from, to) =>
+      db
+        .from('growth_measurements')
+        .select('id, measured_at, weight_kg, height_cm, notes')
+        .eq('baby_id', babyId)
+        .is('voided_at', null)
+        .order('measured_at', { ascending: false })
+        .order('id')
+        .range(from, to),
+    pageSize,
+  )
   if (error) return fail([] as GrowthMeasurement[], error)
   return ok((rows ?? []) as GrowthMeasurement[])
 }
@@ -1692,12 +1779,24 @@ export function voidGrowth(id: string): Promise<Result<null>> {
 
 const APPT_COLUMNS = 'id, title, appointment_type, scheduled_at, doctor_name, notes, completed'
 
-export async function listAppointments(babyId: string): Promise<Result<DoctorAppointment[]>> {
-  const { data: rows, error } = await data()
-    .from('doctor_appointments')
-    .select(APPT_COLUMNS)
-    .eq('baby_id', babyId)
-    .order('scheduled_at', { ascending: true })
+/** Every appointment, soonest first. A page at a time (lib/readAll.ts): a cut
+ * would drop the NEXT ones, which are the ones that matter. */
+export async function listAppointments(
+  babyId: string,
+  db: Db = data(),
+  pageSize = PAGE_SIZE,
+): Promise<Result<DoctorAppointment[]>> {
+  const { data: rows, error } = await readAll(
+    (from, to) =>
+      db
+        .from('doctor_appointments')
+        .select(APPT_COLUMNS)
+        .eq('baby_id', babyId)
+        .order('scheduled_at', { ascending: true })
+        .order('id')
+        .range(from, to),
+    pageSize,
+  )
   if (error) return fail([] as DoctorAppointment[], error)
   return ok((rows ?? []) as DoctorAppointment[])
 }

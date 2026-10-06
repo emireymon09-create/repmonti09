@@ -199,33 +199,70 @@ desglose final. En v3 la extracción de un contenedor anulado se ve sin cinta ni
 "servido" y v3 dejaría borrarla aunque se sirvió leche de ella (riesgo de ARQ
 §10.2).
 
-### 5.3 DEFECTO: volver a aplicar 0015 después de la reversa (R-10)
+### 5.3 Volver a v4 después de la reversa (R-10) — corregido el 6 oct 2026
 
-[VERIFICADO, Postgres efímero] Con datos reales de v4, **0015 no vuelve a
-entrar** sobre la base revertida: aborta con `milk_invariant_broken` (4 filas: la
-primera `INV-1 cuenta` de M7, más tres `INV-4 anulado con vivos`). Es seguro (la
-migración es una transacción y no aplica nada), pero ARQ §10.3 paso 6 esperaba
-"entra; INV 0 filas" y eso solo vale si la reversa no anuló ningún contenedor con
-porciones vivas.
+Hasta el 6 oct 2026 esto era un DEFECTO: con datos reales de v4, 0015 **no
+volvía a entrar** sobre la base revertida y abortaba con `milk_invariant_broken`
+(4 filas: `INV-1 cuenta` de M7, el ocupado con leche perdida del NOTICE, más tres
+`INV-4 anulado con vivos`). La reversa anula contenedores **servidos** —el viejo
+de un número reusado, que es el uso normal de v4, y uno desechado después de
+servir— y sus porciones siguen vivas porque las tomas no se tocan; y tira
+`lost_ml`, así que el ocupado del NOTICE queda con `remaining < amount −
+servido`.
 
-- **Por qué:** la reversa (ARQ §10.1 paso 3) anula contenedores **servidos** —un
-  desechado después de servir (caso 16) y, sobre todo, el contenedor viejo de un
-  **número reusado** que se vació sirviendo, que es el uso normal de v4—; sus
-  porciones siguen vivas porque las tomas no se tocan. 0015 exige INV-4 (anulado
-  ⇒ 0 porciones vivas). Y un contenedor del pre-chequeo (ocupado con
-  `lost_ml > 0`) queda con `remaining ≠ amount − servido` → INV-1.
-- **Reproducción:** 0001–0015 → sembrar (por las RPC, como `authenticated`): M3
-  de 30 ml servido entero en una toma; M3 nuevo de 40 ml → `rollback-leche-v4.sql`
-  → `begin; <0015>; rollback;` → `milk_invariant_broken … INV-4`. La consulta 3
-  de `verificar-antes-v4.sql` lo **anticipa** (en la base revertida dio
-  `INV-1 = 1`, `INV-4 = 3`).
-- **Con datos sin esos casos** (ocupado editado con sobró, desechado sin servir,
-  libre con polvo, reusado cuyo viejo no tiene porciones vivas): 0015 vuelve a
-  entrar e INV da 0 filas.
-- **No se corrigió** (fuera del alcance de este rol). Decisión para arquitectura:
-  aceptar que volver a v4 tras revertir pide una corrección manual guiada por la
-  consulta 3, o guardar el respaldo opcional (`milk_backup_v4`) para poder
-  reconstruir, o relajar INV-4 para contenedores anulados por la reversa.
+**Corrección elegida: la arregla 0015, no la reversa.** Antes de la invariante,
+0015 tiene una sección "VOLVER A v4 TRAS LA REVERSA" con dos UPDATE:
+
+1. **Anulado con porciones vivas → liberado.** `voided_at = null`,
+   `released_at` = el `voided_at` que puso la reversa (que era su hora de
+   liberado), `remaining` = el polvo que tenía (< 0,15) o 0. Nunca ocupado: su
+   número puede tenerlo otro y físicamente no tiene leche. Va después del
+   índice nuevo (con el viejo, el M3 viejo chocaría con el que ocupa hoy M3).
+2. **Residuo positivo → `lost_ml`.** `amount − servido − remaining > 0` en un
+   contenedor vivo es leche que no está en el biberón ni se sirvió: la perdida
+   del ocupado del NOTICE y la desechada/perdida de los del paso 1. Va a
+   `lost_ml`, nunca a `remaining`: **"Lo que hay" no se mueve**. El residuo
+   **negativo** (dice tener más leche de la posible) no se toca y sigue
+   abortando (I-105).
+
+Por qué ésta y no cambiar la reversa:
+- Las dos formas **solo las produce la reversa**: ninguna función de 0014 anula
+  un contenedor servido ni deja `remaining ≠ amount − servido`. Sobre datos v3
+  comunes los dos UPDATE no tocan una fila (I-104 sigue igual).
+- La reversa no tiene dónde dejarlas representables en v3: el índice
+  `milk_containers_label_live` de 0014 no admite dos M3 no anulados, y el
+  esquema tiene que quedar **idéntico** a 0001–0014 (R-01), así que no hay
+  columna ni tabla para marcarlas. Dejar el desechado vivo haría que un
+  `void_bottle_feed` de v3 le devolviera leche tirada a "Lo que hay" (R-04).
+- La reversa **no cambió** (solo comentarios): el esquema que deja, R-01, R-02,
+  R-03…R-09, R-11 y R-12 siguen exactamente como estaban, y con ellos lo que se
+  midió de las suites de v3 (151/151) y v0.12.1 (118/118) sobre la base
+  revertida.
+
+Qué **no** vuelve (ya se perdía con la reversa, sigue escrito en ella): los
+desechos —su leche vuelve como **perdida**, no como desechada: la reversa los
+borró y ya no se distinguen—, el sobró, N (vuelve a 6), el registro de
+ediciones, y la marca de liberado de los anulados **sin** porciones (siguen
+anulados, que en v4 también es válido). Si una toma de v3 anulada "devolvió"
+leche a un anulado, esa leche tampoco vuelve a "Lo que hay": va a `lost_ml`.
+
+Lo que sigue abortando a propósito (residuo, no visto en ninguna prueba): si
+mientras se usó v3 alguien **editó la extracción** de un contenedor anulado por
+la reversa y v3 le creó un contenedor nuevo, la sesión queda con dos
+contenedores vivos y 0015 frena por `INV-8`. Es la salida segura (no aplica
+nada); la consulta 3 de `verificar-antes-v4.sql` lo anticipa.
+
+[VERIFICADO, Postgres efímero, `tests/integration/milkV4Reapply.test.ts`, siembra
+por las RPC como `authenticated`]:
+
+| Qué | Antes de la corrección | Después |
+|---|---|---|
+| Caso mínimo: M3 de 30 ml servido entero, M3 nuevo de 40, reversa, 0015 | `milk_invariant_broken` — "1 fila(s); la primera: INV-4 anulado con vivos" | entra; INV 0 filas; M3 viejo liberado con su porción, M3 nuevo ocupado 40; "Lo que hay" 40 |
+| Caso completo + días de v3 (toma de 0014 de M3, extracción M5) | `milk_invariant_broken` — "4 fila(s); la primera: INV-1 cuenta" | entra (en seco y de verdad); INV 0 filas; "Lo que hay" 115 → 115; M7 ocupado con `lost_ml` 25 exacto; M2 (desechado tras servir) liberado con `lost_ml` 40; 5 porciones vivas |
+| R-01 tras cada reversa del ciclo (v4 → reversa → v4 → reversa) | — | `pg_dump --schema-only --schema=public` = 0001–0014 de cero |
+| R-02 (reversa dos veces) | — | sin error; mismo dump |
+| R-12 (`rollback-leche.sql` después, dos veces) | — | dump = 0001–0013 de cero |
+| I-104 / I-105 (`milkV4Migration.test.ts`) | — | 2/2 (I-105 siembra ahora un residuo **negativo**: el positivo es justo lo que 0015 recupera) |
 
 ## 6. NO VERIFICADO
 
