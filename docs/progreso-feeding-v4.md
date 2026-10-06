@@ -204,3 +204,39 @@ nube.
   `tests/integration/readAll.test.ts` (>1000 filas reales, página de 7).
 - Verificación del director: `tsc`/`lint`/`format:check` OK, unitarias
   **550/550** ×4 TZ, integración **298/298**.
+
+## H6 — auditorías (primera vuelta)
+
+- **Revisor de cobertura (solo lectura):** sin bloqueantes. Las 22 reglas del
+  papá trazadas; fase 1–2 todas CUBIERTAS (R7 parcial por D-3, a confirmar).
+  MAYOR: plan sin Resultado en U/I; ramas de bajada de `milk_rebalance` sin
+  prueba de integración. 12 menores. Alcance: nada de fases 3–4;
+  `suggestPlan`/`suggestedTotalMl` idénticos a v3.
+- **Auditor de seguridad y datos (solo lectura):** RLS/grants/security
+  invoker/search_path/actor/locks/idempotencia OK con evidencia. **B-1
+  bloqueante (solo camino de reversa):** tras `rollback-leche-v4.sql` la app v3
+  podía resucitar leche desechada/servida al editar la extracción. M-1: un
+  total < 0,15 ml creaba un biberón ocupado vacío. m-1: editar solo la nota de
+  una toma anterior a la extracción se rechazaba. m-2: `pumped_at` sin tope
+  futuro en el servidor. m-3, O-1, O-2 declarados.
+- Corrector lanzado para B-1, M-1, m-1, m-2 y los MAYOR de cobertura.
+
+### Correcciones de la primera vuelta de auditoría [VERIFICADO]
+
+Cada una con prueba que fallaba antes (salida en el informe del corrector):
+- **B-1:** la reversa ahora pasa a forma legada (lados en null, total intacto)
+  las extracciones cuyo contenedor anula, así la app v3 solo les cambia hora y
+  nota y no crea un contenedor con leche que ya no existe. Prueba
+  `milkV4Reapply › B-1` (antes `expected '5' to be '3'`). Se pierde el reparto
+  izq/der de esas extracciones (respaldo opcional en `milk_backup_v4`).
+- **M-1:** un total entre 0 y 0,15 ml se rechaza (`milk_bad_input`) en servidor
+  y en la pantalla (`milk.amountTooSmall`). I-14b, I-31b, U-46b.
+- **m-1:** cambiar solo nota/sobró de una toma no re-valida caducidad. I-79b.
+- **m-2:** `pumped_at` con tope de 10 min al futuro (`milk_future_time`).
+  I-14c, I-31c. I-50 pasó a usar el cambio de horario del 8 mar 2026.
+- Cobertura: I-23b/I-24b (bajadas de `milk_rebalance`), I-15b (llamada directa
+  → `milk_rpc_only`), U-63 (claves de cinta borradas), U-09b (biberón liberado
+  por un desecho en cola lleva "sin sincronizar"). Plan: 181 filas U/I con
+  PASS desde el JSON de vitest.
+- Verificación del director: `tsc`/`lint`/`format:check` OK, unitarias
+  **554/554** ×4 TZ, integración **307/307**.

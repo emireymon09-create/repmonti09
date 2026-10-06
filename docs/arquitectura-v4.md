@@ -316,7 +316,11 @@ final de cada prueba de integración de leche (helper `assertMilkInvariant` en
 4. Si existe la sesión `p_id`: mismo bebé, y (`p_container_id` nulo o es el
    contenedor de esta sesión) y (sin contenedor vivo o su `label =
    p_container_label`) → **no-op**; si no → `milk_idempotency_conflict`.
-5. Inserta la sesión (total = izq + der, nulo si 0).
+5. `p_pumped_at > now() + 10 min` → `milk_future_time` (m-2, auditoría H5:
+   mismo tope que D-15; va después del paso 4, así el reenvío de un alta ya
+   guardada no se re-valida). Total con `0 < T < 0,15` ml (polvo, EMPTY_ML) →
+   `milk_bad_input` (M-1: si no, nacía un ocupado casi vacío, contra INV-5).
+   Inserta la sesión (total = izq + der, nulo si 0).
 6. Total > 0 → `milk_create_container` (lock de etiqueta al final; ocupado →
    `milk_label_taken:M#`). `stored_at = p_pumped_at` (D-3).
 
@@ -330,7 +334,9 @@ Bloqueos: op(`p_id`) → sesión `FOR UPDATE` → contenedor vivo de la sesión
 
 | Caso | Regla |
 |---|---|
+| `p_pumped_at > now() + 10 min` (cualquier sesión, legada incluida) | `milk_future_time` (m-2) |
 | Sesión legada sin lados (0014:575) | Igual que 0014: solo hora y nota |
+| Total nuevo `0 < T < 0,15` ml | `milk_bad_input` (M-1) |
 | Total nuevo `T = 0` y contenedor con `servido > 0` | `milk_already_served:M#` |
 | `T = 0`, contenedor sin servir | anula contenedor **y** su desecho vivo; sesión sin total |
 | `T > 0` y `T < servido_vivo` | `milk_served_exceeds_amount:M#` (V4-19) |
@@ -484,9 +490,14 @@ Flujo:
 8. Bloqueo: el conjunto = contenedores de porciones actuales ∪ candidatos, en
    un `select … order by id for update`; con los locks tomados se **recalcula**
    el plan (otro pudo servir mientras se esperaba).
-9. **Re-validación por hora** (D-7, V4-55): cada porción que queda viva
-   tiene que ser de un contenedor con `expires_at > p_fed_at` y `stored_at <=
-   p_fed_at + 10 min`; si no → `milk_container_unusable:M#`.
+9. **Re-validación por hora** (D-7, V4-55): **solo si la edición mueve la
+   hora (`p_fed_at` distinto) o la leche (`Δ ≠ 0`)** (m-1, auditoría H5), cada
+   porción que queda viva tiene que ser de un contenedor con `expires_at >
+   p_fed_at` y `stored_at <= p_fed_at + 10 min`; si no →
+   `milk_container_unusable:M#`. Cambiar solo nota, sobró o fórmula no
+   re-valida: una toma que `log_bottle_feed` aceptó (anterior a la extracción,
+   S-17; o cuya extracción se movió después, D-7) no queda bloqueada para
+   corregirle la nota.
 10. Escribe porciones; `milk_rebalance(c, 'return')` para las que bajaron y
     `('serve')` para las que subieron; actualiza la toma (`fed_at`,
     `breast_milk_ml`, `formula_ml`, `amount_ml = breast + formula`,
@@ -598,7 +609,8 @@ unicidad pasan juntos a `family_id` (otra migración, no esta).
 |---|---|---|
 | Crear contenedor | `expires_at = stored_at + milk_fridge_days × 24 h`, calculado por el servidor (0014:350) | S-15 |
 | Registrar toma | `expires_at > p_fed_at` (S-6) **y** `p_fed_at <= now() + 10 min` | La toma offline de las 2 a.m. que llega a las 9 no se rechaza; un reloj adelantado no inventa una hora futura |
-| Editar toma (RPC o trigger) | igual, con la hora nueva, más `stored_at <= fed_at + 10 min` | V4-55, V4-58 |
+| Editar toma (RPC o trigger) | igual, con la hora nueva, más `stored_at <= fed_at + 10 min` — en la RPC, solo si la edición mueve hora o leche (m-1) | V4-55, V4-58 |
+| Registrar / editar extracción | `p_pumped_at <= now() + 10 min` de la base (m-2). La vía directa de v0.12.1 (forma legada) no pasa por acá | Mismo motivo que la toma: un reloj adelantado no inventa una extracción futura (que además alargaría su caducidad) |
 | Desechar | permiso: `now() >= expires_at` **de la base**; hora guardada: la del teléfono acotada a `[expires_at, now()]` | Un teléfono adelantado no desecha leche vigente |
 | Pintar "Caducada" / ofrecer en el selector y en la sugerencia | reloj del teléfono | Solo pantalla; el servidor tiene la última palabra |
 
@@ -727,7 +739,7 @@ ciclo: `EMPTY_ML` se **mueve** acá y `lib/milk.ts` lo re-exporta).
 | `MAX_BOTTLE_COUNT` / `DEFAULT_BOTTLE_COUNT` | `30` / `6` | D-23 |
 | `containerState` | `(c, discards, atMs) => 'voided'\|'discarded'\|'free'\|'expired'\|'occupied'` | §1.2 |
 | `isOccupied` | `(c) => boolean` | no anulado y `released_at` nulo |
-| `bottleSlots` | `(n, containers, discards, atMs) => { slots: Slot[]; outOfRange: Slot[] }` con `Slot = { label; state: 'free'\|'occupied'\|'expired'; container?; pending? }` | M1…MN en orden numérico + ocupados con número > N (D-1/D-2) |
+| `bottleSlots` | `(n, containers, discards, atMs) => { slots: Slot[]; outOfRange: Slot[] }` con `Slot = { label; state: 'free'\|'occupied'\|'expired'; container?; pending? }` | M1…MN en orden numérico + ocupados con número > N (D-1/D-2). Un número **libre** que liberó algo todavía en la cola (un desecho, una toma que lo vació) lleva `pending: true` ("Todavía sin sincronizar", V4-39, E-16) |
 | `canDiscard` | `(c, discards, atMs) => boolean` | ocupado y `expires_at <= atMs` (pantalla) |
 | `discardedTotalMl` | `(discards) => number` | suma de vivos (D-13) |
 | `containerBalance` | `(c, drawdowns, discards) => { served; discarded; lost; remaining }` | reemplaza `servedMl = amount − remaining`, que en v4 contaría el desecho como servido |
@@ -874,6 +886,7 @@ Nuevas:
 | `milk.leftUnit` / `milk.rightUnit` (aria del AmountUnit por lado) | — |
 | `milk.bottle` ("Biberón") | — |
 | `milk.bottlePick` ("Elegí un biberón…") | — |
+| `milk.amountTooSmall` ("Es demasiado poco para guardarlo en un biberón…"; M-1, total de extracción entre 0 y 0,15 ml) | — |
 | `milk.bottleNeeded` ("Elegí en qué biberón quedó.") | — |
 | `milk.bottleOptionFree` | `{label}` |
 | `milk.bottleOptionTaken` ("M3 · 2.5 oz · 14:20") | `{label}`, `{amount}`, `{when}` |
@@ -1004,6 +1017,14 @@ Objetivo: base con 0001–0015 → esquema **idéntico** a 0001–0014
    Así el índice viejo se puede recrear y `void_bottle_feed` de 0014 no
    resucita leche desechada ni perdida (actualiza `remaining` de un anulado,
    que no cuenta en ningún lado).
+   d. (B-1, auditoría H5) cada **extracción viva** que tiene contenedor pero
+      ninguno vivo (o sea, la de un anulado en a/b/c) pasa a **forma legada**:
+      `left_ml = right_ml = null`, `amount_ml` igual. Sin esto el cliente v3
+      no ve contenedor vivo y su `update_pumping_session` (0014), al
+      corregir solo nota u hora, crea uno nuevo con el total entero (leche
+      servida o desechada de vuelta en "Lo que hay"). Legada, v3 manda los
+      lados en null y la función entra por su ramal `v_legacy`. Es solo de
+      datos: el esquema no cambia (R-01).
 4. Funciones: `drop function if exists edit_bottle_feed(...)`,
    `discard_container(...)`, `milk_rebalance(...)`, `milk_discarded_ml(...)`;
    `drop function if exists log_bottle_feed(uuid, uuid, timestamptz, text,
@@ -1030,7 +1051,10 @@ Todos los **desechos** (filas y su total "Leche desechada"); todo **sobró**;
 **N**; las marcas de **liberado** y **perdido**; el registro de **ediciones**;
 y los contenedores del paso 3 quedan **anulados** (en v3: sus extracciones se
 ven sin cinta ni "servido", y v3 dejaría borrarlas aunque se haya servido leche
-de ellas — se anota como riesgo). Sobreviven: todas las tomas con su desglose
+de ellas — se anota como riesgo); y esas extracciones pierden su reparto
+**izquierdo/derecho** (paso 3d: quedan legadas con su total). Riesgo que deja
+3d: si en v3 alguien escribe a mano los lados de una de esas legadas, v3 le
+crea un contenedor con esa cantidad, como a cualquier legada. Sobreviven: todas las tomas con su desglose
 final, todas las porciones, todas las extracciones, contenedores ocupados.
 
 ### 10.3 Cómo se comprueba (R-xx)

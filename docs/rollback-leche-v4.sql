@@ -61,6 +61,25 @@
 --   (riesgo aceptado, ARQ §10.2). El total de la toma y su leche/fórmula no
 --   cambian.
 --
+-- Y la EXTRACCIÓN de cada contenedor anulado así (si sigue viva) pasa a
+-- FORMA LEGADA (paso 2d, hallazgo B-1 de la auditoría del 6 oct 2026):
+--   · se PIERDE su reparto izquierdo/derecho (left_ml y right_ml quedan en
+--     null). Su TOTAL (amount_ml), su hora, su nota y su lado quedan.
+--   · Por qué: sin contenedor vivo, la app v3 trata la extracción como "sin
+--     biberón" y, al corregirle SOLO la nota o la hora, su
+--     update_pumping_session (0014) le crea un contenedor NUEVO con el total
+--     entero: la leche ya servida o desechada volvía a "Lo que hay" (M2 de
+--     80 ml, 20 servidos, 60 desechados → reversa → v3 corrige la nota →
+--     aparece un biberón de 80 ml utilizable). Legada, v3 la muestra como las
+--     de antes de 0014 ("solo hora y nota") y su función hace solo eso.
+--   · RIESGO QUE QUEDA: si en v3 alguien ESCRIBE a mano izquierdo o derecho en
+--     una de esas extracciones legadas, v3 hace lo que hace con cualquier
+--     legada: le crea un contenedor con esa cantidad. Es una acción
+--     explícita (la pantalla muestra "registrada antes de los lados, total
+--     X"), no una corrección de nota; y lo mismo pasa en v4 tras volver a
+--     aplicar 0015 con las que siguen con el contenedor anulado (las que no
+--     tenían porciones). Probado: tests/integration/milkV4Reapply.test.ts (B-1).
+--
 -- Queda SIN TOCAR y se avisa (NOTICE al principio): un contenedor OCUPADO con
 -- lost_ml > 0 (caso raro: perdió leche cuando su número estaba tomado y
 -- después lo re-ocupó). En v3 remaining = amount − servido, así que la
@@ -77,8 +96,9 @@
 -- vuelven como LIBERADOS, y la leche que no está en ningún biberón ni se sirvió
 -- (la perdida de un ocupado del NOTICE, la desechada) vuelve a `lost_ml`.
 -- "Lo que hay" no se mueve ni un ml. Lo que NO vuelve: los desechos (quedan
--- como leche perdida), el sobró, N (vuelve a 6), las ediciones y las marcas de
--- liberado de los que no tenían porciones (siguen anulados). Probado en
+-- como leche perdida), el sobró, N (vuelve a 6), las ediciones, las marcas de
+-- liberado de los que no tenían porciones (siguen anulados) y el reparto
+-- izquierdo/derecho de las extracciones que pasaron a legadas (paso 2d). Probado en
 -- Postgres efímero: tests/integration/milkV4Reapply.test.ts, y
 -- docs/compatibilidad-v4.md §5.3. Si querés recuperar desechos, sobró o N,
 -- guardá el respaldo opcional de abajo.
@@ -86,7 +106,9 @@
 -- Hasta el 6 oct 2026 esto no funcionaba: 0015 abortaba con
 -- `milk_invariant_broken` (INV-4 por los anulados con porciones, INV-1 por el
 -- ocupado del NOTICE). Este script NO cambió para arreglarlo — el arreglo vive
--- en 0015 — así que el esquema que deja sigue siendo el de 0001…0014.
+-- en 0015 — así que el esquema que deja sigue siendo el de 0001…0014. El paso
+-- 2d (B-1) sí es de este script, pero es solo de DATOS: el esquema que deja no
+-- cambia (R-01 sigue en 0 líneas de diff).
 --
 -- Requiere 0014 puesta: sobre una base sin 0014 aborta sin cambiar nada.
 --
@@ -119,6 +141,11 @@
 --   select id, baby_id, fed_at, leftover_ml from public.feedings where leftover_ml is not null;
 -- create table milk_backup_v4.baby_bottle_count as
 --   select id, family_id, milk_bottle_count from public.babies;
+-- -- Los lados de TODAS las extracciones que los tienen (el paso 2d borra los
+-- -- de algunas; guardar todos no cuesta nada y no depende de adivinar cuáles).
+-- create table milk_backup_v4.pumping_sides as
+--   select id, baby_id, left_ml, right_ml from public.pumping_sessions
+--   where left_ml is not null or right_ml is not null;
 
 begin;
 
@@ -154,8 +181,9 @@ $$;
 select set_config('amelia.milk_rpc', 'on', true);
 
 -- ---------------------------------------------------------- 2. datos
--- Lo que v3 no puede representar (ver arriba, a/b/c). Solo si 0015 sigue
--- puesta; en una segunda corrida no hay nada que hacer.
+-- Lo que v3 no puede representar (ver arriba, a/b/c), y las extracciones de
+-- esos contenedores a forma legada (d). Solo si 0015 sigue puesta; en una
+-- segunda corrida no hay nada que hacer.
 do $$
 begin
   if to_regclass('public.milk_discards') is not null
@@ -192,6 +220,25 @@ begin
          set voided_at = coalesce(r.released_at, now())
         from ranked r
        where r.id = c.id and r.rn > 1
+    $q$;
+    -- d. B-1 (auditoría H5): la EXTRACCIÓN viva cuyo contenedor quedó anulado
+    --    (por a, b o c) pasa a forma LEGADA: left_ml y right_ml a null, el
+    --    total (amount_ml) queda. Sin esto, la app v3 no ve contenedor vivo
+    --    para esa extracción y, al corregirle la nota o la hora, su
+    --    update_pumping_session de 0014 crea uno NUEVO con el total entero:
+    --    leche ya servida o desechada vuelve a "Lo que hay". Legada, v3 (y su
+    --    función) la tratan como las de antes de 0014: solo hora y nota.
+    --    Se pierde el reparto izquierdo/derecho de esas extracciones.
+    execute $q$
+      update public.pumping_sessions s
+         set left_ml = null, right_ml = null
+       where s.voided_at is null
+         and s.amount_ml is not null
+         and (s.left_ml is not null or s.right_ml is not null)
+         and exists (select 1 from public.milk_containers c
+                      where c.source_session_id = s.id)
+         and not exists (select 1 from public.milk_containers c
+                          where c.source_session_id = s.id and c.voided_at is null)
     $q$;
   end if;
 end

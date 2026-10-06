@@ -37,71 +37,73 @@ cambios.
 
 | ID | Función | Caso | Resultado esperado | Req/Dec | Resultado | Evidencia |
 |---|---|---|---|---|---|---|
-| U-01 | `containerState` | anulado / con desecho vivo / `released_at` / vencido / vigente | `voided` / `discarded` / `free` / `expired` / `occupied`, en esa precedencia | ARQ §1.2, V4-14 | | |
-| U-02 | `containerState` | `atMs == expires_at` exacto | `expired` (exclusivo) | V4-31 | | |
-| U-03 | `containerState` | `atMs = expires_at − 1 ms` | `occupied` | V4-31 | | |
-| U-04 | `containerExpiresAt` | `stored_at` el sábado previo al cambio de horario en LA, 4 días | `+96 h` exactas, no `+4 días de calendario` | V4-31, D-15 | | |
-| U-05 | `containerExpiresAt` | `stored_at` 23:59:59.999 hora del hogar; 4 TZ del proceso | mismo ISO en las 4 | V4-31 | | |
-| U-06 | `bottleSlots` | N=6, ocupados M3 (vigente) y M5 (vencido), M2 libre | M1…M6 en orden numérico; M3 `occupied` con contenedor; M5 `expired`; los demás `free` | V4-11, V4-12 | | |
-| U-07 | `bottleSlots` | N=6, contenedor ocupado M9 | M9 en `outOfRange`, no en `slots` | D-1, CL-37 | | |
-| U-08 | `bottleSlots` | N baja de 6 a 4 con M5 ocupado | slots M1–M4; M5 en `outOfRange` | D-2, CL-36 | | |
-| U-09 | `bottleSlots` | contenedor `pending` (cola) en M2 | M2 ocupado y `pending` | V4-12 CA2 | | |
-| U-10 | `bottleSlots` | M3 vaciado (`released_at`) y otro M3 ocupado más nuevo | M3 = el ocupado | V4-14 | | |
-| U-11 | `isUsable`/`stashMl` | liberado con 0,1 ml; desechado; caducado; ocupado 2 oz | solo cuenta el ocupado vigente | V4-36, CL-8 | | |
-| U-12 | `suggestPlan` | M6 lunes, M1 martes | sirve M6 primero | V4-13, R-3 | | |
-| U-13 | `suggestPlan` | un liberado con 0,1 ml | no aparece | V4-14 | | |
-| U-14 | `canDiscard` | vencido ocupado / vigente / desechado / libre | true / false / false / false | V4-33, D-6 | | |
-| U-15 | `discardedTotalMl` | dos desechos vivos y uno anulado | suma de los vivos | V4-35, D-13 | | |
-| U-16 | `containerBalance` | contenedor con servido, desecho y `lost_ml` | `served + discarded + lost + remaining = amount` | ARQ §2.1 | | |
-| U-17 | `rebalance` serve | servir deja 0,1 ml | `released_at` puesto, `remaining` 0,1 | V4-14, CL-8 | | |
-| U-18 | `rebalance` return | número libre | re-ocupa, `remaining += r` | V4-15, CL-9 | | |
-| U-19 | `rebalance` return | número ocupado por otro | `lost_ml += r`, sigue libre | D-9, CL-10 | | |
-| U-20 | `rebalance` return | desechado | `lost_ml += r` | D-9, CL-30 | | |
-| U-21 | `rebalance` return | vencido ocupado | `remaining += r` (sigue caducada) | D-9 | | |
-| U-22 | `rebalance` amount | desechado, sube 1 oz | desecho +1 oz | D-8 | | |
-| U-23 | `rebalance` amount | baja: con remaining, lost y desecho | sale en orden remaining → lost → desecho; desecho en 0 → anulado | AJ-10 | | |
-| U-24 | `planBottleEdit` | leche 3→2 oz, todo de M3 | vuelve 1 oz a M3 | V4-52, CL-21 | | |
-| U-25 | `planBottleEdit` | 3→2 oz de M3 (1,75, más viejo) + M4 (1,25, más nuevo) | M4 baja a 0,25; M3 intacto | D-17, CL-22 | | |
-| U-26 | `planBottleEdit` | baja más que la porción más nueva | la más nueva se anula, sigue con la siguiente | D-17 | | |
-| U-27 | `planBottleEdit` | 2→3 oz, utilizables a esa hora M5 (lunes) y M6 (martes) | sale 1 oz de M5 | D-18, CL-23 | | |
-| U-28 | `planBottleEdit` | sube con contenedor que la toma ya usa | crece su porción, no hay fila nueva | ARQ §3.8 | | |
-| U-29 | `planBottleEdit` | sube y no alcanza | `not_enough` con ml disponibles exactos | V4-54, CL-24 | | |
-| U-30 | `planBottleEdit` | solo fórmula 1→3 oz sin leche | ok, sin porciones tocadas | V4-54, CL-25 | | |
-| U-31 | `planBottleEdit` | hora nueva posterior al vencimiento de M3 | `unusable: M3` | D-7, CL-26 | | |
-| U-32 | `planBottleEdit` | hora nueva > ahora + 10 min | `future` | D-15, CL-27 | | |
-| U-33 | `planBottleEdit` | candidatos: liberado, anulado, `stored_at > fed_at`, vencido a `fed_at` | ninguno se usa | D-18 | | |
-| U-34 | `estimateLegacySplit` | sin extracciones legadas, toma 3 oz | 0 leche + 3 fórmula | D-14, CL-31 | | |
-| U-35 | `estimateLegacySplit` | legada 2 oz el día antes, toma 3 oz | 2 + 1 | D-14, CL-32 | | |
-| U-36 | `estimateLegacySplit` | legada de hace 5 días (regla 4) | 0 + 3 | D-14, CL-32 | | |
-| U-37 | `estimateLegacySplit` | dos tomas comparten un pozo; extracciones con contenedor | se reparten FIFO; las con contenedor no entran; tomas con desglose no participan | V4-61 | | |
-| U-38 | `estimateLegacySplit` | mismo input en 4 TZ y en otro orden de arrays | mismo resultado (determinista, desempate por id) | V4-65 | | |
-| U-39 | `estimateLegacySplit` | empate exacto de hora extracción/toma | la extracción entra antes | ARQ §5 | | |
-| U-40 | constantes | `FUTURE_TOLERANCE_MS` vs `interval '10 minutes'` en 0015 | coinciden (lee el texto de la migración) | ARQ §4 | | |
-| U-41 | constantes | `EMPTY_ML` vs `0.15` en 0015 (constraint y `milk_rebalance`) | coinciden | ARQ §1.1 | | |
-| U-42 | invariante | IDs de `assertMilkInvariant` vs los de la consulta SQL de ARQ §2.4 | mismos 9 chequeos | ARQ §2.4 | | |
-| U-43 | `validateBottleCount` | `''`, `0`, `31`, `2.5`, `abc`, `1`, `30`, ` 6 ` | empty / range / range / whole / number / ok / ok / ok | V4-10 CA1, D-23 | | |
-| U-44 | `validateLeftover` | sobró > total; = total; 0; negativo; vacío | problema / ok / ok / problema / null | V4-43, D-10, CL-20 | | |
-| U-45 | `parseAmountMl` por lado | izq `2` oz, der `60` ml | 59,147… y 60 exactos | V4-01 CA1 | | |
-| U-46 | `parseAmountMl` | `-1`, `1e400`, `abc`, `Infinity` | `number` | CL-3 | | |
-| U-47 | `convertAmountText` | 2 oz → ml → oz | vuelve a `2` (sin deriva); vacío queda vacío | D-19, AJ-16 | | |
-| U-48 | `convertAmountText` | 150 ml → oz | `5.07` | D-19 | | |
-| U-49 | `applyPendingInventory` | `log_pumping_session` en cola con M3 | contenedor `pending`, ocupado, M3 tomado en `bottleSlots` | V4-12 CA2, V4-81 | | |
-| U-50 | `applyPendingInventory` | `discard_container` en cola sobre M3 vencido | desecho `pending`, M3 en 0 y liberado | V4-39, CL-14 | | |
-| U-51 | `applyPendingInventory` | `discard_container` con el desecho ya listado por el servidor | no se aplica dos veces | V4-81 | | |
-| U-52 | `applyPendingInventory` | `discard_container` sobre M3 que para el teléfono no venció | no cambia nada (el servidor decide) | D-6 | | |
-| U-53 | `applyPendingInventory` | `log_bottle_feed` que vacía M3 | M3 liberado `pending` | V4-14 | | |
-| U-54 | `applyPendingInventory` | `void_bottle_feed` con M3 libre / con M3 reusado | re-ocupa / `lost_ml` | V4-15, D-9 | | |
-| U-55 | `applyPendingInventory` | `edit_bottle_feed` a la baja y al alza | mismas porciones que `planBottleEdit`; Δ=0 si el servidor ya lo aplicó | V4-57 | | |
-| U-56 | `applyPendingInventory` | `edit_bottle_feed` que no alcanza | no aplica nada, toma `pending` | V4-57 | | |
-| U-57 | `applyPendingInventory` | no muta sus entradas | entradas iguales (deep equal) | lib/milk.ts | | |
-| U-58 | `dependentsOf` | descartar `log_pumping_session` rechazada | se lleva `discard_container` y `edit_bottle_feed` que la refieren | V4-84 | | |
-| U-59 | `isDeletion`/`describeWrite` | `discard_container` | "Leche desechada (nueva)" / "Discarded milk (new)" | V4-81 | | |
-| U-60 | `milkErrorText` | cada código nuevo + `milk_label_taken` en línea y `sync` | texto de biberón (no cinta), en EN y ES; `milk_not_enough:37.5` → "1.27 oz" | V4-82, V4-84, AJ-1, AJ-12 | | |
-| U-61 | `describeBottle` | con `leftover_ml` | "… · sobró 1 oz" | V4-44 | | |
-| U-62 | `buildActivity` | desecho | entrada `discard`, "Leche desechada · M3 · 1.5 oz", no editable, EN/ES | V4-37 | | |
-| U-63 | i18n | `es` = claves de `en`; mismas variables; claves `milk.tape*` y `bottle.timeOnly` borradas sin usos | pasa `tests/unit/i18n.test.ts` | §5.7 | | |
-| U-64 | redondeo | `portionMl` con 1.75 oz mostrado sobre 51,7536 ml | toma 51,7536 exactos | v3 S-x | | |
-| U-65 | `stashMl` | 4 TZ, medianoche del hogar | mismo total | V4-36 | | |
+| U-01 | `containerState` | anulado / con desecho vivo / `released_at` / vencido / vigente | `voided` / `discarded` / `free` / `expired` / `occupied`, en esa precedencia | ARQ §1.2, V4-14 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-01: voided → discarded → free → expired → occupied, in that precedence» (passed) |
+| U-02 | `containerState` | `atMs == expires_at` exacto | `expired` (exclusivo) | V4-31 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-02 / U-03: expiry is exclusive — expired AT the instant, occupied 1 ms before» (passed) |
+| U-03 | `containerState` | `atMs = expires_at − 1 ms` | `occupied` | V4-31 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-02 / U-03: expiry is exclusive — expired AT the instant, occupied 1 ms before» (passed) |
+| U-04 | `containerExpiresAt` | `stored_at` el sábado previo al cambio de horario en LA, 4 días | `+96 h` exactas, no `+4 días de calendario` | V4-31, D-15 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-04: stored the Saturday before the March change: +96 h exact, the wall clock moves an hour» (passed); `tests/unit/milkBottles.test.ts` › «U-04: and the November change, the other way» (passed) |
+| U-05 | `containerExpiresAt` | `stored_at` 23:59:59.999 hora del hogar; 4 TZ del proceso | mismo ISO en las 4 | V4-31 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-05: stored at 23:59:59.999 household time, the same ISO under any TZ» (passed) |
+| U-06 | `bottleSlots` | N=6, ocupados M3 (vigente) y M5 (vencido), M2 libre | M1…M6 en orden numérico; M3 `occupied` con contenedor; M5 `expired`; los demás `free` | V4-11, V4-12 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-06: M1…M6 in numeric order; M3 occupied with its container, M5 expired, the rest free» (passed) |
+| U-07 | `bottleSlots` | N=6, contenedor ocupado M9 | M9 en `outOfRange`, no en `slots` | D-1, CL-37 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-07: an occupied M9 with N = 6 is out of range, never a slot (D-1)» (passed); `tests/unit/milkBottles.test.ts` › «U-07: once emptied, a number above N is gone from the selector altogether» (passed) |
+| U-08 | `bottleSlots` | N baja de 6 a 4 con M5 ocupado | slots M1–M4; M5 en `outOfRange` | D-2, CL-36 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-08: N lowered from 6 to 4 with M5 occupied: M1–M4, M5 out of range (D-2)» (passed) |
+| U-09 | `bottleSlots` | contenedor `pending` (cola) en M2 | M2 ocupado y `pending` | V4-12 CA2 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-09: a container still in the queue holds its bottle, marked pending» (passed) |
+| U-09b | `bottleSlots` | número liberado por un desecho que sigue en la cola (contenedor `pending`, liberado) | libre, elegible y `pending` ("Todavía sin sincronizar" en el selector); un libre ya sincronizado no | V4-39, E-16 (auditoría H5) | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-09b (E-16, V4-39): a bottle freed by a discard still in the queue is free and marked pending; a synced free one is not» (passed) |
+| U-10 | `bottleSlots` | M3 vaciado (`released_at`) y otro M3 ocupado más nuevo | M3 = el ocupado | V4-14 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-10: an emptied M3 and a newer occupied M3 → the slot is the occupied one» (passed) |
+| U-11 | `isUsable`/`stashMl` | liberado con 0,1 ml; desechado; caducado; ocupado 2 oz | solo cuenta el ocupado vigente | V4-36, CL-8 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-11: only the occupied, unexpired container counts» (passed) |
+| U-12 | `suggestPlan` | M6 lunes, M1 martes | sirve M6 primero | V4-13, R-3 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-12: M6 pumped Monday and M1 Tuesday → the suggestion serves M6 first (R-3)» (passed) |
+| U-13 | `suggestPlan` | un liberado con 0,1 ml | no aparece | V4-14 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-13: a released container with 0.1 ml is not in the plan» (passed) |
+| U-14 | `canDiscard` | vencido ocupado / vigente / desechado / libre | true / false / false / false | V4-33, D-6 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-14: expired occupied / current / discarded / free → true / false / false / false» (passed) |
+| U-15 | `discardedTotalMl` | dos desechos vivos y uno anulado | suma de los vivos | V4-35, D-13 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-15: the total is the live discards only» (passed) |
+| U-16 | `containerBalance` | contenedor con servido, desecho y `lost_ml` | `served + discarded + lost + remaining = amount` | ARQ §2.1 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-16: served + discarded + lost + remaining = amount» (passed) |
+| U-17 | `rebalance` serve | servir deja 0,1 ml | `released_at` puesto, `remaining` 0,1 | V4-14, CL-8 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-17: serving that leaves 0.1 ml releases it; the 0.1 ml stays as dust» (passed) |
+| U-18 | `rebalance` return | número libre | re-ocupa, `remaining += r` | V4-15, CL-9 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-18: milk coming back to a released container whose number is still free re-occupies it» (passed) |
+| U-19 | `rebalance` return | número ocupado por otro | `lost_ml += r`, sigue libre | D-9, CL-10 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-19: …and if another container holds the number now, it is lost, still free (D-9)» (passed) |
+| U-20 | `rebalance` return | desechado | `lost_ml += r` | D-9, CL-30 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-20: milk coming back to a discarded container is lost (D-9)» (passed) |
+| U-21 | `rebalance` return | vencido ocupado | `remaining += r` (sigue caducada) | D-9 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-21: an expired, still occupied container takes the milk back (stays expired)» (passed) |
+| U-22 | `rebalance` amount | desechado, sube 1 oz | desecho +1 oz | D-8 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-22: a discarded session edited up 1 oz: the discard grows 1 oz (D-8)» (passed) |
+| U-23 | `rebalance` amount | baja: con remaining, lost y desecho | sale en orden remaining → lost → desecho; desecho en 0 → anulado | AJ-10 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-23: going down takes from remaining, then lost, then the discard — and voids a discard at 0» (passed) |
+| U-24 | `planBottleEdit` | leche 3→2 oz, todo de M3 | vuelve 1 oz a M3 | V4-52, CL-21 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-24: milk 3 → 2 oz, all from M3: 1 oz back to M3» (passed) |
+| U-25 | `planBottleEdit` | 3→2 oz de M3 (1,75, más viejo) + M4 (1,25, más nuevo) | M4 baja a 0,25; M3 intacto | D-17, CL-22 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-25: 3 → 2 oz from M3 1.75 (older) + M4 1.25 (newer): M4 down to 0.25, M3 untouched (D-17)» (passed) |
+| U-26 | `planBottleEdit` | baja más que la porción más nueva | la más nueva se anula, sigue con la siguiente | D-17 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-26: lowering more than the newest portion voids it and goes on (spec: M3 1.75 + M4 0.5, −1 oz)» (passed) |
+| U-27 | `planBottleEdit` | 2→3 oz, utilizables a esa hora M5 (lunes) y M6 (martes) | sale 1 oz de M5 | D-18, CL-23 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-27: 2 → 3 oz, usable at that time M5 (Monday) and M6 (Tuesday) → 1 oz from M5 (D-18)» (passed); `tests/unit/milkBottles.test.ts` › «U-27: FIFO across containers when the oldest is not enough» (passed) |
+| U-28 | `planBottleEdit` | sube con contenedor que la toma ya usa | crece su porción, no hay fila nueva | ARQ §3.8 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-28: going up with a container the bottle already uses grows its portion, no new row» (passed) |
+| U-29 | `planBottleEdit` | sube y no alcanza | `not_enough` con ml disponibles exactos | V4-54, CL-24 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-29: going up with not enough milk → not_enough with the exact ml there was; nothing changes» (passed) |
+| U-30 | `planBottleEdit` | solo fórmula 1→3 oz sin leche | ok, sin porciones tocadas | V4-54, CL-25 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-30: formula only 1 → 3 oz with no milk at all → fine, no portion touched (R-14)» (passed) |
+| U-31 | `planBottleEdit` | hora nueva posterior al vencimiento de M3 | `unusable: M3` | D-7, CL-26 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-31: the new time is after M3 expired → unusable M3 (D-7)» (passed); `tests/unit/milkBottles.test.ts` › «U-31: and a new time more than 10 min before the milk was pumped → unusable» (passed) |
+| U-32 | `planBottleEdit` | hora nueva > ahora + 10 min | `future` | D-15, CL-27 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-32: a new time more than 10 min ahead of the clock → future; exactly 10 min is fine» (passed) |
+| U-33 | `planBottleEdit` | candidatos: liberado, anulado, `stored_at > fed_at`, vencido a `fed_at` | ninguno se usa | D-18 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-33: released, voided, discarded, stored after, expired at the time — none is used» (passed) |
+| U-34 | `estimateLegacySplit` | sin extracciones legadas, toma 3 oz | 0 leche + 3 fórmula | D-14, CL-31 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkEstimate.test.ts` › «U-34: no legacy pumping at all → 3 oz is all formula (CL-31)» (passed) |
+| U-35 | `estimateLegacySplit` | legada 2 oz el día antes, toma 3 oz | 2 + 1 | D-14, CL-32 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkEstimate.test.ts` › «U-35: 2 oz pumped the day before, a 3 oz bottle → 2 + 1 (CL-32)» (passed) |
+| U-36 | `estimateLegacySplit` | legada de hace 5 días (regla 4) | 0 + 3 | D-14, CL-32 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkEstimate.test.ts` › «U-36: pumped 5 days before (rule: 4 days) → 0 + 3 (CL-32)» (passed) |
+| U-37 | `estimateLegacySplit` | dos tomas comparten un pozo; extracciones con contenedor | se reparten FIFO; las con contenedor no entran; tomas con desglose no participan | V4-61 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkEstimate.test.ts` › «U-37: two bottles share a pool, oldest session first; container sessions and breakdown bottles stay out» (passed) |
+| U-38 | `estimateLegacySplit` | mismo input en 4 TZ y en otro orden de arrays | mismo resultado (determinista, desempate por id) | V4-65 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkEstimate.test.ts` › «U-38: same answer whatever order the rows come in (ties broken by id)» (passed); `tests/unit/milkEstimate.test.ts` › «U-38: the result does not depend on the process timezone (fixed instants)» (passed) |
+| U-39 | `estimateLegacySplit` | empate exacto de hora extracción/toma | la extracción entra antes | ARQ §5 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkEstimate.test.ts` › «U-39: a session and a bottle at the exact same instant: the session goes in first» (passed) |
+| U-40 | constantes | `FUTURE_TOLERANCE_MS` vs `interval '10 minutes'` en 0015 | coinciden (lee el texto de la migración) | ARQ §4 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-40: every "interval N minutes" in 0015 is FUTURE_TOLERANCE_MS» (passed) |
+| U-41 | constantes | `EMPTY_ML` vs `0.15` en 0015 (constraint y `milk_rebalance`) | coinciden | ARQ §1.1 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-41: the released/empty threshold in 0015 is EMPTY_ML» (passed) |
+| U-42 | invariante | IDs de `assertMilkInvariant` vs los de la consulta SQL de ARQ §2.4 | mismos 9 chequeos | ARQ §2.4 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-42: the same checks as the SQL of docs/arquitectura-v4.md §2.4 (INV-7 is a constraint there)» (passed) |
+| U-43 | `validateBottleCount` | `''`, `0`, `31`, `2.5`, `abc`, `1`, `30`, ` 6 ` | empty / range / range / whole / number / ok / ok / ok | V4-10 CA1, D-23 | PASS | vitest JSON, 6 oct 2026 (H6): (ID en el describe, no en el caso) `tests/unit/milkBottles.test.ts` › «validateBottleCount (U-43) and effectiveBottleCount» › «"" → {"problem":"empty"}» (passed); `tests/unit/milkBottles.test.ts` › «validateBottleCount (U-43) and effectiveBottleCount» › «"   " → {"problem":"empty"}» (passed); `tests/unit/milkBottles.test.ts` › «validateBottleCount (U-43) and effectiveBottleCount» › «"0" → {"problem":"range"}» (passed); `tests/unit/milkBottles.test.ts` › «validateBottleCount (U-43) and effectiveBottleCount» › «"31" → {"problem":"range"}» (passed); y 8 caso(s) más del mismo describe |
+| U-44 | `validateLeftover` | sobró > total; = total; 0; negativo; vacío | problema / ok / ok / problema / null | V4-43, D-10, CL-20 | PASS | vitest JSON, 6 oct 2026 (H6): (ID en el describe, no en el caso) `tests/unit/milkBottles.test.ts` › «validateLeftover (U-44)» › «more than served / equal / 0 / negative / nothing» (passed); `tests/unit/milkBottles.test.ts` › «validateLeftover (U-44)» › «the same amount typed in ml is not "more" because of the oz rounding» (passed) |
+| U-45 | `parseAmountMl` por lado | izq `2` oz, der `60` ml | 59,147… y 60 exactos | V4-01 CA1 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkPending.test.ts` › «U-45: left 2 oz and right 60 ml → 59.147 and 60 exactly, total the sum» (passed) |
+| U-46 | `parseAmountMl` | `-1`, `1e400`, `abc`, `Infinity` | `number` | CL-3 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkPending.test.ts` › «U-46 / CL-3: -1, 1e400, abc, Infinity are "number" problems, naming the side» (passed) |
+| U-46b | `readPumpingSides` / `isDustMl` | total entre 0 y 0,15 ml (0,1 ml, 0,004 oz, 0,05 + 0,05 ml, `1e-30`) | `{ problem: "tiny" }` → "milk.amountTooSmall"; 0,15 ml y 0,01 oz son biberón | M-1 (auditoría H5), INV-5 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkPending.test.ts` › «U-46b (M-1): a total above 0 but under EMPTY_ML (0.15 ml) is "tiny", never a bottle; 0.15 ml is» (passed) |
+| U-47 | `convertAmountText` | 2 oz → ml → oz | vuelve a `2` (sin deriva); vacío queda vacío | D-19, AJ-16 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkPending.test.ts` › «U-47: 2 oz → ml → oz comes back to 2; empty stays empty» (passed) |
+| U-48 | `convertAmountText` | 150 ml → oz | `5.07` | D-19 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkPending.test.ts` › «U-48: 150 ml → 5.07 oz» (passed) |
+| U-49 | `applyPendingInventory` | `log_pumping_session` en cola con M3 | contenedor `pending`, ocupado, M3 tomado en `bottleSlots` | V4-12 CA2, V4-81 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkPending.test.ts` › «U-49: a queued pumping session in M3 → a pending, occupied container holding M3» (passed) |
+| U-50 | `applyPendingInventory` | `discard_container` en cola sobre M3 vencido | desecho `pending`, M3 en 0 y liberado | V4-39, CL-14 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkPending.test.ts` › «U-50: a queued discard of an expired M3 → pending discard of all of it, M3 at 0 and free» (passed) |
+| U-51 | `applyPendingInventory` | `discard_container` con el desecho ya listado por el servidor | no se aplica dos veces | V4-81 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkPending.test.ts` › «U-51: a discard the server already lists is not applied twice» (passed); `tests/unit/milkPending.test.ts` › «U-51 / CL-15: discarded by the other phone with another id → no second discard» (passed) |
+| U-52 | `applyPendingInventory` | `discard_container` sobre M3 que para el teléfono no venció | no cambia nada (el servidor decide) | D-6 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkPending.test.ts` › «U-52: a discard of M3 that for this phone has not expired changes nothing (D-6)» (passed) |
+| U-53 | `applyPendingInventory` | `log_bottle_feed` que vacía M3 | M3 liberado `pending` | V4-14 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkPending.test.ts` › «U-53: a queued bottle that empties M3 releases it, pending» (passed); `tests/unit/milkPending.test.ts` › «U-53 / CL-8: a bottle that leaves 0.1 ml releases it too; "sobró" moves nothing» (passed) |
+| U-54 | `applyPendingInventory` | `void_bottle_feed` con M3 libre / con M3 reusado | re-ocupa / `lost_ml` | V4-15, D-9 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkPending.test.ts` › «U-54: voiding a bottle with M3 free → M3 is occupied again (CL-9)» (passed); `tests/unit/milkPending.test.ts` › «U-54: …and with M3 already holding another session → lost, never two M3 (CL-10)» (passed); `tests/unit/milkPending.test.ts` › «U-54: milk of a voided bottle from a discarded container is lost (D-9)» (passed) |
+| U-55 | `applyPendingInventory` | `edit_bottle_feed` a la baja y al alza | mismas porciones que `planBottleEdit`; Δ=0 si el servidor ya lo aplicó | V4-57 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkPending.test.ts` › «U-55: an edit down and an edit up give the same portions as planBottleEdit» (passed); `tests/unit/milkPending.test.ts` › «U-55: an edit the server already applied (portions already as asked) moves nothing: Δ = 0» (passed) |
+| U-56 | `applyPendingInventory` | `edit_bottle_feed` que no alcanza | no aplica nada, toma `pending` | V4-57 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkPending.test.ts` › «U-56: an edit that needs more milk than there is applies nothing; the bottle shows pending» (passed) |
+| U-57 | `applyPendingInventory` | no muta sus entradas | entradas iguales (deep equal) | lib/milk.ts | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkPending.test.ts` › «U-57: does not change its inputs» (passed) |
+| U-58 | `dependentsOf` | descartar `log_pumping_session` rechazada | se lleva `discard_container` y `edit_bottle_feed` que la refieren | V4-84 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkDb.test.ts` › «descartar la extracción rechazada se lleva el desecho y la edición que la usan (U-58)» (passed) |
+| U-59 | `isDeletion`/`describeWrite` | `discard_container` | "Leche desechada (nueva)" / "Discarded milk (new)" | V4-81 | PASS | vitest JSON, 6 oct 2026 (H6): (ID en el describe, no en el caso) `tests/unit/milkDb.test.ts` › «U-59 un desecho en la cola» › «se nombra "Leche desechada (alta)" / "Discarded milk (new)" y no es un borrado» (passed); `tests/unit/milkDb.test.ts` › «U-59 un desecho en la cola» › «id del dispositivo, refiere al contenedor, y su fila es lo que la pantalla ve» (passed); `tests/unit/milkDb.test.ts` › «U-59 un desecho en la cola» › «descartar la extracción rechazada se lleva el desecho y la edición que la usan (U-58)» (passed) |
+| U-60 | `milkErrorText` | cada código nuevo + `milk_label_taken` en línea y `sync` | texto de biberón (no cinta), en EN y ES; `milk_not_enough:37.5` → "1.27 oz" | V4-82, V4-84, AJ-1, AJ-12 | PASS | vitest JSON, 6 oct 2026 (H6): (ID en el describe, no en el caso) `tests/unit/milkDb.test.ts` › «U-60 milkErrorText — los códigos de 0015, en EN y ES» › «cada código nuevo tiene texto, sin el código crudo ni variables sin llenar» (passed); `tests/unit/milkDb.test.ts` › «U-60 milkErrorText — los códigos de 0015, en EN y ES» › «milk_not_enough:37.5 pone los ml disponibles en oz (AJ-12), no como etiqueta» (passed); `tests/unit/milkDb.test.ts` › «U-60 milkErrorText — los códigos de 0015, en EN y ES» › «milk_not_expired nombra el biberón, y sin él no deja un hueco» (passed); `tests/unit/milkDb.test.ts` › «U-60 milkErrorText — los códigos de 0015, en EN y ES» › «milk_label_taken habla de biberones, no de cintas (AJ-1), en línea y en el banner» (passed); y 1 caso(s) más del mismo describe |
+| U-61 | `describeBottle` | con `leftover_ml` | "… · sobró 1 oz" | V4-44 | PASS | vitest JSON, 6 oct 2026 (H6): (ID en el describe, no en el caso) `tests/unit/milkDb.test.ts` › «U-61 describeBottle con sobró» › «agrega "· sobró 1 oz" cuando hay dato, en los dos idiomas» (passed); `tests/unit/milkDb.test.ts` › «U-61 describeBottle con sobró» › «sin dato no dice nada» (passed) |
+| U-62 | `buildActivity` | desecho | entrada `discard`, "Leche desechada · M3 · 1.5 oz", no editable, EN/ES | V4-37 | PASS | vitest JSON, 6 oct 2026 (H6): (ID en el describe, no en el caso) `tests/unit/milkDb.test.ts` › «U-62 discardActivity — los desechos en Historial» › «una entrada "discard" por desecho vivo, con su hora, en EN y ES» (passed); `tests/unit/milkDb.test.ts` › «U-62 discardActivity — los desechos en Historial» › «anulados fuera, "desde" respetado, la cola marcada, lo más nuevo primero» (passed) |
+| U-63 | i18n | `es` = claves de `en`; mismas variables; claves `milk.tape*` y `bottle.timeOnly` borradas sin usos | pasa `tests/unit/i18n.test.ts` | §5.7 | PASS | vitest JSON, 6 oct 2026 (H6): (ID en el describe, no en el caso) `tests/unit/i18n.test.ts` › «U-63: claves de v3 que v4 borró» › «milk.tape* y bottle.timeOnly no existen en en ni en es» (passed); `tests/unit/i18n.test.ts` › «U-63: claves de v3 que v4 borró» › «y ningún archivo de la app las usa» (passed) |
+| U-64 | redondeo | `portionMl` con 1.75 oz mostrado sobre 51,7536 ml | toma 51,7536 exactos | v3 S-x | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-64: typing exactly the 1.75 oz shown on 51.7536 ml takes the exact ml» (passed) |
+| U-65 | `stashMl` | 4 TZ, medianoche del hogar | mismo total | V4-36 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/unit/milkBottles.test.ts` › «U-65: the stash at the household midnight is the same total in every TZ» (passed) |
 
 ## 2. Integración (I)
 
@@ -112,147 +114,155 @@ otra cosa, **INV = 0 filas al final**.
 
 | ID | Caso | Resultado esperado | Req/Dec | Resultado | Evidencia |
 |---|---|---|---|---|---|
-| I-01 | izq 59,147 / der 60, M3 libre | sesión total 119,147; contenedor M3 ocupado; INV | V4-01, V4-11 | | |
-| I-02 | izq y der nulos (o 0 y 0), sin etiqueta | sesión sin total, sin contenedor | V4-04, CL-2 | | |
-| I-03 | cantidad > 0 sin etiqueta | `milk_bad_input`, nada | CL-4 | | |
-| I-04 | M3 ocupado | `milk_label_taken:M3`, nada | V4-16, CL-5 | | |
-| I-05 | M3 **vaciado** por una toma | entra; dos contenedores M3, uno libre y uno ocupado | V4-14 CA1, R-5 | | |
-| I-06 | M3 **desechado** | entra | V4-34 CA1 | | |
-| I-07 | M9 con N=6; `M0`; `m3`; `M1234567` | M9 entra (D-1); los otros `milk_bad_input` | D-1, D-2 | | |
-| I-08 | reenvío mismo id y misma carga | no-op, 1 sesión, 1 contenedor | V4-80 | | |
-| I-09 | mismo id, otra etiqueta | `milk_idempotency_conflict` | V4-80, ARQ §3.2 | | |
-| I-10 | mismo id, otro bebé / otro `container_id` | `milk_idempotency_conflict` | 0014 S-16 | | |
-| I-11 | A1 y A2 eligen M3 a la vez | uno entra; el otro `milk_label_taken:M3`; un solo ocupado | V4-16, R-21, CL-6 | | |
-| I-12 | familia B con `p_baby_id` de A | `milk_baby_not_found` | RLS | | |
-| I-13 | `logged_by` | = `auth.uid()` de quien llama; un `p_logged_by` extra → `PGRST202` | actor | | |
-| I-14 | topes en izq/der | `milk_bad_input` | topes | | |
-| I-15 | anon | `401/42501`, nada | grants | | |
+| I-01 | izq 59,147 / der 60, M3 libre | sesión total 119,147; contenedor M3 ocupado; INV | V4-01, V4-11 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-01 izq 59,147 / der 60 en M3 libre: sesión 119,147 y M3 ocupado» (passed) |
+| I-02 | izq y der nulos (o 0 y 0), sin etiqueta | sesión sin total, sin contenedor | V4-04, CL-2 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-02 sin cantidad (nulos o 0 y 0) y sin biberón: sesión sin total y sin contenedor» (passed) |
+| I-03 | cantidad > 0 sin etiqueta | `milk_bad_input`, nada | CL-4 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-03 cantidad sin biberón elegido: milk_bad_input y nada escrito» (passed) |
+| I-04 | M3 ocupado | `milk_label_taken:M3`, nada | V4-16, CL-5 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-04 M3 ocupado: milk_label_taken:M3 y nada escrito» (passed) |
+| I-05 | M3 **vaciado** por una toma | entra; dos contenedores M3, uno libre y uno ocupado | V4-14 CA1, R-5 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-05 M3 vaciado por una toma: el número se reusa (uno libre y uno ocupado)» (passed) |
+| I-06 | M3 **desechado** | entra | V4-34 CA1 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-06 M3 desechado: el número se reusa» (passed) |
+| I-07 | M9 con N=6; `M0`; `m3`; `M1234567` | M9 entra (D-1); los otros `milk_bad_input` | D-1, D-2 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-07 M9 con N=6 y números grandes entran (D-1); formatos inválidos no» (passed) |
+| I-08 | reenvío mismo id y misma carga | no-op, 1 sesión, 1 contenedor | V4-80 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-08 reenvío con el mismo id y la misma carga: no-op» (passed) |
+| I-09 | mismo id, otra etiqueta | `milk_idempotency_conflict` | V4-80, ARQ §3.2 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-09 mismo id con otro biberón: milk_idempotency_conflict» (passed) |
+| I-10 | mismo id, otro bebé / otro `container_id` | `milk_idempotency_conflict` | 0014 S-16 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-10 mismo id con otro bebé o con otro container_id: milk_idempotency_conflict» (passed) |
+| I-11 | A1 y A2 eligen M3 a la vez | uno entra; el otro `milk_label_taken:M3`; un solo ocupado | V4-16, R-21, CL-6 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-11 A1 y A2 eligen M3 a la vez: uno entra, el otro milk_label_taken:M3» (passed) |
+| I-12 | familia B con `p_baby_id` de A | `milk_baby_not_found` | RLS | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-12 la familia B con el bebé de A: milk_baby_not_found» (passed) |
+| I-13 | `logged_by` | = `auth.uid()` de quien llama; un `p_logged_by` extra → `PGRST202` | actor | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-13 el actor es auth.uid(): logged_by de quien llama; un p_logged_by extra no existe» (passed) |
+| I-14 | topes en izq/der | `milk_bad_input` | topes | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-14 topes en izquierdo y derecho: milk_bad_input (y un texto, error de tipo), nada escrito» (passed) |
+| I-14b | total entre 0 y 0,15 ml (0,1; `1e-30`; 0,149; 0,05 + 0,05) | `milk_bad_input`, nada; 0,15 entra ocupado | M-1 (auditoría H5), INV-5 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-14b total entre 0 y 0,15 ml (polvo: 0,1, 1e-30, 0,149, 0,05 + 0,05): milk_bad_input y nada escrito; 0,15 entra (M-1)» (passed) |
+| I-14c | `pumped_at` > ahora de la base + 10 min | `milk_future_time`, nada; +5 min entra; reenvío no-op | m-2 (auditoría H5), D-15 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-14c hora de extracción más de 10 min en el futuro según la base: milk_future_time; +5 min entra; el reenvío del alta sigue siendo no-op (m-2)» (passed) |
+| I-15 | anon | `401/42501`, nada | grants | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-15 anon: no ejecuta y nada se escribe» (passed) |
+| I-15b | `milk_rebalance` llamada directa por un padre (PostgREST) | `milk_rpc_only` con las tres causas; nada cambia | ARQ §2.3 (auditoría H5) | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-15b milk_rebalance llamada directa por un padre (PostgREST): milk_rpc_only y nada cambia» (passed) |
 
 ### 2.2 `update_pumping_session`
 
 | ID | Caso | Resultado esperado | Req/Dec | Resultado | Evidencia |
 |---|---|---|---|---|---|
-| I-16 | papá: M2 3 oz, servidas 2; bajar a 1,5 | `milk_served_exceeds_amount:M2`, nada | V4-19 CA, R-19 | | |
-| I-17 | ídem, subir a 3,5 | OK, `remaining` 1,5 oz | V4-19 | | |
-| I-18 | ídem, cambiar hora +2 días | OK, `stored_at`/`expires_at` corridas; la toma no se re-valida | D-7, CL-39 | | |
-| I-19 | ídem, 2/1 → 1/2 mismo total | OK, `remaining` igual | V4-03 | | |
-| I-20 | total 0 con servido | `milk_already_served:M2` | V4-18 | | |
-| I-21 | total 0 sin servir, con desecho | contenedor y desecho anulados; "Leche desechada" baja | CL-17 | | |
-| I-22 | desechado, subir 1 oz | desecho +1 oz, sigue libre | D-8 | | |
-| I-23 | desechado, bajar hasta lo servido | desecho anulado, contenedor libre sin desecho | AJ-10 | | |
-| I-24 | libre con número reusado, subir | `lost_ml` +Δ, "Lo que hay" igual | D-9, V4-19 | | |
-| I-25 | libre con número libre, subir | re-ocupa con Δ | D-9 | | |
-| I-26 | sesión sin contenedor gana cantidad con M4 libre / ocupado | nace M4 / `milk_label_taken:M4` | AJ-5 | | |
-| I-27 | sesión legada: solo hora y nota | total intacto | 0014 S-22 | | |
-| I-28 | reenvío del mismo pedido | no-op | V4-80 | | |
-| I-29 | A1 edita mientras A2 sirve del mismo contenedor | serializa; INV | R-21 | | |
-| I-30 | familia B sobre sesión de A | `milk_session_gone` | RLS | | |
-| I-31 | topes | `milk_bad_input` | topes | | |
+| I-16 | papá: M2 3 oz, servidas 2; bajar a 1,5 | `milk_served_exceeds_amount:M2`, nada | V4-19 CA, R-19 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-16 bajar por debajo de lo servido: milk_served_exceeds_amount:M2 y nada cambia» (passed) |
+| I-17 | ídem, subir a 3,5 | OK, `remaining` 1,5 oz | V4-19 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-17 subir a 3,5 oz: le quedan 1,5 oz» (passed) |
+| I-18 | ídem, cambiar hora +2 días | OK, `stored_at`/`expires_at` corridas; la toma no se re-valida | D-7, CL-39 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-18 mover la hora 2 días: stored_at y expires_at se corren; la toma no se re-valida (D-7)» (passed) |
+| I-19 | ídem, 2/1 → 1/2 mismo total | OK, `remaining` igual | V4-03 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-19 cambiar la división 2/1 → 1/2 con el mismo total: le queda lo mismo» (passed) |
+| I-20 | total 0 con servido | `milk_already_served:M2` | V4-18 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-20 total 0 con leche servida: milk_already_served:M2» (passed) |
+| I-21 | total 0 sin servir, con desecho | contenedor y desecho anulados; "Leche desechada" baja | CL-17 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-21 total 0 sin servir y desechada: se anulan contenedor y desecho (la desechada baja)» (passed) |
+| I-22 | desechado, subir 1 oz | desecho +1 oz, sigue libre | D-8 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-22 desechada, subir 1 oz: el desecho crece 1 oz y sigue libre (D-8)» (passed) |
+| I-23 | desechado, bajar hasta lo servido | desecho anulado, contenedor libre sin desecho | AJ-10 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-23 desechada y servida en parte, bajar hasta lo servido: el desecho se anula, queda libre sin desecho» (passed) |
+| I-23b | desechado y servido en parte, bajar sin llegar a lo servido | el MISMO desecho se achica justo lo bajado; sigue libre, remaining 0, lost 0; la toma no cambia; INV | AJ-10 (bajada de `milk_rebalance`, auditoría H5) | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-23b desechada y servida en parte, bajar SIN llegar a lo servido: el desecho se achica justo lo bajado y sigue libre» (passed) |
+| I-24 | libre con número reusado, subir | `lost_ml` +Δ, "Lo que hay" igual | D-9, V4-19 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-24 libre con su número reusado, subir: va a lost_ml y "lo que hay" no cambia (D-9)» (passed) |
+| I-24b | libre con `lost_ml` (número reusado), bajar | `lost_ml` −Δ exacto, sigue libre; el M3 que ocupa el número intacto; INV | AJ-10 (bajada de `milk_rebalance`, auditoría H5) | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-24b libre con leche perdida (número reusado), bajar: lost_ml se achica justo lo bajado y "lo que hay" no cambia» (passed) |
+| I-25 | libre con número libre, subir | re-ocupa con Δ | D-9 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-25 libre con su número libre, subir: lo re-ocupa con la diferencia» (passed) |
+| I-26 | sesión sin contenedor gana cantidad con M4 libre / M5 ocupado | nace M4 / `milk_label_taken:M5` | AJ-5 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-26 sesión sin contenedor gana cantidad: nace en M4 libre; con M5 ocupado, milk_label_taken:M5» (passed) |
+| I-27 | sesión legada: solo hora y nota | total intacto | 0014 S-22 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-27 sesión legada: solo hora y nota, el total queda» (passed) |
+| I-28 | reenvío del mismo pedido | no-op | V4-80 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-28 reenvío del mismo pedido: no-op» (passed) |
+| I-29 | A1 edita mientras A2 sirve del mismo contenedor | serializa; INV | R-21 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-29 A1 edita la extracción mientras A2 sirve del mismo contenedor: se serializan» (passed) |
+| I-30 | familia B sobre sesión de A | `milk_session_gone` | RLS | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-30 la familia B sobre una sesión de A: milk_session_gone» (passed) |
+| I-31 | topes | `milk_bad_input` | topes | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-31 topes: milk_bad_input y nada cambia» (passed) |
+| I-31b | total nuevo entre 0 y 0,15 ml, con biberón y sin él | `milk_bad_input`, nada | M-1 (auditoría H5) | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-31b total entre 0 y 0,15 ml: milk_bad_input y nada cambia, con biberón y sin él (M-1)» (passed) |
+| I-31c | `pumped_at` > ahora de la base + 10 min, también en una legada | `milk_future_time`, nada; +5 min entra | m-2 (auditoría H5) | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-31c hora más de 10 min en el futuro: milk_future_time y nada cambia, también en una legada (m-2)» (passed) |
 
 ### 2.3 `void_pumping_session`
 
 | ID | Caso | Resultado esperado | Req/Dec | Resultado | Evidencia |
 |---|---|---|---|---|---|
-| I-32 | sin servir | sesión y contenedor anulados; número libre | V4-14 | | |
-| I-33 | servida (ocupada, libre o desechada) | `milk_already_served:M#` | V4-18, CL-18 | | |
-| I-34 | desechada no servida | anula también el desecho | CL-17 | | |
-| I-35 | dos veces | no-op | 0014 | | |
-| I-36 | familia B | no-op (no la ve), A intacta | RLS | | |
+| I-32 | sin servir | sesión y contenedor anulados; número libre | V4-14 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-32 sin servir: sesión y contenedor anulados; el número queda libre» (passed) |
+| I-33 | servida (ocupada, libre o desechada) | `milk_already_served:M#` | V4-18, CL-18 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-33 servida (ocupada, libre o desechada): milk_already_served:M#» (passed) |
+| I-34 | desechada no servida | anula también el desecho | CL-17 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-34 desechada sin servir: se anula también el desecho» (passed) |
+| I-35 | dos veces | no-op | 0014 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-35 dos veces: no-op» (passed) |
+| I-36 | familia B | no-op (no la ve), A intacta | RLS | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Pumping.test.ts` › «I-36 la familia B: no-op (no la ve) y A intacta» (passed) |
 
 ### 2.4 `discard_container`
 
 | ID | Caso | Resultado esperado | Req/Dec | Resultado | Evidencia |
 |---|---|---|---|---|---|
-| I-37 | M3 vencido con 1,5 oz | fila de 1,5 oz, `reason = expired`; M3 `remaining 0`, libre | V4-34, CL-12 | | |
-| I-38 | M3 vencido y servido en parte | solo lo que queda | CL-16 | | |
-| I-39 | M3 vigente según la base (teléfono adelantado: `p_discarded_at` futuro) | `milk_not_expired:M3`, nada | D-6, D-15, CL-13 | | |
-| I-40 | `p_discarded_at` anterior a `expires_at` / futuro / nulo | guardado acotado a `[expires_at, now()]` / `now()` / `now()` | D-15 | | |
-| I-41 | reenvío mismo `p_id` | no-op, 1 fila | V4-34 CA2 | | |
-| I-42 | mismo `p_id`, otro contenedor | `milk_idempotency_conflict` | V4-80 | | |
-| I-43 | A1 y A2 desechan M3 con ids distintos a la vez | 1 fila; el segundo sin error | V4-34 CA3, CL-15 | | |
-| I-44 | ya desechado / libre / anulado | no-op | AJ-15 | | |
-| I-45 | contenedor de B / inexistente | `milk_container_unusable` | RLS | | |
-| I-46 | desechar mientras A2 sirve de M3 (lock) | serializa: o sirve y desecha el resto, o desecha y la toma recibe `milk_overdraw:M3` | D-22 | | |
-| I-47 | INSERT/UPDATE directo en `milk_discards` | `milk_rpc_only` | guardas | | |
-| I-48 | anon: select/insert/rpc | negado | grants | | |
-| I-49 | borde: `now()` = `expires_at` exacto (fijando `stored_at` por SQL) | se permite (expiry exclusivo) | V4-31 | | |
-| I-50 | sesión en `America/Los_Angeles`, contenedor guardado antes del cambio de horario | vence a +96 h exactas | D-15 | | |
+| I-37 | M3 vencido con 1,5 oz | fila de 1,5 oz, `reason = expired`; M3 `remaining 0`, libre | V4-34, CL-12 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Discard.test.ts` › «I-37 M3 vencido con 1,5 oz: una fila de 1,5 oz "expired", M3 en 0 y libre» (passed) |
+| I-38 | M3 vencido y servido en parte | solo lo que queda | CL-16 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Discard.test.ts` › «I-38 vencido y servido en parte: solo se tira lo que queda; la toma no cambia» (passed) |
+| I-39 | M3 vigente según la base (teléfono adelantado: `p_discarded_at` futuro) | `milk_not_expired:M3`, nada | D-6, D-15, CL-13 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Discard.test.ts` › «I-39 vigente según la base (teléfono adelantado): milk_not_expired:M3 y nada cambia» (passed) |
+| I-40 | `p_discarded_at` anterior a `expires_at` / futuro / nulo | guardado acotado a `[expires_at, now()]` / `now()` / `now()` | D-15 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Discard.test.ts` › «I-40 la hora guardada se acota a [expires_at, now()]: anterior → expires_at; futura o nula → now()» (passed) |
+| I-41 | reenvío mismo `p_id` | no-op, 1 fila | V4-34 CA2 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Discard.test.ts` › «I-41 reenvío con el mismo p_id: no-op, una sola fila» (passed) |
+| I-42 | mismo `p_id`, otro contenedor | `milk_idempotency_conflict` | V4-80 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Discard.test.ts` › «I-42 mismo p_id, otro contenedor: milk_idempotency_conflict» (passed) |
+| I-43 | A1 y A2 desechan M3 con ids distintos a la vez | 1 fila; el segundo sin error | V4-34 CA3, CL-15 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Discard.test.ts` › «I-43 A1 y A2 desechan M3 a la vez con ids distintos: una fila, ninguno ve error» (passed) |
+| I-44 | ya desechado / libre / anulado | no-op | AJ-15 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Discard.test.ts` › «I-44 ya desechado, libre o anulado: no-op» (passed) |
+| I-45 | contenedor de B / inexistente | `milk_container_unusable` | RLS | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Discard.test.ts` › «I-45 contenedor de la familia B o inexistente: milk_container_unusable» (passed) |
+| I-46 | desechar mientras A2 sirve de M3 (lock) | serializa: o sirve y desecha el resto, o desecha y la toma recibe `milk_overdraw:M3` | D-22 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Discard.test.ts` › «I-46 desechar mientras A2 sirve de M3 (sin conexión, antes de vencer): se serializan (D-22)» (passed) |
+| I-47 | INSERT/UPDATE directo en `milk_discards` | `milk_rpc_only` | guardas | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Discard.test.ts` › «I-47 INSERT y UPDATE directos en milk_discards: milk_rpc_only» (passed) |
+| I-48 | anon: select/insert/rpc | negado | grants | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Discard.test.ts` › «I-48 anon: no lee, no inserta, no ejecuta» (passed) |
+| I-49 | borde: `now()` = `expires_at` exacto (fijando `stored_at` por SQL) | se permite (expiry exclusivo) | V4-31 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Discard.test.ts` › «I-49 now() = expires_at exacto: se puede desechar (la caducidad es exclusiva)» (passed) |
+| I-50 | sesión en `America/Los_Angeles`, contenedor guardado antes del cambio de horario | vence a +96 h exactas | D-15 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Discard.test.ts` › «I-50 con la sesión en America/Los_Angeles, guardada antes del cambio de horario: vence a +96 h exactas» (passed) |
 
 ### 2.5 `log_bottle_feed`
 
 | ID | Caso | Resultado esperado | Req/Dec | Resultado | Evidencia |
 |---|---|---|---|---|---|
-| I-51 | 3 oz de M3 con sobró 1 oz | M3 −3 oz; `leftover_ml` 29,57; desechada igual | V4-42, CL-19 | | |
-| I-52 | sobró > total | `milk_bad_input`, nada | V4-43, CL-20 | | |
-| I-53 | 6 argumentos (como v3) | entra, `leftover_ml` null | ARQ §3.6 | | |
-| I-54 | la toma vacía M3 (queda 0,1) | M3 libre | V4-14, CL-8 | | |
-| I-55 | de un liberado / desechado | `milk_overdraw:M#` | AJ-6, D-22 | | |
-| I-56 | vencido a `p_fed_at` / anulado / de otro bebé | `milk_container_unusable:M#` | 0014 S-6 | | |
-| I-57 | `p_fed_at` = now + 11 min / + 9 min | `milk_future_time` / entra | D-15 | | |
-| I-58 | toma de las 2 a.m. con contenedor que venció a las 8, enviada a las 9 | entra | S-6 | | |
-| I-59 | reenvío misma carga (incl. sobró) | no-op | V4-80 | | |
-| I-60 | mismo id, otro sobró | `milk_idempotency_conflict` | V4-80 | | |
-| I-61 | reenvío del alta después de un `edit_bottle_feed` | no-op | AJ-8 | | |
-| I-62 | A1 y A2 sirven el último 1 oz de M3 | uno entra; otro `milk_overdraw:M3` | R-21 | | |
-| I-63 | solo fórmula sin leche en la heladera | entra | V4-90 | | |
-| I-64 | topes en fórmula, porciones y sobró | `milk_bad_input` | topes | | |
-| I-65 | contenedor de B | `milk_container_unusable` | RLS | | |
+| I-51 | 3 oz de M3 con sobró 1 oz | M3 −3 oz; `leftover_ml` 29,57; desechada igual | V4-42, CL-19 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Feed.test.ts` › «I-51 3 oz de M3 con "sobró 1 oz": M3 baja 3 oz, sobró guardado, nada desechado» (passed) |
+| I-52 | sobró > total | `milk_bad_input`, nada | V4-43, CL-20 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Feed.test.ts` › «I-52 sobró mayor que lo servido: milk_bad_input y nada escrito» (passed) |
+| I-53 | 6 argumentos (como v3) | entra, `leftover_ml` null | ARQ §3.6 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Feed.test.ts` › «I-53 la llamada de seis argumentos de la app v3: entra, sobró nulo» (passed) |
+| I-54 | la toma vacía M3 (queda 0,1) | M3 libre | V4-14, CL-8 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Feed.test.ts` › «I-54 la toma deja M3 con 0,1 ml: M3 queda libre» (passed) |
+| I-55 | de un liberado / desechado | `milk_overdraw:M#` | AJ-6, D-22 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Feed.test.ts` › «I-55 servir de un liberado o de un desechado: milk_overdraw:M# (AJ-6, D-22)» (passed) |
+| I-56 | vencido a `p_fed_at` / anulado / de otro bebé | `milk_container_unusable:M#` | 0014 S-6 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Feed.test.ts` › «I-56 vencido a la hora de la toma, anulado o de otro bebé: milk_container_unusable:M#» (passed) |
+| I-57 | `p_fed_at` = now + 11 min / + 9 min | `milk_future_time` / entra | D-15 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Feed.test.ts` › «I-57 hora de la toma: +11 min según la base → milk_future_time; +9 min → entra» (passed) |
+| I-58 | toma de las 2 a.m. con contenedor que venció a las 8, enviada a las 9 | entra | S-6 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Feed.test.ts` › «I-58 toma de las 2 a.m. de leche que venció a las 8, enviada a las 9: entra» (passed) |
+| I-59 | reenvío misma carga (incl. sobró) | no-op | V4-80 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Feed.test.ts` › «I-59 reenvío con la misma carga (sobró incluido): no-op» (passed) |
+| I-60 | mismo id, otro sobró | `milk_idempotency_conflict` | V4-80 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Feed.test.ts` › «I-60 mismo id, otro sobró: milk_idempotency_conflict» (passed) |
+| I-61 | reenvío del alta después de un `edit_bottle_feed` | no-op | AJ-8 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Feed.test.ts` › «I-61 el reenvío del alta después de una edición completa: no-op (AJ-8)» (passed) |
+| I-62 | A1 y A2 sirven el último 1 oz de M3 | uno entra; otro `milk_overdraw:M3` | R-21 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Feed.test.ts` › «I-62 A1 y A2 sirven el último 1 oz de M3 a la vez: uno entra, el otro milk_overdraw:M3» (passed) |
+| I-63 | solo fórmula sin leche en la heladera | entra | V4-90 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Feed.test.ts` › «I-63 solo fórmula sin leche en la heladera: entra (la fórmula nunca bloquea)» (passed) |
+| I-64 | topes en fórmula, porciones y sobró | `milk_bad_input` | topes | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Feed.test.ts` › «I-64 topes en fórmula, porciones y sobró: milk_bad_input y nada escrito» (passed) |
+| I-65 | contenedor de B | `milk_container_unusable` | RLS | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Feed.test.ts` › «I-65 contenedor de la familia B: milk_container_unusable» (passed) |
 
 ### 2.6 `void_bottle_feed`
 
 | ID | Caso | Resultado esperado | Req/Dec | Resultado | Evidencia |
 |---|---|---|---|---|---|
-| I-66 | devuelve a M3 ocupado | `remaining` +; jsonb `returned_ml` | 0014 | | |
-| I-67 | M3 vaciado y número libre | re-ocupa | V4-15, CL-9 | | |
-| I-68 | M3 vaciado y número reusado | toma anulada; `lost_ml`; jsonb `lost:[{M3}]`; nunca dos M3 ocupados | D-9, CL-10 | | |
-| I-69 | M3 desechado | `lost_ml`, desechada igual | D-9 | | |
-| I-70 | M3 vencido | vuelve (caducada) | D-9 | | |
-| I-71 | dos veces / inexistente | no-op `{"returned_ml":0,"lost":[]}` | 0014 | | |
-| I-72 | A1 anula mientras A2 crea M3 nuevo (lock de etiqueta) | uno de los dos órdenes; INV, nunca dos M3 ocupados | INV-2 | | |
-| I-73 | UPDATE directo `{voided_at}` | `milk_rpc_only` | guardas | | |
+| I-66 | devuelve a M3 ocupado | `remaining` +; jsonb `returned_ml` | 0014 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Feed.test.ts` › «I-66 devuelve a M3 ocupado: remaining sube y el jsonb lo dice» (passed) |
+| I-67 | M3 vaciado y número libre | re-ocupa | V4-15, CL-9 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Feed.test.ts` › «I-67 M3 vaciado y su número libre: la leche vuelve y lo re-ocupa (CL-9)» (passed) |
+| I-68 | M3 vaciado y número reusado | toma anulada; `lost_ml`; jsonb `lost:[{M3}]`; nunca dos M3 ocupados | D-9, CL-10 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Feed.test.ts` › «I-68 M3 vaciado y su número reusado: la toma se anula, la leche va a lost_ml y lo dice (CL-10)» (passed) |
+| I-69 | M3 desechado | `lost_ml`, desechada igual | D-9 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Feed.test.ts` › «I-69 M3 desechado: la leche va a lost_ml y lo desechado no cambia (D-9)» (passed) |
+| I-70 | M3 vencido | vuelve (caducada) | D-9 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Feed.test.ts` › «I-70 M3 vencido (ocupado): la leche vuelve y queda como caducada» (passed) |
+| I-71 | dos veces / inexistente | no-op `{"returned_ml":0,"lost":[]}` | 0014 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Feed.test.ts` › «I-71 dos veces o inexistente: no-op con {"returned_ml":0,"lost":[]}» (passed) |
+| I-72 | A1 anula mientras A2 crea M3 nuevo (lock de etiqueta) | uno de los dos órdenes; INV, nunca dos M3 ocupados | INV-2 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Feed.test.ts` › «I-72 A1 anula una toma mientras A2 crea un M3 nuevo: nunca dos M3 ocupados» (passed) |
+| I-73 | UPDATE directo `{voided_at}` | `milk_rpc_only` | guardas | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Feed.test.ts` › «I-73 UPDATE directo {voided_at} de una toma con desglose: milk_rpc_only» (passed) |
 
 ### 2.7 `edit_bottle_feed`
 
 | ID | Caso | Resultado esperado | Req/Dec | Resultado | Evidencia |
 |---|---|---|---|---|---|
-| I-74 | leche 3→2 oz, todo M3 | M3 +1 oz | V4-52, CL-21 | | |
-| I-75 | M3 1,75 + M4 1,25 → 2 oz | M4 0,25; M3 intacto | D-17, CL-22 | | |
-| I-76 | 2→3 oz con M5 (lunes) y M6 (martes) | sale de M5 | D-18, CL-23 | | |
-| I-77 | 2→5 oz con 1 oz a esa hora | `milk_not_enough:29.5735`, nada | V4-54, CL-24 | | |
-| I-78 | fórmula 1→3 oz sin leche | guarda | V4-54, CL-25 | | |
-| I-79 | hora a un momento en que M3 vencía | `milk_container_unusable:M3` | D-7, CL-26 | | |
-| I-80 | hora futura | `milk_future_time` | CL-27 | | |
-| I-81 | A1 y A2 editan con el mismo `p_expected` | uno entra; otro `milk_edit_conflict` | V4-51, CL-28 | | |
-| I-82 | reenvío mismo `p_op_id` | no-op, devuelve el mismo `result` | AJ-3, CL-29 | | |
-| I-83 | mismo `p_op_id`, otra carga | `milk_idempotency_conflict` | AJ-3 | | |
-| I-84 | ABA: e1 A→B, e2 B→A (otro teléfono), reenvío de e1 | no-op (registrado); queda A | AJ-3 | | |
-| I-85 | a la baja con M3 desechado | toma baja; `lost_ml`; jsonb lo dice | D-9, CL-30 | | |
-| I-86 | baja a 0 la porción y vuelve a subir del mismo contenedor | porción reavivada, sin fila duplicada | ARQ §3.8 | | |
-| I-87 | sobró > total nuevo | `milk_bad_input` | V4-43 | | |
-| I-88 | toma sin desglose | `milk_not_inventory` | D-14b | | |
-| I-89 | toma anulada / de B | `milk_feeding_gone` | RLS | | |
-| I-90 | edición mientras A2 sirve del contenedor candidato | serializa; recalcula el plan con locks; INV | V4-83 | | |
-| I-91 | `milk_feeding_edits`: `before`, `request`, `result`, `logged_by` | escritos; B no los ve; anon no | auditoría, RLS | | |
-| I-92 | topes en leche, fórmula y sobró; `p_expected` mal formado | `milk_bad_input` | topes | | |
+| I-74 | leche 3→2 oz, todo M3 | M3 +1 oz | V4-52, CL-21 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Edit.test.ts` › «I-74 leche 3 → 2 oz, todo de M3: M3 recupera 1 oz» (passed) |
+| I-75 | M3 1,75 + M4 1,25 → 2 oz | M4 0,25; M3 intacto | D-17, CL-22 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Edit.test.ts` › «I-75 M3 1,75 (más viejo) + M4 1,25 (más nuevo) → 2 oz: vuelve 1 oz a M4, M3 intacto (D-17)» (passed) |
+| I-76 | 2→3 oz con M5 (lunes) y M6 (martes) | sale de M5 | D-18, CL-23 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Edit.test.ts` › «I-76 leche 2 → 3 oz con M5 (lunes) y M6 (martes) a esa hora: sale 1 oz de M5 (D-18)» (passed) |
+| I-77 | 2→5 oz con 1 oz a esa hora | `milk_not_enough:29.5735`, nada | V4-54, CL-24 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Edit.test.ts` › «I-77 leche 2 → 5 oz con 1 oz disponible a esa hora: milk_not_enough:29.5735 y nada cambia» (passed) |
+| I-78 | fórmula 1→3 oz sin leche | guarda | V4-54, CL-25 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Edit.test.ts` › «I-78 fórmula 1 → 3 oz sin leche en la heladera: se guarda» (passed) |
+| I-79 | hora a un momento en que M3 vencía | `milk_container_unusable:M3` | D-7, CL-26 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Edit.test.ts` › «I-79 mover la hora a cuando M3 ya vencía: milk_container_unusable:M3 y nada cambia» (passed) |
+| I-79b | toma aceptada antes de la extracción (S-17): cambiar solo nota, sobró o fórmula | entra; mover hora o leche sí re-valida (`milk_container_unusable:M3`) | m-1 (auditoría H5), D-7 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Edit.test.ts` › «I-79b toma aceptada ANTES de la extracción (S-17): cambiar solo la nota, el sobró o la fórmula entra; mover la hora o la leche sí re-valida (m-1)» (passed) |
+| I-80 | hora futura | `milk_future_time` | CL-27 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Edit.test.ts` › «I-80 hora futura: milk_future_time» (passed) |
+| I-81 | A1 y A2 editan con el mismo `p_expected` | uno entra; otro `milk_edit_conflict` | V4-51, CL-28 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Edit.test.ts` › «I-81 A1 y A2 editan con el mismo esperado: uno entra, el otro milk_edit_conflict» (passed) |
+| I-82 | reenvío mismo `p_op_id` | no-op, devuelve el mismo `result` | AJ-3, CL-29 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Edit.test.ts` › «I-82 reenvío del mismo p_op_id: no-op y devuelve el mismo resultado» (passed) |
+| I-83 | mismo `p_op_id`, otra carga | `milk_idempotency_conflict` | AJ-3 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Edit.test.ts` › «I-83 mismo p_op_id con otra carga: milk_idempotency_conflict» (passed) |
+| I-84 | ABA: e1 A→B, e2 B→A (otro teléfono), reenvío de e1 | no-op (registrado); queda A | AJ-3 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Edit.test.ts` › «I-84 ABA: e1 A→B, e2 B→A desde el otro teléfono, reenvío tardío de e1: no-op, queda A» (passed) |
+| I-85 | a la baja con M3 desechado | toma baja; `lost_ml`; jsonb lo dice | D-9, CL-30 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Edit.test.ts` › «I-85 a la baja con M3 desechado: la toma baja, la leche va a lost_ml y lo dice (CL-30)» (passed) |
+| I-86 | baja a 0 la porción y vuelve a subir del mismo contenedor | porción reavivada, sin fila duplicada | ARQ §3.8 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Edit.test.ts` › «I-86 bajar la porción a 0 y volver a subir del mismo contenedor: se reaviva, sin fila duplicada» (passed) |
+| I-87 | sobró > total nuevo | `milk_bad_input` | V4-43 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Edit.test.ts` › «I-87 sobró mayor que el total nuevo: milk_bad_input» (passed) |
+| I-88 | toma sin desglose | `milk_not_inventory` | D-14b | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Edit.test.ts` › «I-88 toma sin desglose: milk_not_inventory» (passed) |
+| I-89 | toma anulada / de B | `milk_feeding_gone` | RLS | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Edit.test.ts` › «I-89 toma anulada o de la familia B: milk_feeding_gone» (passed) |
+| I-90 | edición mientras A2 sirve del contenedor candidato | serializa; recalcula el plan con locks; INV | V4-83 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Edit.test.ts` › «I-90 edición mientras A2 sirve del contenedor candidato: se serializan y el plan se recalcula con los locks» (passed) |
+| I-91 | `milk_feeding_edits`: `before`, `request`, `result`, `logged_by` | escritos; B no los ve; anon no | auditoría, RLS | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Edit.test.ts` › «I-91 milk_feeding_edits guarda before, request, result y logged_by; B y anon no lo ven» (passed) |
+| I-92 | topes en leche, fórmula y sobró; `p_expected` mal formado | `milk_bad_input` | topes | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Edit.test.ts` › «I-92 topes en leche, fórmula y sobró; esperado mal formado: milk_bad_input» (passed) |
 
 ### 2.8 Triggers, columnas, ajustes
 
 | ID | Caso | Resultado esperado | Req/Dec | Resultado | Evidencia |
 |---|---|---|---|---|---|
-| I-93 | UPDATE directo solo `fed_at` de toma con desglose, vigente | entra | V4-58 | | |
-| I-94 | ídem a una hora en que su contenedor vencía / futura | `milk_container_unusable:M#` / `milk_future_time` | V4-58, CL-34 | | |
-| I-95 | UPDATE directo de `leftover_ml` en toma con desglose | `milk_rpc_only` | AJ-13 | | |
-| I-96 | UPDATE directo de `leftover_ml` en toma legada | entra; total por debajo después → `23514` | D-11b | | |
-| I-97 | `babies.milk_bottle_count`: 0, 31, 2.5, `'NaN'` | rechazado por CHECK/tipo | V4-10, D-23 | | |
-| I-98 | `saveMilkRules` con N=4 (padre A1), leído por A2 | ambos ven 4 | V4-10 CA2 | | |
-| I-99 | familia B cambia N de A | 0 filas, `milk_baby_not_found` | RLS | | |
-| I-100 | `listContainers`/`listDiscards`/`legacySplitInputs` sin limit | > 100 filas vienen todas | lectura | OK (MAXROWS, 6 oct) | Sin limit **y** más allá del `max_rows` de la nube (1000 por respuesta, en silencio): todas pasan por `readAll` (`lib/readAll.ts`, `.range()` en páginas de 1000 hasta una corta, desempate por `id`). Unit `tests/unit/readAll.test.ts` con un cliente falso que corta en 1000: ANTES 4/4 fallan (`expected … to have a length of 2503 but got 1000`), DESPUÉS 8/8. Integración `tests/integration/readAll.test.ts`: 1003 filas reales por PostgREST+RLS con página 7 → 1003 pañales, 1003 contenedores (Σ remaining 6018), 1003 porciones, 1004 tomas; 3/3 |
-| I-101 | `pg_class`: 19 tablas con `relrowsecurity`; grants de `milk_discards`/`milk_feeding_edits` sin `anon` ni `delete` | como ARQ §3.10 | §5.2 | | |
-| I-102 | `pg_proc`: cada función nueva/recreada `security invoker`, `search_path=public`, sin EXECUTE de `anon`/`public` | como ARQ §3.0 | §5.3 | | |
-| I-103 | una sola versión de `log_bottle_feed` y de `void_bottle_feed` | 1 fila cada una en `pg_proc` | AJ-7, ARQ §3.6 | | |
-| I-104 | migración 0015 sobre una base con datos v3 (contenedores vaciados, M12, vencidos) | `released_at` de los vacíos; nada renumerado; INV en el `do` final | V4-14 CA3, V4-20, CL-37, CL-38 | | |
-| I-105 | 0015 sobre datos que no cierran (sembrados a mano) | aborta con `milk_invariant_broken`, nada aplicado | ARQ §6 | OK | Desde R-10 la siembra es la que la prueba dice: M2 de 60 ml con 60 servidos que dice tener 20 (más de lo que puede). La forma contraria (remaining MENOR que amount − servido) ya no aborta: 0015 la pasa a `lost_ml` (ARQ §6) |
-| I-106 | ninguna RPC de leche ni trigger toca `nursing_sessions`/`diaper_changes`/`sleep_sessions` | lactancia, pañal y sueño entran con el inventario en cualquier estado | V4-90, CL-40 | | |
+| I-93 | UPDATE directo solo `fed_at` de toma con desglose, vigente | entra | V4-58 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Schema.test.ts` › «I-93 UPDATE directo solo de la hora de una toma con desglose, a una hora válida: entra» (passed) |
+| I-94 | ídem a una hora en que su contenedor vencía / futura | `milk_container_unusable:M#` / `milk_future_time` | V4-58, CL-34 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Schema.test.ts` › «I-94 UPDATE directo de la hora a cuando su leche vencía / antes de la extracción / al futuro: rechazado» (passed) |
+| I-95 | UPDATE directo de `leftover_ml` en toma con desglose | `milk_rpc_only` | AJ-13 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Schema.test.ts` › «I-95 UPDATE directo del sobró de una toma con desglose: milk_rpc_only» (passed) |
+| I-96 | UPDATE directo de `leftover_ml` en toma legada | entra; total por debajo después → `23514` | D-11b | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Compat.test.ts` › «C-10/C-11 bajar el total de una toma legada por debajo del sobró (23514) o pasarla a nursing (entra): ver I-96» (passed); `tests/integration/milkV4Schema.test.ts` › «I-96 sobró en una toma legada por UPDATE directo: entra; bajar el total por debajo da 23514 (D-11b)» (passed) |
+| I-97 | `babies.milk_bottle_count`: 0, 31, 2.5, `'NaN'` | rechazado por CHECK/tipo | V4-10, D-23 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Schema.test.ts` › «I-97 milk_bottle_count: default 6; 0, 31, 2.5, NaN, texto rechazados; 1 y 30 entran» (passed) |
+| I-98 | `saveMilkRules` con N=4 (padre A1), leído por A2 | ambos ven 4 | V4-10 CA2 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Db.test.ts` › «milkRules / saveMilkRules / saveMilkBottleCount: N lo ven los dos padres; otra familia no puede (I-98, I-99)» (passed); `tests/integration/milkV4Schema.test.ts` › «I-98 N=4 guardado por A1 lo lee A2» (passed) |
+| I-99 | familia B cambia N de A | 0 filas, `milk_baby_not_found` | RLS | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Db.test.ts` › «milkRules / saveMilkRules / saveMilkBottleCount: N lo ven los dos padres; otra familia no puede (I-98, I-99)» (passed); `tests/integration/milkV4Schema.test.ts` › «I-99 la familia B no cambia el N de A (0 filas) ni registra en su bebé» (passed) |
+| I-100 | `listContainers`/`listDiscards`/`legacySplitInputs` sin limit | > 100 filas vienen todas | lectura | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Db.test.ts` › «I-100: contenedores, desechos y entradas de la estimación vienen TODOS (> 100), sin límite» (passed); `tests/integration/milkV4Schema.test.ts` › «I-100 más de 100 contenedores (liberados incluidos) se leen todos, sin tope de filas» (passed) · Antes: OK (MAXROWS, 6 oct) — Sin limit **y** más allá del `max_rows` de la nube (1000 por respuesta, en silencio): todas pasan por `readAll` (`lib/readAll.ts`, `.range()` en páginas de 1000 hasta una corta, desempate por `id`). Unit `tests/unit/readAll.test.ts` con un cliente falso que corta en 1000: ANTES 4/4 fallan (`expected … to have a length of 2503 but got 1000`), DESPUÉS 8/8. Integración `tests/integration/readAll.test.ts`: 1003 filas reales por PostgREST+RLS con página 7 → 1003 pañales, 1003 contenedores (Σ remaining 6018), 1003 porciones, 1004 tomas; 3/3 |
+| I-101 | `pg_class`: 19 tablas con `relrowsecurity`; grants de `milk_discards`/`milk_feeding_edits` sin `anon` ni `delete` | como ARQ §3.10 | §5.2 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Schema.test.ts` › «I-101 19 tablas en public, las 19 con RLS; grants de las dos nuevas sin anon ni DELETE» (passed) |
+| I-102 | `pg_proc`: cada función nueva/recreada `security invoker`, `search_path=public`, sin EXECUTE de `anon`/`public` | como ARQ §3.0 | §5.3 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Schema.test.ts` › «I-102 cada función nueva o recreada: security invoker, search_path=public, sin EXECUTE de anon/public» (passed) |
+| I-103 | una sola versión de `log_bottle_feed` y de `void_bottle_feed` | 1 fila cada una en `pg_proc` | AJ-7, ARQ §3.6 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Schema.test.ts` › «I-103 una sola versión de log_bottle_feed y de void_bottle_feed (sin PGRST203)» (passed) |
+| I-104 | migración 0015 sobre una base con datos v3 (contenedores vaciados, M12, vencidos) | `released_at` de los vacíos; nada renumerado; INV en el `do` final | V4-14 CA3, V4-20, CL-37, CL-38 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Migration.test.ts` › «I-104 sobre datos v3: libera los vaciados, no renumera ni anula nada, y la invariante cierra» (passed) |
+| I-105 | 0015 sobre datos que no cierran (sembrados a mano) | aborta con `milk_invariant_broken`, nada aplicado | ARQ §6 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Migration.test.ts` › «I-105 sobre datos que no cierran: aborta con milk_invariant_broken y no aplica nada» (passed) · Antes: OK — Desde R-10 la siembra es la que la prueba dice: M2 de 60 ml con 60 servidos que dice tener 20 (más de lo que puede). La forma contraria (remaining MENOR que amount − servido) ya no aborta: 0015 la pasa a `lost_ml` (ARQ §6) |
+| I-106 | ninguna RPC de leche ni trigger toca `nursing_sessions`/`diaper_changes`/`sleep_sessions` | lactancia, pañal y sueño entran con el inventario en cualquier estado | V4-90, CL-40 | PASS | vitest JSON, 6 oct 2026 (H6): `tests/integration/milkV4Schema.test.ts` › «I-106 lactancia, pañal y sueño entran con el inventario en cualquier estado» (passed); `tests/integration/milkV4Schema.test.ts` › «I-106 ningún trigger de leche cuelga de nursing_sessions, diaper_changes ni sleep_sessions» (passed) |
 
 ## 3. Compatibilidad (C)
 
@@ -392,9 +402,10 @@ valores esperados en la base). INV al final de cada uno. 390 y 1440; EN y ES
 | R-07 | Suite de v3-release contra B | **151/151** | ARQ §10.3 | OK (en el stack local) | Reversa aplicada al stack local (comprobado 127.0.0.1) → `../amelia_app-v3check` `vitest run tests/integration`: **151 passed (151)**. No se apuntó la suite al efímero |
 | R-08 | Suite de v0.12.1 contra B | **118/118** | ARQ §10.3 | OK (en el stack local) | Ídem, `../amelia_app-v0121-check`: **118 passed (118)**; y tras `rollback-leche.sql` (0013): 118/118 |
 | R-09 | Bloque opcional `milk_backup_v4`: conteos = lo perdido (desechos, sobró, N, released, lost, ediciones); no visible por PostgREST | coinciden; `anon`/`authenticated` sin acceso | ARQ §10.2 | OK | Bloque opcional descomentado: respaldo desechos 2, ediciones 1, sobró 2, contenedores 8, bebés 1 = lo sembrado; `has_schema_privilege(anon\|authenticated, milk_backup_v4, usage)` = false |
-| R-10 | Re-aplicar 0015 sobre B | entra; INV 0 filas | ARQ §10.3 | OK (corregido el 6 oct 2026 en 0015) | ANTES: `begin; 0015; rollback;` sobre la base revertida → `milk_invariant_broken`, "4 fila(s); la primera: INV-1 cuenta" (M7 de R-05 + 3 × INV-4); caso mínimo (M3 servido entero, M3 reusado) → "1 fila(s); la primera: INV-4 anulado con vivos". Corrección: sección "VOLVER A v4 TRAS LA REVERSA" de 0015 (anulado con porciones vivas → liberado; residuo positivo → `lost_ml`); la reversa no cambió. DESPUÉS, `tests/integration/milkV4Reapply.test.ts` (Postgres efímero, siembra por RPC como `authenticated`): caso mínimo y caso completo (M3 reusado, M2 desechado tras servir, M7 ocupado con lost 25, M7 nuevo servido, M1 con sobró) + días de v3 (una toma de 0014 de M3, una extracción M5) → 0015 entra (en seco y de verdad), INV 0 filas, "Lo que hay" 115 → 115, M7 vuelve con lost 25 exacto, M2 con lost 40 (su desecho), 5 porciones vivas; 2/2. En la misma prueba, en cada vuelta: R-01 (dump = 0001–0014), R-02, R-12 (dump = 0001–0013, dos veces) |
+| R-10 | Re-aplicar 0015 sobre B | entra; INV 0 filas | ARQ §10.3 | OK (corregido el 6 oct 2026 en 0015) | ANTES: `begin; 0015; rollback;` sobre la base revertida → `milk_invariant_broken`, "4 fila(s); la primera: INV-1 cuenta" (M7 de R-05 + 3 × INV-4); caso mínimo (M3 servido entero, M3 reusado) → "1 fila(s); la primera: INV-4 anulado con vivos". Corrección: sección "VOLVER A v4 TRAS LA REVERSA" de 0015 (anulado con porciones vivas → liberado; residuo positivo → `lost_ml`); la reversa no cambió. DESPUÉS, `tests/integration/milkV4Reapply.test.ts` (Postgres efímero, siembra por RPC como `authenticated`): caso mínimo y caso completo (M3 reusado, M2 desechado tras servir, M7 ocupado con lost 25, M7 nuevo servido, M1 con sobró) + días de v3 (una toma de 0014 de M3, una extracción M5) → 0015 entra (en seco y de verdad), INV 0 filas, "Lo que hay" 115 → 115, M7 vuelve con lost 25 exacto, M2 con lost 40 (su desecho), 5 porciones vivas; 2/2. En la misma prueba, en cada vuelta: R-01 (dump = 0001–0014), R-02, R-12 (dump = 0001–0013, dos veces). Re-corrido tras el paso 2d de la reversa (B-1, R-13): 3/3, mismos dumps |
 | R-11 | Tomas editadas por v4 sobreviven con su desglose final y porciones | INV-6 en B | ARQ §10.2 | OK | Tras la reversa: 6 tomas vivas con desglose, 6 porciones vivas, 0 que no cierran (INV-6) |
 | R-12 | `rollback-leche.sql` (0014) después de `rollback-leche-v4.sql` | deja 0001–0013 (encadenable) | docs/rollback-leche.sql | OK | `rollback-leche.sql` tras `rollback-leche-v4.sql`: exit 0; diff contra 0001–0013 de cero **0 líneas**; 2ª corrida exit 0. `rollback-leche-v4.sql` sobre 0013: aborta sin cambios (diff 0) |
+| R-13 | B-1 (auditoría H5): tras la reversa, v3 corrige solo nota u hora de la extracción de un contenedor anulado por la reversa (desechado tras servir; viejo de un número reusado), con los argumentos que arma su `updatePumpingSession` | ningún contenedor nuevo, "Lo que hay" igual; la extracción queda legada (total igual, lados null); 0015 vuelve a entrar con INV 0; R-01 igual | ARQ §10.1 paso 3d | OK (corregido el 6 oct 2026 en la reversa, paso 2d) | ANTES: `milkV4Reapply.test.ts` › B-1 → `expected '5' to be '3'` (v3 creó M9 y M8 con los totales enteros); `run3.sql` de la auditoría en el stack local → `M3 | 80 | 80` utilizable. DESPUÉS: B-1 3/3 en el archivo (con R-01, R-02, R-12 y el ciclo v4 → reversa → v4, INV 0); `run3.sql` con los argumentos que manda v3 (lados de la fila = null) → la extracción queda `null/null total 80` y no nace ningún contenedor. Riesgo que queda: escribir los lados a mano en esa legada (compatibilidad-v4 §5.2) |
 
 ## 6. Conteo
 
@@ -404,8 +415,18 @@ valores esperados en la base). INV al final de cada uno. 390 y 1440; EN y ES
 | I | 106 |
 | C | 25 |
 | E | 50 |
-| R | 12 |
-| **Total** | **258** |
+| R | 13 |
+| **Total** | **259** |
+
+Resultado de U e I (H6, 6 oct 2026), llenado por script desde la salida JSON de
+vitest (`vitest run tests/unit --reporter=json` y `vitest run tests/integration
+--maxWorkers=2 --reporter=json`, contra el stack local recién reseteado con
+0001–0015): **181 filas** (65 U + 106 I + 10 sub-casos `b`/`c` agregados en H6)
+→ **181 PASS, 0 FAIL, 0 NO VERIFICADO**. Corridas: unitarias 554/554 (y ×4 TZ
+con `scripts/test-tz.sh`), integración 307/307. La evidencia de cada fila es el
+archivo y el nombre del caso que contiene el ID; donde el ID está solo en el
+`describe`, la fila lo dice. "PASS" es que esos casos pasan, no una revisión de
+que el caso cubre todo lo que pide la fila.
 
 Cobertura por RPC (I): `log_pumping_session` 15, `update_pumping_session` 16,
 `void_pumping_session` 5, `discard_container` 14, `log_bottle_feed` 15,

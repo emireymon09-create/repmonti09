@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { runInNewContext } from 'node:vm'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { en, type MessageKey, type Plural } from '@/lib/i18n/en'
 import { es } from '@/lib/i18n/es'
 import { LANG_BOOT_SCRIPT, LANG_KEY } from '@/lib/i18n/boot'
@@ -70,6 +73,33 @@ describe('diccionarios', () => {
       const target = texts(es[key] as string | Plural)
       source.forEach((text, i) => expect(placeholders(target[i]), key).toEqual(placeholders(text)))
     }
+  })
+})
+
+describe('U-63: claves de v3 que v4 borró', () => {
+  const gone = (k: string) => k.startsWith('milk.tape') || k === 'bottle.timeOnly'
+
+  it('milk.tape* y bottle.timeOnly no existen en en ni en es', () => {
+    expect(Object.keys(en).filter(gone)).toEqual([])
+    expect(Object.keys(es).filter(gone)).toEqual([])
+  })
+
+  it('y ningún archivo de la app las usa', () => {
+    const root = fileURLToPath(new URL('../../', import.meta.url))
+    const hits: string[] = []
+    const walk = (dir: string) => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const p = join(dir, e.name)
+        if (e.isDirectory()) walk(p)
+        else if (
+          /\.(ts|tsx)$/.test(e.name) &&
+          /['"`](milk\.tape|bottle\.timeOnly)/.test(readFileSync(p, 'utf8'))
+        )
+          hits.push(p.slice(root.length))
+      }
+    }
+    for (const d of ['app', 'components', 'lib']) walk(join(root, d))
+    expect(hits).toEqual([])
   })
 })
 

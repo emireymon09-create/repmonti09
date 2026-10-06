@@ -320,7 +320,7 @@ export default function PumpingPage() {
 
     const sides = readPumpingSides({ text: left, unit: unitLeft }, { text: right, unit: unitRight })
     if (sides.problem) {
-      setErr(t('milk.amountNotNumber'))
+      setErr(t(sides.problem === 'tiny' ? 'milk.amountTooSmall' : 'milk.amountNotNumber'))
       return
     }
     // A live session is dated when it started; a manual one, by the field.

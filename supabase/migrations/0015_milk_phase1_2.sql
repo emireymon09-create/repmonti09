@@ -545,8 +545,21 @@ begin
     return;
   end if;
 
+  -- La hora la pone el teléfono (la extracción offline vale), pero no puede
+  -- ser del futuro según la base (m-2, mismo tope de 10 min que D-15). Va
+  -- DESPUÉS de la idempotencia: el reenvío de un alta ya guardada no se
+  -- re-valida. La app v0.12.1 escribe `pumped_at` directo en forma legada y
+  -- esa vía no pasa por acá (queda como estaba).
+  if p_pumped_at > now() + interval '10 minutes' then
+    raise exception 'milk_future_time';
+  end if;
+
   v_total := coalesce(p_left_ml, 0) + coalesce(p_right_ml, 0);
-  if v_total >= 100000 then
+  -- Polvo (M-1): un total entre 0 y 0,15 ml (EMPTY_ML) no es "sin cantidad"
+  -- ni un biberón: crearía un OCUPADO con menos de 0,15 ml (rompe INV-5 y
+  -- bloquea el número hasta que vence). Se rechaza en vez de redondear a 0 en
+  -- silencio; la pantalla tampoco lo deja mandar (readPumpingSides).
+  if v_total >= 100000 or (v_total > 0 and v_total < 0.15) then
     raise exception 'milk_bad_input';
   end if;
 
@@ -613,6 +626,11 @@ begin
     raise exception 'milk_bad_input';
   end if;
 
+  -- Mismo tope que el alta (m-2), también para una legada.
+  if p_pumped_at > now() + interval '10 minutes' then
+    raise exception 'milk_future_time';
+  end if;
+
   perform pg_advisory_xact_lock(hashtext('amelia_milk_op:' || p_id::text));
   select * into v_session from pumping_sessions where id = p_id for update;
   if not found or v_session.voided_at is not null then
@@ -633,7 +651,8 @@ begin
   end if;
 
   v_total := coalesce(p_left_ml, 0) + coalesce(p_right_ml, 0);
-  if v_total >= 100000 then
+  -- Polvo (M-1): mismo rechazo que el alta.
+  if v_total >= 100000 or (v_total > 0 and v_total < 0.15) then
     raise exception 'milk_bad_input';
   end if;
 
@@ -1283,12 +1302,18 @@ begin
   end if;
 
   -- 7. Cada porción que queda viva, válida a la hora (nueva) de la toma.
-  select c.label into v_bad
-    from milk_drawdowns d join milk_containers c on c.id = d.container_id
-   where d.feeding_id = p_feeding_id and d.voided_at is null
-     and (c.expires_at <= p_fed_at or c.stored_at > p_fed_at + interval '10 minutes')
-   order by c.id
-   limit 1;
+  --    Solo si la edición mueve la hora o la leche (m-1): corregir la nota,
+  --    el sobró o la fórmula de una toma que log_bottle_feed aceptó (p. ej.
+  --    anterior a la extracción, S-17, o una extracción cuya hora se corrió
+  --    después, D-7) no puede quedar bloqueado por porciones que nadie toca.
+  if p_fed_at is distinct from v_f.fed_at or v_delta <> 0 then
+    select c.label into v_bad
+      from milk_drawdowns d join milk_containers c on c.id = d.container_id
+     where d.feeding_id = p_feeding_id and d.voided_at is null
+       and (c.expires_at <= p_fed_at or c.stored_at > p_fed_at + interval '10 minutes')
+     order by c.id
+     limit 1;
+  end if;
   if v_bad is not null then
     raise exception 'milk_container_unusable:%', v_bad;
   end if;

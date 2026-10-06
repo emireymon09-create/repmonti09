@@ -108,6 +108,8 @@ Foto antes/después por PostgREST en C-13: idéntica.
 | — | ídem de M1, 10 ml; y el reenvío de la cola con la misma carga | entra; reenvío no-op | Sí |
 | AJ-8 | Reenvío tardío, con seis argumentos, del alta de una toma ya **editada** por v4 | no-op (foto igual) | Sí |
 | D-15 | Toma +1 h en el futuro | `milk_future_time`, igual (v3 no lo traduce) | Sí |
+| m-2 | `log_pumping_session` / `update_pumping_session` con `pumped_at` > ahora de la base + 10 min (agregado el 6 oct 2026, auditoría H5) | `milk_future_time` (v3 no lo traduce: muestra el código). La pantalla de v3 ya no deja una hora futura **según el reloj del teléfono**, así que solo lo ve un teléfono con el reloj **adelantado** más de 10 min: su extracción "de ahora" se rechaza (o, encolada, frena la cola hasta Descartar). Un reloj **atrasado** no se ve afectado (una hora pasada vale). El reenvío de un alta ya guardada sigue siendo no-op (el tope va después de la idempotencia). La vía directa de v0.12.1 (forma legada, `pumped_at` por UPDATE/INSERT) **no** pasa por acá y queda como estaba | Sí: falla cerrado, igual que D-15 en tomas |
+| M-1 | Extracción con total entre 0 y 0,15 ml (0,1 ml, `1e-30`) | `milk_bad_input` (v3 lo traduce: "milkError.badInput"); antes creaba un biberón OCUPADO casi vacío (rompía INV-5 y bloqueaba el número hasta que vencía) | Sí |
 | C-16 | `void_bottle_feed` de una toma de M5 libre con el número libre | la leche vuelve y **re-ocupa** M5 | Sí |
 | C-16 | `void_bottle_feed` de la toma de M4 viejo con M4 reusado | la leche va a `lost_ml` (20); v3 ignora el cuerpo `jsonb` | Sí |
 | — | `void_pumping_session` de una extracción servida (M1) | `milk_already_served:M1`, igual | Sí |
@@ -197,7 +199,30 @@ y se **anulan** los contenedores desechados, los liberados con leche perdida y,
 cuando una cinta quedó repetida, los que no tienen leche. Las tomas conservan su
 desglose final. En v3 la extracción de un contenedor anulado se ve sin cinta ni
 "servido" y v3 dejaría borrarla aunque se sirvió leche de ella (riesgo de ARQ
-§10.2).
+§10.2). **Y esa extracción pasa a forma legada** (paso 2d, B-1): se pierde su
+reparto izquierdo/derecho; su total, hora, lado y nota quedan.
+
+**B-1 (auditoría H5, 6 oct 2026) — DEFECTO corregido.** Antes del paso 2d, la
+app v3 **resucitaba leche** después de la reversa: no ve contenedor vivo para la
+extracción de un contenedor que la reversa anuló, así que al corregirle solo la
+nota o la hora su `update_pumping_session` (0014) creaba un contenedor **nuevo
+con el total entero**. Corrección de **datos** dentro de la reversa (el esquema
+tiene que quedar idéntico a 0001–0014, R-01): esas extracciones quedan con
+`left_ml`/`right_ml` en null, `amount_ml` igual. El cliente v3 las trata como
+legadas (`isLegacyPumping`) y manda los lados en null; la función de 0014 entra
+por su ramal `v_legacy` y cambia solo hora y nota.
+
+| B-1 | Antes del paso 2d | Después |
+|---|---|---|
+| `run3.sql` de la auditoría (stack local, en una transacción que se deshace): M2 de 80 ml, 20 servidos, 60 desechados → reversa → v3 corrige la nota y después la hora | aparece `M3 | 80 | 80` ocupado y, con la hora de hoy, **utilizable** | la extracción queda `null/null total 80`; con los argumentos que manda v3 (lados de la fila, en null) no aparece ningún contenedor: solo `M1 100` y el `M2` anulado |
+| `milkV4Reapply.test.ts` › B-1 (Postgres efímero, siembra por RPC, edición v3 armada desde la fila como su `updatePumpingSession`): M2 desechado tras servir + M3 servido entero y reusado | `expected '5' to be '3'` (dos contenedores nuevos: M9 y M8) | 0 contenedores nuevos, "Lo que hay" 40 → 40, nota y hora cambiadas, total 80; 0015 vuelve a entrar con INV 0; R-01 igual (dump = 0001–0014) |
+
+**Riesgo que queda:** si en v3 alguien **escribe a mano** izquierdo o derecho
+en una de esas extracciones legadas, v3 hace lo que hace con cualquier legada y
+le crea un contenedor con esa cantidad (es lo que reproduce `run3.sql` tal cual,
+que pasa `80` como si se hubiera tipeado). Es una acción explícita sobre una
+fila que la pantalla muestra como "registrada antes de los lados, total X", no
+una corrección de nota. Lo mismo vale en v4 después de volver a aplicar 0015, para las que siguen con el contenedor anulado (las que no tenían porciones: las otras vuelven con su contenedor liberado y una edición pasa por `milk_rebalance`).
 
 ### 5.3 Volver a v4 después de la reversa (R-10) — corregido el 6 oct 2026
 
@@ -234,10 +259,13 @@ Por qué ésta y no cambiar la reversa:
   esquema tiene que quedar **idéntico** a 0001–0014 (R-01), así que no hay
   columna ni tabla para marcarlas. Dejar el desechado vivo haría que un
   `void_bottle_feed` de v3 le devolviera leche tirada a "Lo que hay" (R-04).
-- La reversa **no cambió** (solo comentarios): el esquema que deja, R-01, R-02,
-  R-03…R-09, R-11 y R-12 siguen exactamente como estaban, y con ellos lo que se
-  midió de las suites de v3 (151/151) y v0.12.1 (118/118) sobre la base
-  revertida.
+- La reversa no cambió para R-10 (solo comentarios). Después sí cambió, por
+  B-1 (§5.2): el paso 2d es **solo de datos** (lados de algunas extracciones a
+  null), así que el esquema que deja, R-01, R-02, R-03 y R-12 siguen igual
+  (re-verificados en `milkV4Reapply.test.ts`). Las suites de v3 (151/151) y
+  v0.12.1 (118/118) sobre la base revertida se midieron **antes** del paso 2d y
+  no se volvieron a correr [NO VERIFICADO con 2d; no tocan esas filas: siembran
+  las suyas].
 
 Qué **no** vuelve (ya se perdía con la reversa, sigue escrito en ella): los
 desechos —su leche vuelve como **perdida**, no como desechada: la reversa los
@@ -247,10 +275,12 @@ anulados, que en v4 también es válido). Si una toma de v3 anulada "devolvió"
 leche a un anulado, esa leche tampoco vuelve a "Lo que hay": va a `lost_ml`.
 
 Lo que sigue abortando a propósito (residuo, no visto en ninguna prueba): si
-mientras se usó v3 alguien **editó la extracción** de un contenedor anulado por
-la reversa y v3 le creó un contenedor nuevo, la sesión queda con dos
-contenedores vivos y 0015 frena por `INV-8`. Es la salida segura (no aplica
-nada); la consulta 3 de `verificar-antes-v4.sql` lo anticipa.
+mientras se usó v3 alguien **escribió los lados a mano** en la extracción de un
+contenedor anulado por la reversa (el riesgo que deja B-1, §5.2) y v3 le creó un
+contenedor nuevo, la sesión puede quedar con dos contenedores vivos y 0015 frena
+por `INV-8`. Es la salida segura (no aplica nada); la consulta 3 de
+`verificar-antes-v4.sql` lo anticipa. Corregir la nota o la hora ya no lo
+produce (B-1).
 
 [VERIFICADO, Postgres efímero, `tests/integration/milkV4Reapply.test.ts`, siembra
 por las RPC como `authenticated`]:

@@ -18,6 +18,7 @@ import {
   milkSnapshot,
   newBaby,
   pumpArgs,
+  portionsOf,
   pumpOk,
   rpc,
   seedV4,
@@ -288,6 +289,54 @@ describe.skipIf(!ready)('v4 · log_pumping_session (I-01…I-15)', () => {
     expect((await milkSnapshot(f.babyId)).sessions).toEqual([])
   })
 
+  it('I-14b total entre 0 y 0,15 ml (polvo: 0,1, 1e-30, 0,149, 0,05 + 0,05): milk_bad_input y nada escrito; 0,15 entra (M-1)', async () => {
+    const [f] = await newBaby(fx.a)
+    for (const [left, right] of [
+      [0.1, null],
+      [1e-30, null],
+      [0.149, null],
+      [0.05, 0.05],
+      [null, 0.1],
+    ] as const) {
+      const args = pumpArgs(f, { left, right, label: 'M4' })
+      expect((await rpc(f.client, 'log_pumping_session', args)).error, `${left}/${right}`).toBe(
+        'milk_bad_input',
+      )
+    }
+    expect((await milkSnapshot(f.babyId)).sessions).toEqual([])
+    // El borde: 0,15 ml ya es un biberón ocupado (INV-5 pide ≥ 0,15).
+    const ok = await pumpOk(f, 0.15, 'M4')
+    expect((await containerRow(ok.containerId)).released_at).toBeNull()
+  })
+
+  it('I-14c hora de extracción más de 10 min en el futuro según la base: milk_future_time; +5 min entra; el reenvío del alta sigue siendo no-op (m-2)', async () => {
+    const [f] = await newBaby(fx.a)
+    const future = pumpArgs(f, { left: 30, label: 'M2', at: Date.now() + 11 * MIN })
+    expect((await rpc(f.client, 'log_pumping_session', future)).error).toBe('milk_future_time')
+    const empty = pumpArgs(f, { at: Date.now() + 11 * MIN })
+    expect((await rpc(f.client, 'log_pumping_session', empty)).error).toBe('milk_future_time')
+    expect((await milkSnapshot(f.babyId)).sessions).toEqual([])
+    const soon = pumpArgs(f, { left: 30, label: 'M2', at: Date.now() + 5 * MIN })
+    expect((await rpc(f.client, 'log_pumping_session', soon)).error).toBeNull()
+    expect((await rpc(f.client, 'log_pumping_session', soon)).error).toBeNull()
+  })
+
+  it('I-15b milk_rebalance llamada directa por un padre (PostgREST): milk_rpc_only y nada cambia', async () => {
+    const [f] = await newBaby(fx.a)
+    const p = await pumpOk(f, 2 * OZ, 'M3')
+    const feed = await feedOk(f, [[p.containerId, OZ]])
+    expect(feed).toBeTruthy()
+    const before = await milkSnapshot(f.babyId)
+    for (const cause of ['serve', 'return', 'amount']) {
+      const r = await rpc(f.client, 'milk_rebalance', {
+        p_container_id: p.containerId,
+        p_cause: cause,
+      })
+      expect(r.error, cause).toBe('milk_rpc_only')
+    }
+    expect(await milkSnapshot(f.babyId)).toEqual(before)
+  })
+
   it('I-15 anon: no ejecuta y nada se escribe', async () => {
     const [f] = await newBaby(fx.a)
     const args = pumpArgs(f, { left: 10, label: 'M1' })
@@ -448,6 +497,55 @@ describe.skipIf(!ready)('v4 · update_pumping_session (I-16…I-31)', () => {
     expect(below.error).toBe('milk_served_exceeds_amount:M7')
   })
 
+  it('I-23b desechada y servida en parte, bajar SIN llegar a lo servido: el desecho se achica justo lo bajado y sigue libre', async () => {
+    const [f] = await newBaby(fx.a)
+    const at = Date.now() - FRIDGE_MS - 2 * HOUR
+    const p = await pumpOk(f, 3 * OZ, 'M7', at)
+    const feedId = await feedOk(f, [[p.containerId, OZ]], { at: at + HOUR })
+    await rpc(f.client, 'discard_container', discardArgs(p.containerId))
+    const [d0] = await liveDiscards(p.containerId)
+    expect(Number(d0.amount_ml)).toBeCloseTo(2 * OZ, 9)
+    const r = await rpc(
+      f.client,
+      'update_pumping_session',
+      updateArgs(p.sessionId, 2 * OZ, null, at),
+    )
+    expect(r.error).toBeNull()
+    const live = (await liveDiscards(p.containerId)).filter((d) => !d.voided_at)
+    expect(live).toHaveLength(1)
+    expect(live[0].id).toBe(d0.id)
+    expect(Number(live[0].amount_ml)).toBeCloseTo(OZ, 9)
+    const c = await containerRow(p.containerId)
+    expect(c).toMatchObject({ voided_at: null, remaining_ml: 0, lost_ml: 0 })
+    expect(Number(c.amount_ml)).toBeCloseTo(2 * OZ, 9)
+    expect(c.released_at).not.toBeNull()
+    // La toma no cambia.
+    expect(await portionsOf(feedId)).toEqual({ M7: OZ })
+  })
+
+  it('I-24b libre con leche perdida (número reusado), bajar: lost_ml se achica justo lo bajado y "lo que hay" no cambia', async () => {
+    const [f] = await newBaby(fx.a)
+    const at = Date.now() - HOUR
+    const old = await pumpOk(f, 2 * OZ, 'M3', at)
+    const feedId = await feedOk(f, [[old.containerId, 2 * OZ]])
+    const reuse = await pumpOk(f, 40, 'M3')
+    // La toma se anula con el número tomado: su leche va a lost_ml (D-9).
+    expect((await rpc(f.client, 'void_bottle_feed', { p_feeding_id: feedId })).error).toBeNull()
+    expect(Number((await containerRow(old.containerId)).lost_ml)).toBeCloseTo(2 * OZ, 9)
+    const r = await rpc(
+      f.client,
+      'update_pumping_session',
+      updateArgs(old.sessionId, 1.5 * OZ, null, at),
+    )
+    expect(r.error).toBeNull()
+    const c = await containerRow(old.containerId)
+    expect(Number(c.lost_ml)).toBeCloseTo(1.5 * OZ, 9)
+    expect(Number(c.remaining_ml)).toBe(0)
+    expect(c.released_at).not.toBeNull()
+    expect(Number((await containerRow(reuse.containerId)).remaining_ml)).toBe(40)
+    expect(await occupiedLabels(f.babyId)).toEqual(['M3'])
+  })
+
   it('I-24 libre con su número reusado, subir: va a lost_ml y "lo que hay" no cambia (D-9)', async () => {
     const [f] = await newBaby(fx.a)
     const at = Date.now() - HOUR
@@ -486,7 +584,7 @@ describe.skipIf(!ready)('v4 · update_pumping_session (I-16…I-31)', () => {
     expect(Number(c.lost_ml)).toBe(0)
   })
 
-  it('I-26 sesión sin contenedor gana cantidad: nace en M4 libre; con M4 ocupado, milk_label_taken:M4', async () => {
+  it('I-26 sesión sin contenedor gana cantidad: nace en M4 libre; con M5 ocupado, milk_label_taken:M5', async () => {
     const [f] = await newBaby(fx.a)
     const at = Date.now() - HOUR
     const empty = pumpArgs(f, { at })
@@ -588,6 +686,72 @@ describe.skipIf(!ready)('v4 · update_pumping_session (I-16…I-31)', () => {
     )
     expect(r.error).toBe('milk_session_gone')
     expect(await milkSnapshot(f.babyId)).toEqual(before)
+  })
+
+  it('I-31b total entre 0 y 0,15 ml: milk_bad_input y nada cambia, con biberón y sin él (M-1)', async () => {
+    const [f] = await newBaby(fx.a)
+    const p = await pumpOk(f, 30, 'M1')
+    const empty = pumpArgs(f)
+    expect((await rpc(f.client, 'log_pumping_session', empty)).error).toBeNull()
+    const before = await milkSnapshot(f.babyId)
+    for (const ml of [0.1, 1e-30, 0.149]) {
+      expect(
+        (
+          await rpc(
+            f.client,
+            'update_pumping_session',
+            updateArgs(p.sessionId, ml, null, p.args.p_pumped_at),
+          )
+        ).error,
+        `con biberón ${ml}`,
+      ).toBe('milk_bad_input')
+      expect(
+        (
+          await rpc(
+            f.client,
+            'update_pumping_session',
+            updateArgs(empty.p_id, null, ml, empty.p_pumped_at, {
+              p_container_id: randomUUID(),
+              p_container_label: 'M2',
+            }),
+          )
+        ).error,
+        `sin biberón ${ml}`,
+      ).toBe('milk_bad_input')
+    }
+    expect(await milkSnapshot(f.babyId)).toEqual(before)
+  })
+
+  it('I-31c hora más de 10 min en el futuro: milk_future_time y nada cambia, también en una legada (m-2)', async () => {
+    const [f] = await newBaby(fx.a)
+    const p = await pumpOk(f, 30, 'M1')
+    const legacy = randomUUID()
+    expect(
+      (
+        await f.client.from('pumping_sessions').insert({
+          id: legacy,
+          baby_id: f.babyId,
+          logged_by: f.userId,
+          side: 'left',
+          amount_ml: 50,
+          pumped_at: iso(Date.now() - HOUR),
+        })
+      ).error,
+    ).toBeNull()
+    const before = await milkSnapshot(f.babyId)
+    const at = Date.now() + 11 * MIN
+    expect(
+      (await rpc(f.client, 'update_pumping_session', updateArgs(p.sessionId, 30, null, at))).error,
+    ).toBe('milk_future_time')
+    expect(
+      (await rpc(f.client, 'update_pumping_session', updateArgs(legacy, null, null, at))).error,
+    ).toBe('milk_future_time')
+    expect(await milkSnapshot(f.babyId)).toEqual(before)
+    const soon = Date.now() + 5 * MIN
+    expect(
+      (await rpc(f.client, 'update_pumping_session', updateArgs(p.sessionId, 30, null, soon)))
+        .error,
+    ).toBeNull()
   })
 
   it('I-31 topes: milk_bad_input y nada cambia', async () => {

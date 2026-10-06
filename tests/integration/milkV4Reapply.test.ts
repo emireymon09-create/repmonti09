@@ -236,6 +236,82 @@ describe.skipIf(!available)(
       expect(onHand(baby)).toBe(40)
     })
 
+    it('B-1 tras la reversa, corregir en v3 la nota o la hora de una extracción cuyo biberón la reversa anuló no resucita leche', () => {
+      // El ataque de la auditoría (run3.sql): M2 de 80 ml, 20 servidos y 60
+      // desechados; M3 servido entero y su número reusado. La reversa anula los
+      // dos contenedores viejos. Después, la app v3 corrige la nota y la hora de
+      // esas extracciones con los argumentos que manda su lib/db.ts
+      // (updatePumpingSession): los lados que tiene la fila sin tocar, y un
+      // contenedor nuevo si no ve uno vivo y el total es > 0.
+      ensure0015()
+      const baby = randomUUID()
+      const id = () => randomUUID()
+      const s = { m2: id(), m3a: id(), m3b: id() }
+      const c = { m2: id(), m3a: id(), m3b: id() }
+      must(`insert into babies (id, family_id, name, birth_date)
+            values ('${baby}', '${FAMILY}', 'B1', '2026-09-01');`)
+      const portion = (cid: string, ml: number) =>
+        `'[{"container_id": "${cid}", "amount_ml": ${ml}}]'::jsonb`
+      asParentTx(`
+      select log_pumping_session('${s.m2}', '${baby}', 'right', null, 80, null, now() - interval '5 days', '${c.m2}', 'M2', null);
+      select log_bottle_feed('${id()}', '${baby}', now() - interval '4 days 12 hours', null, 0, ${portion(c.m2, 20)}, null);
+      select discard_container('${id()}', '${c.m2}', null);
+      select log_pumping_session('${s.m3a}', '${baby}', 'left', 30, null, null, now() - interval '5 hours', '${c.m3a}', 'M3', null);
+      select log_bottle_feed('${id()}', '${baby}', now() - interval '4 hours', null, 0, ${portion(c.m3a, 30)}, null);
+      select log_pumping_session('${s.m3b}', '${baby}', 'left', 40, null, null, now() - interval '3 hours', '${c.m3b}', 'M3', null);`)
+      expect(must(invariantSql).trim()).toBe('')
+      expect(onHand(baby)).toBe(40)
+
+      expect(psql(rollbackV4).ok).toBe(true)
+      expect(schemaDump()).toBe(schema0014) // R-01
+      expect(onHand(baby)).toBe(40)
+      const containersAfterRollback = must(
+        `select count(*) from milk_containers where baby_id = '${baby}'`,
+      ).trim()
+
+      // Lo que manda v3 al guardar la edición, armado desde la fila como lo
+      // hace su pantalla (campos de lados sin tocar = lo que tiene la fila).
+      const v3Edit = (session: string, notes: string, at: string, label: string) => {
+        const [left, right] = must(
+          `select coalesce(left_ml::text, 'null') || ' ' || coalesce(right_ml::text, 'null')
+             from pumping_sessions where id = '${session}'`,
+        )
+          .trim()
+          .split(' ')
+        const total = (left === 'null' ? 0 : Number(left)) + (right === 'null' ? 0 : Number(right))
+        const live =
+          must(
+            `select count(*) from milk_containers
+              where source_session_id = '${session}' and voided_at is null`,
+          ).trim() !== '0'
+        const container = total > 0 && !live ? `'${id()}', '${label}'` : 'null, null'
+        asParentTx(`
+        select update_pumping_session('${session}', 'right', ${left}, ${right}, '${notes}',
+          ${at}, ${container}, null);`)
+      }
+      v3Edit(s.m2, 'nota corregida', `now() - interval '5 days'`, 'M9')
+      v3Edit(s.m2, 'nota', `now() - interval '1 hour'`, 'M9')
+      v3Edit(s.m3a, 'nota', `now() - interval '2 hours'`, 'M8')
+
+      // Ni un contenedor nuevo, ni un ml más en "Lo que hay"; la nota y la
+      // hora sí cambiaron, y el total de cada extracción queda.
+      expect(must(`select count(*) from milk_containers where baby_id = '${baby}'`).trim()).toBe(
+        containersAfterRollback,
+      )
+      expect(onHand(baby)).toBe(40)
+      expect(
+        must(
+          `select amount_ml || ':' || notes || ':' || (pumped_at > now() - interval '2 hours')
+             from pumping_sessions where id = '${s.m2}'`,
+        ).trim(),
+      ).toBe('80:nota:true')
+
+      // Y v4 vuelve a entrar sobre eso, con la invariante en 0.
+      expect(reapply().ok).toBe(true)
+      expect(must(invariantSql).trim()).toBe('')
+      expect(onHand(baby)).toBe(40)
+    })
+
     it('datos reales de v4 + días de v3: reversa → 0015 entra, INV 0 y "Lo que hay" no se mueve', () => {
       ensure0015()
       const baby = randomUUID()

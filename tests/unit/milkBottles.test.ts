@@ -297,6 +297,28 @@ describe('bottleSlots (U-06…U-10)', () => {
     expect(slot).toMatchObject({ label: 'M2', state: 'occupied', disabled: true, pending: true })
   })
 
+  it('U-09b (E-16, V4-39): a bottle freed by a discard still in the queue is free and marked pending; a synced free one is not', () => {
+    // applyPendingInventory leaves a queued discard as: at 0, released, pending.
+    const queuedDiscard = {
+      ...box('M3', { remaining_ml: 0, released_at: iso(NOW) }),
+      pending: true,
+    }
+    const synced = box('M5', { remaining_ml: 0, released_at: iso(TUE) })
+    const { slots } = bottleSlots(
+      6,
+      [queuedDiscard, synced],
+      [discard('M3', 2 * OZ), discard('M5', OZ)],
+      NOW,
+    )
+    expect(slots[2]).toMatchObject({ label: 'M3', state: 'free', disabled: false, pending: true })
+    expect(slots[4].pending).toBeFalsy()
+    // Freed by the queue but already holding a newer, synced bottle: the slot
+    // is that bottle's, not pending.
+    const holder = box('M3', { id: 'holder', stored_at: iso(WED) })
+    const again = bottleSlots(6, [queuedDiscard, holder], [discard('M3', 2 * OZ)], NOW).slots[2]
+    expect(again).toMatchObject({ state: 'occupied', pending: false })
+  })
+
   it('U-10: an emptied M3 and a newer occupied M3 → the slot is the occupied one', () => {
     const old = box('M3', { id: 'old', remaining_ml: 0.1, released_at: iso(TUE) })
     const now = box('M3', { id: 'new', stored_at: iso(WED), expires_at: iso(WED + 4 * DAY) })

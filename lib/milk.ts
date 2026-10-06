@@ -755,9 +755,19 @@ export function convertAmountText(text: string, from: VolumeUnit, to: VolumeUnit
 }
 
 /**
+ * A pumping total above 0 but under EMPTY_ML (0.15 ml): dust, not milk (M-1).
+ * As a bottle it would be an occupied container with less than EMPTY_ML —
+ * the server refuses it (`milk_bad_input`, 0015), so the screen does first.
+ */
+export function isDustMl(totalMl: number): boolean {
+  return totalMl > 0 && totalMl < EMPTY_ML
+}
+
+/**
  * The left and right fields of a pumping session, each in its own unit
  * (V4-01): empty is "nothing" (null, never 0), the total is their sum, and a
- * bottle has to be chosen only when that total is above 0 (V4-04, CL-2).
+ * bottle has to be chosen only when that total is above 0 (V4-04, CL-2). A
+ * total that is only dust is a `tiny` problem (M-1), never a bottle.
  */
 export function readPumpingSides(
   left: { text: string; unit: VolumeUnit },
@@ -770,12 +780,14 @@ export function readPumpingSides(
       needsBottle: boolean
       problem?: undefined
     }
-  | { problem: 'number'; field: 'left' | 'right' } {
+  | { problem: 'number'; field: 'left' | 'right' }
+  | { problem: 'tiny' } {
   const l = parseAmountMl(left.text, left.unit)
   if (l.problem) return { problem: 'number', field: 'left' }
   const r = parseAmountMl(right.text, right.unit)
   if (r.problem) return { problem: 'number', field: 'right' }
   const totalMl = (l.ml ?? 0) + (r.ml ?? 0)
+  if (isDustMl(totalMl)) return { problem: 'tiny' }
   return { leftMl: l.ml, rightMl: r.ml, totalMl, needsBottle: totalMl > 0 }
 }
 

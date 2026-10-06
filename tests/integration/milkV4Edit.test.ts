@@ -188,6 +188,31 @@ describe.skipIf(!ready)('v4 · edit_bottle_feed (I-74…I-92)', () => {
     expect(ok.error).toBeNull()
   })
 
+  it('I-79b toma aceptada ANTES de la extracción (S-17): cambiar solo la nota, el sobró o la fórmula entra; mover la hora o la leche sí re-valida (m-1)', async () => {
+    const [f] = await newBaby(fx.a)
+    const at = Date.now() - HOUR
+    const p = await pumpOk(f, 2 * OZ, 'M3', at)
+    // log_bottle_feed acepta una toma 3 h antes de que la leche entrara al
+    // refri (solo mira la caducidad a la hora de la toma).
+    const id = await feedOk(f, [[p.containerId, OZ]], { at: at - 3 * HOUR })
+    for (const req of [{ notes: 'solo la nota' }, { leftover: 5 }, { formula: 10 }]) {
+      const r = await rpc(f.client, 'edit_bottle_feed', await editArgs(id, req))
+      expect(r.error, JSON.stringify(req)).toBeNull()
+    }
+    const row = await feedingRow(id)
+    expect(row.notes).toBe('solo la nota')
+    expect(Number(row.leftover_ml)).toBe(5)
+    expect(Number(row.formula_ml)).toBe(10)
+    expect(await portionsOf(id)).toEqual({ M3: OZ })
+    // Mover la hora (aunque sea un minuto) o la leche re-valida las porciones.
+    const before = await milkSnapshot(f.babyId)
+    for (const req of [{ fedAt: iso(at - 3 * HOUR + MIN) }, { breast: OZ / 2 }]) {
+      const r = await rpc(f.client, 'edit_bottle_feed', await editArgs(id, req))
+      expect(r.error, JSON.stringify(req)).toBe('milk_container_unusable:M3')
+    }
+    expect(await milkSnapshot(f.babyId)).toEqual(before)
+  })
+
   it('I-80 hora futura: milk_future_time', async () => {
     const [f] = await newBaby(fx.a)
     const id = await feedOk(f, [], { formula: OZ })

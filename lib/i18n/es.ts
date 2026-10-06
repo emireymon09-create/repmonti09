@@ -315,6 +315,8 @@ export const es: Dictionary = {
   'milk.title': 'Leche',
   'milk.couldNotLoad': 'No se pudieron cargar las sesiones — {error}',
   'milk.amountNotNumber': 'La cantidad tiene que ser un número.',
+  'milk.amountTooSmall':
+    'Es demasiado poco para guardarlo en un biberón. Dejalo vacío si no salió leche.',
   'milk.logged': 'Sesión registrada',
   'milk.removeConfirm': '¿Borrar esta sesión? Su leche también sale de lo que hay.',
   'milk.removeConfirmLegacy':

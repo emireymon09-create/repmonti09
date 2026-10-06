@@ -174,15 +174,24 @@ export function bottleSlots(
 ): { slots: Slot[]; outOfRange: Slot[]; known: boolean } {
   const count = effectiveBottleCount(n)
   const holders = new Map<string, WithPending<MilkContainer>>()
+  // Numbers freed by something still in this phone's queue (a discard, or a
+  // bottle that emptied it): free, but not synced yet (V4-39, E-16).
+  const freedPending = new Set<string>()
   for (const c of containers ?? []) {
     const state = containerState(c, discards, atMs)
-    if (state !== 'occupied' && state !== 'expired') continue
+    if (state !== 'occupied' && state !== 'expired') {
+      if (c.pending && (state === 'free' || state === 'discarded')) freedPending.add(c.label)
+      continue
+    }
     const held = holders.get(c.label)
     if (!held || better(c, held)) holders.set(c.label, c)
   }
   const slotOf = (label: string): Slot => {
     const c = holders.get(label)
-    if (!c) return { label, state: 'free', disabled: false }
+    if (!c)
+      return freedPending.has(label)
+        ? { label, state: 'free', disabled: false, pending: true }
+        : { label, state: 'free', disabled: false }
     return {
       label,
       state: containerState(c, discards, atMs) === 'expired' ? 'expired' : 'occupied',

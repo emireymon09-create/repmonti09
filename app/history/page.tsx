@@ -60,6 +60,7 @@ import {
   applyPendingInventory,
   describeBottle,
   isInventoryBottleFeed,
+  isDustMl,
   isLegacyPumping,
   pumpingRemoveConfirmKey,
   keepMl,
@@ -557,6 +558,11 @@ export default function HistoryPage() {
       const r = keepMl(pRight, pBase.right, row.right_ml)
       if (l.problem || r.problem) {
         setErr(t('milk.amountNotNumber'))
+        setBusy(false)
+        return
+      }
+      if (isDustMl((l.ml ?? 0) + (r.ml ?? 0))) {
+        setErr(t('milk.amountTooSmall'))
         setBusy(false)
         return
       }

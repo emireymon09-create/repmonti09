@@ -3,6 +3,7 @@ import {
   amountText,
   applyPendingInventory,
   convertAmountText,
+  isDustMl,
   parseAmountMl,
   readPumpingSides,
   stashMl,
@@ -662,6 +663,43 @@ describe('left and right, each in oz or ml (U-45, U-46, V4-01)', () => {
         field: 'right',
       })
     }
+  })
+
+  it('U-46b (M-1): a total above 0 but under EMPTY_ML (0.15 ml) is "tiny", never a bottle; 0.15 ml is', () => {
+    for (const [l, r] of [
+      [
+        { text: '0.1', unit: 'ml' },
+        { text: '', unit: 'ml' },
+      ],
+      [
+        { text: '0.004', unit: 'oz' },
+        { text: '', unit: 'oz' },
+      ],
+      [
+        { text: '0.05', unit: 'ml' },
+        { text: '0.05', unit: 'ml' },
+      ],
+      [
+        { text: '', unit: 'ml' },
+        { text: '1e-30', unit: 'ml' },
+      ],
+      [
+        { text: '0', unit: 'oz' },
+        { text: '0.149', unit: 'ml' },
+      ],
+    ] as const) {
+      expect(readPumpingSides(l, r), `${l.text}/${r.text}`).toEqual({ problem: 'tiny' })
+    }
+    expect(isDustMl(0.1)).toBe(true)
+    expect(isDustMl(0)).toBe(false)
+    expect(isDustMl(EMPTY_ML)).toBe(false)
+    expect(readPumpingSides({ text: '0.15', unit: 'ml' }, { text: '', unit: 'ml' })).toMatchObject({
+      totalMl: 0.15,
+      needsBottle: true,
+    })
+    expect(readPumpingSides({ text: '0.01', unit: 'oz' }, { text: '', unit: 'oz' })).toMatchObject({
+      needsBottle: true,
+    })
   })
 
   it('a comma is a decimal point on either side', () => {

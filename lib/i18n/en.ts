@@ -323,6 +323,8 @@ export const en = {
   'milk.title': 'Milk',
   'milk.couldNotLoad': 'Couldn’t load sessions — {error}',
   'milk.amountNotNumber': 'Amount has to be a number.',
+  'milk.amountTooSmall':
+    'That is too little to keep as a bottle. Leave it empty if no milk came out.',
   'milk.logged': 'Session logged',
   'milk.removeConfirm': 'Remove this session? Its milk comes out of what there is too.',
   'milk.removeConfirmLegacy':

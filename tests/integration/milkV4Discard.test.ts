@@ -306,13 +306,16 @@ describe.skipIf(!docker)('v4 · bordes de caducidad por SQL (I-49, I-50)', () =>
 
   it('I-50 con la sesión en America/Los_Angeles, guardada antes del cambio de horario: vence a +96 h exactas', () => {
     const [sid, cid] = [randomUUID(), randomUUID()]
-    // El horario de verano de EE. UU. termina el domingo 1 nov 2026 a las 2:00.
+    // El horario de verano de EE. UU. empezó el domingo 8 mar 2026 a las 2:00.
+    // Una fecha PASADA a propósito: desde m-2 (auditoría H5) una extracción con
+    // hora futura según la base se rechaza (milk_future_time), y esta prueba
+    // usaba el cambio de noviembre, todavía futuro.
     const out = psql(`
       begin;
       set local timezone = 'America/Los_Angeles';
       ${asParent(f.userId)}
       select log_pumping_session('${sid}', '${f.babyId}', 'both', 30, null, null,
-        '2026-10-30 21:00 America/Los_Angeles'::timestamptz, '${cid}', 'M4', null);
+        '2026-03-06 21:00 America/Los_Angeles'::timestamptz, '${cid}', 'M4', null);
       select extract(epoch from expires_at - stored_at)::bigint,
              to_char(expires_at, 'YYYY-MM-DD HH24:MI')
         from milk_containers where id = '${cid}';
@@ -322,8 +325,8 @@ describe.skipIf(!docker)('v4 · bordes de caducidad por SQL (I-49, I-50)', () =>
       .split('\n')
       .filter((l) => l.trim() !== '')
       .at(-1)
-    // 96 h exactas, que en la hora del hogar son las 20:00 (no las 21:00):
+    // 96 h exactas, que en la hora del hogar son las 22:00 (no las 21:00):
     // "4 días" no son 4 días de calendario.
-    expect(last).toBe(`${96 * 3600}|2026-11-03 20:00`)
+    expect(last).toBe(`${96 * 3600}|2026-03-10 22:00`)
   })
 })
