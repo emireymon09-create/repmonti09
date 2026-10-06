@@ -45,7 +45,7 @@ durante el deploy") — 6 fallaban antes del arreglo, 25/25 después.
 |---|---|---|
 | Suite de integración de v0.12.1 pura | solo v0.12.1 (0001–0013) — línea base | 118/118 |
 | Suite de integración de v0.12.1 pura | migrada 0001–0014 (antes y después del arreglo de la guarda) | 118/118 |
-| Suite de integración de la rama de release | 0001–0014 | 143/143 (ver el handoff para la corrida final) |
+| Suite de integración de la rama de release | 0001–0014 | 151/151 (corrida final) |
 | Suite de v0.12.1 pura en pila efímera | 0001–0014 + datos de leche → `rollback-leche.sql` | 118/118 antes y 118/118 después |
 
 ## 3. Matriz: app vieja × dato × resultado [VERIFICADO salvo donde se dice]

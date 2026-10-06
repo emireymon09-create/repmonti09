@@ -110,6 +110,9 @@ Se mezclaron solos: `lib/db.ts` (`buildActivity` del papá + lo nuestro), `lib/t
 | `db0bc8c` | integración | S2: `/pumping` vuelve al diseño del papá (lista "Sessions" + "editar en Historial") |
 | `bfcda1e` | QA en navegador | Cinta sugerida sin conexión, relectura tras sobregiro, confirmación de borrado de una extracción legada (11 pruebas unitarias) |
 | `0d159bb` | QA en navegador | Porción fantasma "+ M3 0 oz" por residuo de coma flotante (1 prueba unitaria) |
+| `28b7202` | documentos | Comparación, compatibilidad, runbook, `verificar-antes-leche.sql`, `rollback-leche.sql` |
+| `57518c9` | auditoría de cobertura | 8 pruebas de integración de ramas de 0014 sin cubrir (ningún defecto) |
+| `8d0918a` | auditoría de seguridad y datos | Correcciones del runbook y del SQL de verificación; handoff del 6 oct; encabezado de 0014 (solo comentario) |
 
 Verificado al final [VERIFICADO]: `git diff --stat 0cbe798 HEAD -- supabase/migrations/` muestra
 solo `0014_milk_inventory.sql` (ninguna migración de v0.12.1 editada) y
