@@ -26,9 +26,9 @@ Ninguna rama remota tiene una migración 0015: se usa `0015_milk_phase1_2.sql`.
 | H2 migración 0015 + lógica pura | hecho | ver `git log` |
 | H3 capa de datos y cola | hecho | ver `git log` |
 | H4 interfaz | hecho | ver `git log` |
-| H5 QA | hecho (navegador); compatibilidad y reversa en H5b/H7 | ver `git log` |
-| H6 auditorías | pendiente | |
-| H7 documentos y runbook | pendiente | |
+| H5 QA | hecho | ver `git log` |
+| H6 auditorías | hecho (0 bloqueantes) | ver `git log` |
+| H7 documentos y runbook | hecho | ver `git log` |
 
 ## H0 [VERIFICADO]
 
@@ -257,3 +257,23 @@ Cada una con prueba que fallaba antes (salida en el informe del corrector):
   "no se puede usar"; ayudantes de cinta de v3 exportados sin uso (los usan las
   pruebas de v3); C-11/C-13/C-18/C-21 sin pantalla [NO VERIFICADO].
 - Corrector: unitarias **561/561** ×4 TZ, integración **310/310**.
+
+## Verificación final (6 oct 2026, 19:25) [VERIFICADO]
+
+| Qué | Resultado |
+|---|---|
+| Destino | `.env.local`/`.env.test` → `http://127.0.0.1:54321`; 0 `supabase.co`; `amelia-local-*` en 127.0.0.1 |
+| Base local | `schema_migrations` 15, máx. `0015_milk_phase1_2` |
+| `tsc` / `lint` / `format:check` / `build` | exit 0 / sin avisos / limpio / 23 páginas |
+| `pnpm test:all` (Node 24.16.0) | unitarias **561/561** en UTC, LA, Tokio, Kiritimati; integración **310/310** |
+| Navegador (QA independiente, re-corrida final sobre `a7453e5`) | **306/306** (283 de H5 + 23 de H6), ES y EN, 390×844, SQL + invariante |
+| C-01 v0.12.1 pura sobre 0001–0015 | **118/118** |
+| C-02 v3-release sobre 0001–0015 | 150/151 — única falla deliberada D-15 (`milk_future_time`) |
+| Reversa v4 → v3 (`rollback-leche-v4.sql`) | esquema = 0001–0014 (diff 0, prueba automática con `pg_dump`); v3 **151/151**, v0.12.1 **118/118** sobre la base revertida |
+| Cadena → v0.12.1 (`rollback-leche.sql`) | 13 migraciones; v0.12.1 **118/118** |
+| Auditoría de seguridad (2 vueltas) | 0 bloqueantes |
+| Revisión de cobertura (2 vueltas) | 0 bloqueantes |
+
+Limpieza: worktrees de comprobación eliminados (`git worktree list` = 4
+originales + v4), 0 familias/usuarios de prueba, 0 contenedores efímeros,
+ningún servidor ni navegador propio corriendo; stack local migrado 0001–0015.
