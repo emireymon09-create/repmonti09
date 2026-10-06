@@ -827,8 +827,16 @@ describe.skipIf(!ready)('ramas de 0014 sin cubrir (auditoría 6 oct 2026) — ne
     const old = new Date(Date.now() - 5 * 86_400_000).toISOString()
     const expired = await pumpOk(f, 20, 20, 'M6', old)
     expect(Date.parse(expired.container.expires_at)).toBeLessThanOrEqual(Date.now())
-    // Fresco, pero servido con una hora posterior a su vencimiento.
-    const fresh = await pumpOk(f, 20, 20, 'M7')
+    // Fresco, pero servido con una hora posterior a su vencimiento. Vence en
+    // 5 min: desde 0015 una hora de toma más de 10 min en el futuro de la base
+    // es `milk_future_time` (D-15) y taparía este caso, que es el de caducidad.
+    const fresh = await pumpOk(
+      f,
+      20,
+      20,
+      'M7',
+      new Date(Date.now() - 4 * 86_400_000 + 5 * 60_000).toISOString(),
+    )
     const afterExpiry = new Date(Date.parse(fresh.container.expires_at) + 1000).toISOString()
     const atExpiry = fresh.container.expires_at
     // De otro bebé de la misma familia.

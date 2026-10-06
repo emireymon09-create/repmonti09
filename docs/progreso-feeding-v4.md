@@ -23,7 +23,7 @@ Ninguna rama remota tiene una migración 0015: se usa `0015_milk_phase1_2.sql`.
 |---|---|---|
 | H0 integración de PR + línea base | hecho | `2aebe24` (respuestas del papá), `436de96` (merge PR #1), `7e94c65` (merge PR #2) |
 | H1 spec + arquitectura + plan de pruebas | hecho | ver `git log` |
-| H2 migración 0015 + lógica pura | pendiente | |
+| H2 migración 0015 + lógica pura | hecho | ver `git log` |
 | H3 capa de datos y cola | pendiente | |
 | H4 interfaz | pendiente | |
 | H5 QA | pendiente | |
@@ -59,3 +59,33 @@ Ninguna rama remota tiene una migración 0015: se usa `0015_milk_phase1_2.sql`.
   `milk_label_taken` (la app v3 cacheada ya lo traduce) — aceptado.
 - `docs/plan-pruebas-v4.md`: 258 casos (65 U, 106 I, 25 C, 50 E, 12 R) escritos
   antes de implementar.
+
+## Control de recursos (§4.1)
+
+Máquina: 4 núcleos, 7740 MB RAM, swap 4095 MB, 114 GB libres. Topes: memoria
+disponible ≥ 1.55 GB, load1 ≤ 6, disco ≥ 3 GB, swap sin crecer. Máx. 2
+subagentes a la vez (1 si hay build/integración/navegador); vitest
+`--maxWorkers=2`; tareas pesadas en serie.
+
+| Momento | RECURSOS |
+|---|---|
+| H2 en curso (15:41) | disp. 3968 MB · swap 1432 MB · load1 2.99 · disco 114 GB |
+
+## H2 [VERIFICADO por el director]
+
+- Lógica pura [VERIFICADO por el ingeniero, se re-verifica al cerrar H2]:
+  `lib/milkBottles.ts`, `lib/milkEstimate.ts`, ampliación de `lib/milk.ts` y
+  `lib/types.ts`; `pnpm test:tz` 518/518 en las 4 zonas (379 previas + 139).
+- Migración `0015_milk_phase1_2.sql` + 7 archivos `tests/integration/milkV4*.test.ts`
+  + `tests/helpers/milk{Invariant,V4}.ts`. Prueba previa ajustada:
+  `milk.test.ts` M7 (la toma 96 h en el futuro ahora da `milk_future_time`
+  por D-15; la extracción pasa a vencer en 5 min para seguir probando
+  caducidad).
+- Verificación del director (15:50): `tsc` OK, `lint` sin avisos,
+  `format:check` limpio, unitarias **518/518** en UTC/LA/Tokio/Kiritimati,
+  integración **282/282** (151 previas + 131), 0 omitidas;
+  `git diff feat/milk-inventory-v3-release -- 0001…0014` vacío.
+- Desviaciones aceptadas: `M1234567` válido (D-1: solo formato); `'abc'` en
+  una cantidad → error 22P02 de PostgREST, sin escritura; `milk_feeding_edits`
+  solo select/insert (registro inmutable); `supabase/schema.sql` no se toca
+  (el repo lo dejó en 0013).

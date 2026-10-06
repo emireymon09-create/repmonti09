@@ -46,6 +46,12 @@ export type Feeding = {
    */
   breast_milk_ml?: number | null
   formula_ml?: number | null
+  /**
+   * "Sobró X oz" (0015, D-10): what the baby left in the bottle. Statistics
+   * only — it never gives milk back to a container and never counts as
+   * discarded milk. Null = not known / nothing left. At most `amount_ml`.
+   */
+  leftover_ml?: number | null
 }
 
 export type DiaperChange = {
@@ -114,6 +120,34 @@ export type MilkContainer = {
   location: MilkLocation
   expires_at: string
   voided_at?: string | null
+  /**
+   * When it stopped holding its number (0015): emptied by bottles, or
+   * discarded. Null = occupied (if not voided). Set by the server; the
+   * offline view sets it too while the write is queued.
+   */
+  released_at?: string | null
+  /**
+   * Milk that came back from a bottle (voided or edited down) or from a
+   * pumping session edited up, and could not go back in: the container was
+   * discarded, voided, or its number already held by another one (D-9, AJ-4).
+   * amount = served + discarded + lost + remaining (docs/arquitectura-v4.md §2.1).
+   */
+  lost_ml?: number
+}
+
+/**
+ * Expired milk thrown away with "Desechar" (0015, `milk_discards`): ALL that
+ * was left in one container (D-5). Not editable or undoable in v4 (D-11).
+ * `label` is the container's, read along with it for display.
+ */
+export type MilkDiscard = {
+  id: string
+  container_id: string
+  amount_ml: number
+  discarded_at: string
+  reason: 'expired'
+  label?: string | null
+  voided_at?: string | null
 }
 
 /**
@@ -135,6 +169,9 @@ export type MilkRules = {
   milk_fridge_days: number
   milk_freezer_months: number
 }
+
+/** The rules plus how many physical bottles (M1…MN) there are (0015, D-23). */
+export type MilkSettings = MilkRules & { milk_bottle_count: number }
 
 export type GrowthMeasurement = {
   id: string
@@ -192,6 +229,9 @@ export type WithPending<T> = T & { pending?: boolean }
 export type ActivityEntry = {
   id: string
   at: string
+  // v4 (docs/arquitectura-v4.md §7.4) adds 'discard' here, together with the
+  // keys `history.kind.discard` / `activity.discard` (lib/i18n) — not before:
+  // app/history/page.tsx builds an i18n key from this union.
   kind: 'feeding' | 'nursing' | 'diaper' | 'sleep' | 'pumping' | 'growth'
   /** Stands on its own: "Diaper · wet". */
   what: string

@@ -15,14 +15,36 @@
  *   · the suggested bottle is the last bottle's total (3 oz before there was
  *     ever one), served oldest container first, the shortfall as formula;
  *   · the stash is what is left in usable containers, breast milk only.
+ *
+ * v4 (0015, docs/arquitectura-v4.md §7.1): the containers are physical
+ * bottles M1…MN that are reused. Their states, the selector, discarding, the
+ * accounting and the full edit of a bottle live in lib/milkBottles.ts; the
+ * estimate for old bottles in lib/milkEstimate.ts. Here: what was already
+ * here, a container that was emptied or discarded no longer counts
+ * (`released_at`), the offline view of the new queued calls, and the oz/ml
+ * conversion of a typed amount (extracted so every field converts the same
+ * way, AJ-16).
  */
 
 import { ML_PER_FL_OZ, formatMilkOz } from '@/lib/format'
 import { translate, type Lang } from '@/lib/i18n'
 import type { PendingWrite } from '@/lib/queue'
+import {
+  EMPTY_ML,
+  byAge,
+  hasLiveDiscard,
+  isOccupied,
+  labelNumber,
+  planBottleEdit,
+  rebalance,
+  residueParts,
+  type LostReason,
+  type RebalanceCause,
+} from '@/lib/milkBottles'
 import type {
   Feeding,
   MilkContainer,
+  MilkDiscard,
   MilkDrawdown,
   MilkLocation,
   MilkRules,
@@ -90,29 +112,17 @@ export function containerExpiresAt(
 
 // ------------------------------------------------------------- usable
 
+/** Moved to lib/milkBottles.ts (0015); re-exported so nothing that imports it here breaks. */
+export { EMPTY_ML }
+
 /**
- * Below this a container is empty: what float arithmetic leaves behind after
- * a portion is taken offline, and anything the screen would show as "0 oz"
- * (two decimals of an ounce are ~0.3 ml; half of that rounds to 0). It must
- * not be offered, counted, or end up as a portion.
+ * Not voided, not released (emptied or discarded, 0015), milk left, and not
+ * expired at `atMs` (expiry is exclusive). The stash, the usable list and the
+ * suggestion all go through this (V4-36).
  */
-export const EMPTY_ML = 0.15
-
-/** Not voided, milk left, and not expired at `atMs` (expiry is exclusive). */
 export function isUsable(c: MilkContainer, atMs: number): boolean {
-  return !c.voided_at && c.remaining_ml >= EMPTY_ML && Date.parse(c.expires_at) > atMs
-}
-
-function labelNumber(label: string | null | undefined): number | null {
-  const match = /^M([1-9][0-9]*)$/.exec(label ?? '')
-  return match ? Number(match[1]) : null
-}
-
-/** Oldest first — stored earlier, then the lower M number. */
-function byAge(a: MilkContainer, b: MilkContainer): number {
   return (
-    Date.parse(a.stored_at) - Date.parse(b.stored_at) ||
-    (labelNumber(a.label) ?? 0) - (labelNumber(b.label) ?? 0)
+    !c.voided_at && !c.released_at && c.remaining_ml >= EMPTY_ML && Date.parse(c.expires_at) > atMs
   )
 }
 
@@ -121,12 +131,18 @@ export function usableContainers<T extends MilkContainer>(containers: T[], atMs:
   return containers.filter((c) => isUsable(c, atMs)).sort(byAge)
 }
 
-/** Everything still on the list (not voided), oldest first — Milk shows these. */
+/**
+ * The containers that hold a bottle (not voided, not released), oldest first
+ * — what Milk lists (0015: an emptied or discarded one is not on the shelf).
+ */
 export function activeContainers<T extends MilkContainer>(containers: T[]): T[] {
-  return containers.filter((c) => !c.voided_at).sort(byAge)
+  return containers.filter(isOccupied).sort(byAge)
 }
 
 /**
+ * @deprecated v4 (X-1): the number is chosen with the bottle selector
+ * (`bottleSlots`, lib/milkBottles.ts). Kept until the pages stop using it.
+ *
  * The tape for the next container: one more than the highest M label among
  * the LIVE containers it is given (lib/db.ts passes the non-voided ones, and
  * the server only refuses a label a live container has). Gaps below the top
@@ -144,12 +160,14 @@ function liveLabels(containers: MilkContainer[]): string[] {
   return containers.filter((c) => !c.voided_at).map((c) => c.label)
 }
 
-/** What the tape field starts with: the next number after the live ones. */
+/** @deprecated v4 (X-1). What the tape field starts with: the next number after the live ones. */
 export function suggestContainerLabel(containers: MilkContainer[]): string {
   return nextContainerLabel(liveLabels(containers))
 }
 
 /**
+ * @deprecated v4 (X-1): nobody types a tape any more.
+ *
  * A tape someone typed (5 oct 2026: they can skip ahead — "if I wrote M5 and
  * skipped the sequence, log it"). Upper or lower case M, spaces around or
  * after it, leading zeros dropped: `m 5`, `M05` → `M5`. M0, anything else,
@@ -170,6 +188,8 @@ export function normalizeTapeLabel(text: string): TapeCheck {
 }
 
 /**
+ * @deprecated v4 (X-1): `bottleSlots` says which bottles are taken.
+ *
  * A live container (queued ones included) already has this tape. The server
  * refuses it too (`milk_label_taken`); checking here says so before sending,
  * and offline. A voided container's tape is free again (S-20).
@@ -254,9 +274,10 @@ export function portionMl(
 
 /**
  * A bottle logged through the inventory: it has a breakdown (breast milk
- * and formula) written by the server. Only its time can be edited; to change
- * what was in it, it is deleted — which gives the milk back — and logged
- * again. A bottle from before 0014 has neither and stays fully editable.
+ * and formula) written by the server. v4 (2A): it is edited whole through
+ * `edit_bottle_feed` (`planBottleEdit` says what that does); never with a
+ * direct UPDATE. A bottle from before 0014 has neither and stays editable
+ * the old way (type, total, time, and now "sobró").
  */
 export function isInventoryBottleFeed(f: Feeding): boolean {
   return f.feeding_type === 'bottle' && (f.breast_milk_ml != null || f.formula_ml != null)
@@ -344,7 +365,7 @@ export type PumpingArgs = {
   p_container_expires_at: string | null
 }
 
-/** The arguments of log_bottle_feed (0014), as lib/db.ts queues them. */
+/** The arguments of log_bottle_feed (0014; 0015 adds `p_leftover_ml`), as lib/db.ts queues them. */
 export type BottleFeedArgs = {
   p_id: string
   p_baby_id: string
@@ -352,54 +373,161 @@ export type BottleFeedArgs = {
   p_notes: string | null
   p_formula_ml: number
   p_portions: { container_id: string; amount_ml: number }[]
+  /** "Sobró" (0015, D-10). Statistics only; null or left out = not known. */
+  p_leftover_ml?: number | null
+}
+
+/** The arguments of discard_container (0015, §3.5). `p_id` is the discard's own id. */
+export type DiscardArgs = {
+  p_id: string
+  p_container_id: string
+  p_discarded_at: string | null
+}
+
+/**
+ * The arguments of edit_bottle_feed (0015, §3.8): the FINAL state asked for,
+ * plus what the screen saw when it opened the panel (`p_expected`, regla 21).
+ * `p_op_id` is this edit's own id (the idempotency of a replay, AJ-3).
+ */
+export type EditBottleArgs = {
+  p_op_id: string
+  p_feeding_id: string
+  p_fed_at: string
+  p_breast_ml: number
+  p_formula_ml: number
+  p_leftover_ml: number | null
+  p_notes: string | null
+  p_expected: {
+    fed_at: string
+    breast_milk_ml: number | null
+    formula_ml: number | null
+    leftover_ml: number | null
+  }
 }
 
 type Pending<T> = WithPending<T>
 
+/** What the offline view of the inventory comes to (§7.3). */
+export type PendingInventory = {
+  containers: Pending<MilkContainer>[]
+  drawdowns: Pending<MilkDrawdown>[]
+  discards: Pending<MilkDiscard>[]
+  /**
+   * Milk that, by what this phone knows, did not go back to its container
+   * (D-9) — the screen says it "según lo que sabe este teléfono".
+   */
+  lost: { writeId: string; containerId: string; label: string; ml: number; reason: LostReason }[]
+  /**
+   * Queued writes this phone could not show, because by what it knows the
+   * server will refuse them (an edit with not enough milk, a discard before
+   * expiry…). Nothing of them is applied; the server decides on sync.
+   */
+  unapplied: { writeId: string; fn: string; problem: string }[]
+}
+
 /**
- * Fold what is still queued on this device into the last containers and
- * portions the server returned, so the stash and the suggestion already
- * count a bottle given — or a session pumped — with no connection. Every
- * container or portion the queue touched is marked `pending` ("not synced
- * yet").
+ * Fold what is still queued on this device into the last containers,
+ * portions and discards the server returned, so the stash, the selector and
+ * the suggestion already count a bottle given — a session pumped, a container
+ * discarded, a bottle edited — with no connection. Every row the queue
+ * touched is marked `pending` ("not synced yet").
  *
- * The queue is applied in order, oldest first, the way it will replay.
- * A write the server already has is not applied twice: a bottle whose
- * portions the server returned, or a container it already lists. Edits and
- * voids set values rather than add them, so applying one again changes
- * nothing.
+ * The queue is applied in order, oldest first, the way it will replay, and
+ * every change in a container goes through `rebalance` — the same rule as
+ * `milk_rebalance` on the server (docs/arquitectura-v4.md §7.3). A write the
+ * server already has is not applied twice: a bottle whose portions the
+ * server returned, a container or a discard it already lists, a container
+ * already discarded, a bottle already in the edited state. Edits and voids
+ * set values rather than add them, so applying one again changes nothing.
+ * A write this phone expects the server to refuse is not applied at all and
+ * is listed in `unapplied`.
  *
+ * The three-argument form (no discards) is the one of v3 and still works.
  * Inputs are not changed: they are what the next refresh starts from.
  */
 export function applyPendingInventory(
   containers: MilkContainer[],
   drawdowns: MilkDrawdown[],
   pending: PendingWrite[],
-): { containers: Pending<MilkContainer>[]; drawdowns: Pending<MilkDrawdown>[] } {
-  const cs: Pending<MilkContainer>[] = containers.map((c) => ({ ...c }))
-  const ds: Pending<MilkDrawdown>[] = drawdowns.map((d) => ({ ...d }))
+): PendingInventory
+export function applyPendingInventory(
+  containers: MilkContainer[],
+  drawdowns: MilkDrawdown[],
+  discards: MilkDiscard[],
+  pending: PendingWrite[],
+): PendingInventory
+export function applyPendingInventory(
+  containers: MilkContainer[],
+  drawdowns: MilkDrawdown[],
+  discardsOrPending: MilkDiscard[] | PendingWrite[],
+  maybePending?: PendingWrite[],
+): PendingInventory {
+  const pending = (maybePending ?? discardsOrPending) as PendingWrite[]
+  const discards = (maybePending ? discardsOrPending : []) as MilkDiscard[]
+  let cs: Pending<MilkContainer>[] = containers.map((c) => ({ ...c }))
+  let ds: Pending<MilkDrawdown>[] = drawdowns.map((d) => ({ ...d }))
+  let dc: Pending<MilkDiscard>[] = discards.map((d) => ({ ...d }))
+  const lost: PendingInventory['lost'] = []
+  const unapplied: PendingInventory['unapplied'] = []
   const byId = (id: string | null | undefined) => cs.find((c) => c.id === id)
+
+  /** Run the server's rule on one container and keep what it says, marked pending. */
+  const settle = (
+    c: Pending<MilkContainer>,
+    cause: RebalanceCause,
+    residueMl: number,
+    atIso: string,
+    writeId: string,
+  ) => {
+    const r = rebalance(c, cause, residueMl, cs, dc, atIso)
+    cs = cs.map((x) => (x.id === c.id ? { ...r.container, pending: true } : x))
+    dc = r.discards.map((d, i) =>
+      d.amount_ml !== dc[i].amount_ml || d.voided_at !== dc[i].voided_at
+        ? { ...d, pending: true }
+        : d,
+    )
+    if (r.lostMl > 0) {
+      lost.push({ writeId, containerId: c.id, label: c.label, ml: r.lostMl, reason: r.lostReason! })
+    }
+  }
+  const voidDiscardsOf = (containerId: string, at: string) => {
+    dc = dc.map((d) =>
+      d.container_id === containerId && !d.voided_at ? { ...d, voided_at: at, pending: true } : d,
+    )
+  }
 
   const ordered = pending.slice().sort((a, b) => a.queuedAt.localeCompare(b.queuedAt))
   for (const write of ordered) {
     const op = write.op
     if (op.kind !== 'rpc') continue
+    const at = write.queuedAt
 
     if (op.fn === 'log_pumping_session' || op.fn === 'update_pumping_session') {
       const a = op.args as Partial<PumpingArgs> & { p_id: string }
       const total = Number(a.p_left_ml ?? 0) + Number(a.p_right_ml ?? 0)
       const current = cs.find((c) => c.source_session_id === a.p_id && !c.voided_at)
       if (current && op.fn === 'update_pumping_session') {
-        if (total > 0) {
-          const served = current.amount_ml - current.remaining_ml
-          current.amount_ml = total
-          current.remaining_ml = Math.max(0, total - served)
-          if (a.p_pumped_at) current.stored_at = a.p_pumped_at
-          if (a.p_container_expires_at) current.expires_at = a.p_container_expires_at
+        const served = Math.max(0, current.amount_ml - residueParts(current, dc))
+        if (total > 0 && total < served - SERVED_EPSILON_ML) {
+          unapplied.push({ writeId: write.id, fn: op.fn, problem: 'milk_served_exceeds_amount' })
+          current.pending = true
+        } else if (total > 0) {
+          const moved: Pending<MilkContainer> = {
+            ...current,
+            amount_ml: total,
+            stored_at: a.p_pumped_at ?? current.stored_at,
+            expires_at: a.p_container_expires_at ?? current.expires_at,
+          }
+          cs = cs.map((x) => (x.id === current.id ? moved : x))
+          settle(moved, 'amount', Math.max(0, total - served), at, write.id)
+        } else if (served > SERVED_EPSILON_ML) {
+          unapplied.push({ writeId: write.id, fn: op.fn, problem: 'milk_already_served' })
+          current.pending = true
         } else {
-          current.voided_at = write.queuedAt
+          current.voided_at = at
+          current.pending = true
+          voidDiscardsOf(current.id, at)
         }
-        current.pending = true
       } else if (current) {
         current.pending = true
       } else if (total > 0 && a.p_container_id && a.p_container_label) {
@@ -412,10 +540,12 @@ export function applyPendingInventory(
             label: a.p_container_label,
             amount_ml: total,
             remaining_ml: total,
-            stored_at: a.p_pumped_at ?? write.queuedAt,
+            stored_at: a.p_pumped_at ?? at,
             location: 'fridge',
-            expires_at: a.p_container_expires_at ?? write.queuedAt,
+            expires_at: a.p_container_expires_at ?? at,
             voided_at: null,
+            released_at: null,
+            lost_ml: 0,
             pending: true,
           })
         }
@@ -427,10 +557,46 @@ export function applyPendingInventory(
       const a = op.args as { p_id: string; p_voided_at?: string }
       for (const c of cs) {
         if (c.source_session_id === a.p_id && !c.voided_at) {
-          c.voided_at = a.p_voided_at ?? write.queuedAt
+          c.voided_at = a.p_voided_at ?? at
           c.pending = true
+          voidDiscardsOf(c.id, c.voided_at)
         }
       }
+      continue
+    }
+
+    if (op.fn === 'discard_container') {
+      const a = op.args as unknown as DiscardArgs
+      const listed = dc.find((d) => d.id === a.p_id)
+      if (listed) {
+        listed.pending = true
+        continue
+      }
+      const c = byId(a.p_container_id)
+      // Already discarded (by the other phone), emptied, voided or unknown:
+      // the server makes it a no-op too (V4-34, AJ-15).
+      if (!c || c.voided_at || c.released_at || hasLiveDiscard(c, dc)) continue
+      const when = a.p_discarded_at ?? at
+      if (Date.parse(c.expires_at) > Date.parse(when)) {
+        // For this phone it has not expired: the server decides (D-6).
+        unapplied.push({ writeId: write.id, fn: op.fn, problem: 'milk_not_expired' })
+        continue
+      }
+      if (c.remaining_ml >= EMPTY_ML) {
+        dc.push({
+          id: a.p_id,
+          container_id: c.id,
+          amount_ml: c.remaining_ml,
+          discarded_at: when,
+          reason: 'expired',
+          label: c.label,
+          voided_at: null,
+          pending: true,
+        })
+      }
+      c.remaining_ml = 0
+      c.released_at = at
+      c.pending = true
       continue
     }
 
@@ -444,8 +610,10 @@ export function applyPendingInventory(
       for (const portion of a.p_portions ?? []) {
         const c = byId(portion.container_id)
         if (c) {
-          c.remaining_ml = Math.max(0, c.remaining_ml - portion.amount_ml)
-          c.pending = true
+          // Never more than it has: a stale list overdraws, and the server
+          // will say so (milk_overdraw); the screen just shows it empty.
+          const take = Math.min(portion.amount_ml, c.remaining_ml)
+          settle(c, 'serve', residueParts(c, dc) - take, at, write.id)
         }
         ds.push({
           id: `${a.p_id}:${portion.container_id}`,
@@ -466,16 +634,69 @@ export function applyPendingInventory(
         if (d.feeding_id !== a.p_feeding_id || d.voided_at) continue
         const c = byId(d.container_id)
         if (c) {
-          c.remaining_ml = Math.min(c.amount_ml, c.remaining_ml + d.amount_ml)
-          c.pending = true
+          // Never more than the container ever had (a stale list).
+          const residue = Math.min(c.amount_ml, residueParts(c, dc) + d.amount_ml)
+          settle(c, 'return', residue, at, write.id)
+        } else {
+          lost.push({
+            writeId: write.id,
+            containerId: d.container_id,
+            label: d.label ?? '?',
+            ml: d.amount_ml,
+            reason: 'unknown',
+          })
         }
-        d.voided_at = a.p_voided_at ?? write.queuedAt
+        d.voided_at = a.p_voided_at ?? at
         d.pending = true
       }
+      continue
+    }
+
+    if (op.fn === 'edit_bottle_feed') {
+      const a = op.args as unknown as EditBottleArgs
+      const mine = ds.filter((d) => d.feeding_id === a.p_feeding_id && !d.voided_at)
+      // What the bottle has now, as far as this phone knows (INV-6: the
+      // breakdown IS its portions). Already in the asked state → Δ = 0.
+      const plan = planBottleEdit(
+        {
+          id: a.p_feeding_id,
+          fed_at: a.p_fed_at,
+          feeding_type: 'bottle',
+          breast_milk_ml: mine.reduce((s, d) => s + d.amount_ml, 0),
+          formula_ml: a.p_formula_ml,
+          leftover_ml: a.p_leftover_ml,
+        },
+        ds,
+        cs,
+        dc,
+        {
+          fed_at: a.p_fed_at,
+          breast_milk_ml: a.p_breast_ml,
+          formula_ml: a.p_formula_ml,
+          leftover_ml: a.p_leftover_ml,
+        },
+        Date.parse(at),
+      )
+      if (!plan.ok) {
+        unapplied.push({ writeId: write.id, fn: op.fn, problem: plan.problem })
+        for (const d of mine) d.pending = true
+        continue
+      }
+      const touched = new Set(
+        [...plan.returned, ...plan.lost, ...plan.taken].map((m) => m.containerId),
+      )
+      cs = plan.containers.map((c) =>
+        touched.has(c.id) ? { ...c, pending: true } : (c as Pending<MilkContainer>),
+      )
+      ds = plan.drawdowns.map((d) =>
+        d.feeding_id === a.p_feeding_id ? { ...d, pending: true } : (d as Pending<MilkDrawdown>),
+      )
+      dc = plan.discards as Pending<MilkDiscard>[]
+      for (const l of plan.lost) lost.push({ writeId: write.id, ...l })
     }
   }
 
-  return { containers: cs, drawdowns: ds }
+  return { containers: cs, drawdowns: ds, discards: dc, lost, unapplied }
 }
 
 // ------------------------------------------------------------- typing
@@ -493,6 +714,64 @@ export function parseAmountMl(
   const n = Number(text)
   if (!Number.isFinite(n) || n < 0) return { problem: 'number' }
   return { ml: unit === 'oz' ? n * ML_PER_FL_OZ : n }
+}
+
+/**
+ * An amount as a field shows it, in `unit`: up to two decimals in oz, whole
+ * ml; nothing for zero or less. The rule the bottle builder always used.
+ */
+export function amountText(ml: number, unit: VolumeUnit): string {
+  if (!(ml > 0)) return ''
+  return unit === 'oz' ? String(Number((ml / ML_PER_FL_OZ).toFixed(2))) : String(Math.round(ml))
+}
+
+/**
+ * What a typed amount says after its oz/ml toggle is switched (D-19, AJ-16):
+ * converted, so the number keeps meaning the same milk — never re-read in the
+ * other unit. Extracted from the bottle builder so the left and right fields
+ * of Milk and the "Sobró" field do exactly the same. Empty stays empty;
+ * something that isn't a number is left as typed (the field shows the
+ * problem).
+ *
+ * Back and forth never drifts: oz is shown with two decimals and ml whole —
+ * unless the whole ml would come back as another ounce figure (3 oz → 89 ml →
+ * 3.01 oz), and then the ml get one decimal (88.7 ml → 3 oz). So any 0.01 oz
+ * and any whole ml survive a round trip exactly (tests/unit/milkPending.test.ts).
+ */
+export function convertAmountText(text: string, from: VolumeUnit, to: VolumeUnit): string {
+  if (from === to) return text
+  const parsed = parseAmountMl(text, from)
+  if (parsed.ml == null) return text
+  const out = amountText(parsed.ml, to)
+  if (to === 'ml' && out !== '' && amountText(Number(out), 'oz') !== amountText(parsed.ml, 'oz')) {
+    return String(Number(parsed.ml.toFixed(1)))
+  }
+  return out
+}
+
+/**
+ * The left and right fields of a pumping session, each in its own unit
+ * (V4-01): empty is "nothing" (null, never 0), the total is their sum, and a
+ * bottle has to be chosen only when that total is above 0 (V4-04, CL-2).
+ */
+export function readPumpingSides(
+  left: { text: string; unit: VolumeUnit },
+  right: { text: string; unit: VolumeUnit },
+):
+  | {
+      leftMl: number | null
+      rightMl: number | null
+      totalMl: number
+      needsBottle: boolean
+      problem?: undefined
+    }
+  | { problem: 'number'; field: 'left' | 'right' } {
+  const l = parseAmountMl(left.text, left.unit)
+  if (l.problem) return { problem: 'number', field: 'left' }
+  const r = parseAmountMl(right.text, right.unit)
+  if (r.problem) return { problem: 'number', field: 'right' }
+  const totalMl = (l.ml ?? 0) + (r.ml ?? 0)
+  return { leftMl: l.ml, rightMl: r.ml, totalMl, needsBottle: totalMl > 0 }
 }
 
 /**
@@ -524,7 +803,12 @@ export function isLegacyPumping(row: PumpingSession): boolean {
   return row.left_ml == null && row.right_ml == null && row.amount_ml != null
 }
 
-/** How much of a container already went into bottles (0 for none). */
+/**
+ * @deprecated v4: counts a discard as served. Use `containerBalance`
+ * (lib/milkBottles.ts). Kept until the pages stop using it.
+ *
+ * How much of a container already went into bottles (0 for none).
+ */
 export function servedMl(c: MilkContainer | undefined): number {
   return c ? Math.max(0, c.amount_ml - c.remaining_ml) : 0
 }
