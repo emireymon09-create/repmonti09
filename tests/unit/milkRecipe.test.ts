@@ -172,6 +172,21 @@ describe('U-R1 recipe — fórmula fija y reparto (V5-43)', () => {
     expect(r.totalMl).toBeCloseTo(4 * OZ, 9)
   })
 
+  it('QA-1: el complemento de "si llora" usa leche fría primero; la fija no aplica', () => {
+    const r = recipe({
+      ...base,
+      cry: true,
+      lastFeedingEndMs: NOW - 90 * 60_000,
+      containers: [box('M1', 5, NOW - DAY)],
+      fixedFormulaMl: OZ,
+    })
+    expect(r.reason).toBe('cry_top_up')
+    expect(r.portions).toHaveLength(1)
+    expect(r.portions[0].ml).toBeCloseTo(OZ, 9)
+    expect(r.formulaMl).toBe(0)
+    expect(r.totalMl).toBeCloseTo(OZ, 9)
+  })
+
   it('"La leche alcanza para N tomas así"', () => {
     const r = recipe({
       ...base,

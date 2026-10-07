@@ -97,8 +97,11 @@ export function recipe(input: {
     input.nowMs - input.lastFeedingEndMs < RECIPE_CRY_WINDOW_MS
   const reason: RecipeReason = topUp ? 'cry_top_up' : 'full'
   const wantedMl = topUp ? RECIPE_CRY_EXTRA_ML : fullMl
-  const fixedMl =
+  const fixedInput =
     input.fixedFormulaMl != null && input.fixedFormulaMl > 0 ? input.fixedFormulaMl : 0
+  // The fixed formula splits the milk across FULL feeds. A "si llora" top-up
+  // is cold milk first, formula only for what the milk does not cover (QA-1).
+  const fixedMl = topUp ? 0 : fixedInput
 
   const cold = recipeContainers(input.containers, input.nowMs)
   const coldMl = cold.reduce((s, c) => s + Number(c.remaining_ml), 0)
@@ -133,7 +136,7 @@ export function recipe(input: {
     else if (input.formula.low) formulaWarning = 'low'
   }
 
-  const milkPerFeedMl = Math.max(0, fullMl - fixedMl)
+  const milkPerFeedMl = Math.max(0, fullMl - fixedInput)
   return {
     portions,
     formulaMl,

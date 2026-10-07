@@ -560,7 +560,7 @@ export const es: Dictionary = {
   'started.discard': 'Desechar',
   'started.discardAria': 'Desechar los {amount} que sobraron del biberón empezado',
   'started.discardConfirm':
-    '¿Tirar los {amount} que sobraron del biberón empezado? Ya pasó más de una hora.',
+    '¿Tirar lo que sobró del biberón empezado ({amount})? Ya pasó más de una hora.',
   'started.discarded': 'desecho del biberón empezado',
   'cooling.line': 'Enfriando · lista ~{time}',
   'cooling.markCold': 'Ya está fría',

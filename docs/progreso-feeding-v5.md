@@ -54,3 +54,19 @@ escrituras nuevas; `milkErrorText`/`describeWrite` EN+ES. Director: `tsc` 0,
 `test:tz` 670/670 × 4 husos. Rol lógica: integración 27/375, build 0, lint y
 format 0. Spec corregida: caso límite 8 y D5-8 (deshacer se permite si al
 destino le queda al menos lo recibido — así lo hace 0016).
+
+## H4 — UI [VERIFICADO por el director]
+
+Commit `5aa0834` (rol UI): Hoy con Receta, "Si llora", fórmula fija, biberón
+empezado; `/pumping` con Enfriando/"Ya está fría", Combinar/Deshacer y tarjeta
+Similac; Historial (desecho empezado, combinaciones); Ajustes con `<details>`
+"Todavía no se usan". Rol UI: tsc/lint/format 0, test:tz 673×4, integración
+27/375, build 0; barrido 390×844 ES/EN de /dashboard, /pumping, /settings:
+scrollH 0, desborde 0, targets<44 0, consola 0.
+
+### QA-1 (director, revisando la captura de Hoy) — prueba que falla → pasa
+Con "Si llora" (+1 oz) y "Fórmula fija 1 oz", la receta proponía "1 oz de
+Similac" con 7.5 oz de leche fría. Prueba `QA-1` en `tests/unit/milkRecipe.test.ts`:
+**antes** `Tests 1 failed | 18 passed (19)`; arreglo en `lib/milkRecipe.ts` (la
+fija solo aplica a la toma completa, D5-20); **después** `19 passed (19)`.
+Copy ES del confirm del empezado corregido ("¿Tirar lo que sobró … ({amount})?").
