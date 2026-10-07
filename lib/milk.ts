@@ -31,6 +31,7 @@ import { translate, type Lang } from '@/lib/i18n'
 import type { PendingWrite } from '@/lib/queue'
 import {
   EMPTY_ML,
+  FUTURE_TOLERANCE_MS,
   byAge,
   hasLiveDiscard,
   isOccupied,
@@ -38,16 +39,21 @@ import {
   planBottleEdit,
   rebalance,
   residueParts,
+  transferredMl,
   type LostReason,
   type RebalanceCause,
 } from '@/lib/milkBottles'
+import { canUncombine, combineProblem, combinedExpiry } from '@/lib/milkCombine'
+import { BOTTLE_STARTED_MAX_MS, FORMULA_BOTTLE_ML, FORMULA_OPEN_MAX_MS } from '@/lib/milkParams'
 import type {
   Feeding,
+  FormulaContainer,
   MilkContainer,
   MilkDiscard,
   MilkDrawdown,
   MilkLocation,
   MilkRules,
+  MilkTransfer,
   PumpingSession,
   VolumeUnit,
   WithPending,
@@ -206,6 +212,10 @@ export function stashMl(containers: MilkContainer[], atMs: number): number {
 // ------------------------------------------------------------- suggestion
 
 /**
+ * @deprecated v5 (V5-40): the next bottle is `recipe()` (lib/milkRecipe.ts) —
+ * 3.5 oz, "si llora", only cold milk, the Similac warnings. Kept until the
+ * pages stop using it.
+ *
  * How much to suggest for the next bottle: the total of the last bottle
  * logged (legacy or new, queued or not), or the 3 oz starting value when
  * there never was one. A different amount affects only that one bottle —
@@ -225,6 +235,9 @@ export type PlanPortion = { containerId: string; label: string; ml: number }
 export type BottlePlan = { portions: PlanPortion[]; formulaMl: number; totalMl: number }
 
 /**
+ * @deprecated v5 (V5-40): use `recipe()` (lib/milkRecipe.ts), which takes only
+ * COLD milk. Kept until the pages stop using it.
+ *
  * Serve `totalMl` from the oldest usable containers first, as many as it
  * takes; whatever the milk doesn't cover is formula. Only a suggestion —
  * the person can pick any container and any amounts.
@@ -368,6 +381,12 @@ export type PumpingArgs = {
   p_container_id: string | null
   p_container_label: string | null
   p_container_expires_at: string | null
+  /**
+   * When "Registrar" was tapped (0016, V5-20): the milk went into the fridge
+   * then. Left out (an op queued by an older build) = the server uses
+   * `p_pumped_at`.
+   */
+  p_fridge_at?: string | null
 }
 
 /** The arguments of log_bottle_feed (0014; 0015 adds `p_leftover_ml`), as lib/db.ts queues them. */
@@ -410,6 +429,66 @@ export type EditBottleArgs = {
   }
 }
 
+/** milk_mark_cold (0016): "Ya está fría". `p_op_id` is this operation's own id. */
+export type MarkColdArgs = {
+  p_op_id: string
+  p_container_id: string
+  p_cold_at: string | null
+}
+
+/** milk_combine (0016): `p_expected` is `{id: remaining_ml}` as the screen saw them. */
+export type CombineArgs = {
+  p_op_id: string
+  p_baby_id: string
+  p_target_id: string
+  p_source_ids: string[]
+  p_expected: Record<string, number>
+}
+
+/** milk_uncombine (0016): undo the combination whose op id is `p_combine_op_id`. */
+export type UncombineArgs = {
+  p_op_id: string
+  p_combine_op_id: string
+}
+
+/** discard_started_bottle (0016). `p_id` is the discard's own id. */
+export type StartedDiscardArgs = {
+  p_id: string
+  p_feeding_id: string
+  p_discarded_at: string | null
+}
+
+/** formula_add (0016): 1–24 closed bottles with ids made on this device. */
+export type FormulaAddArgs = {
+  p_op_id: string
+  p_baby_id: string
+  p_ids: string[]
+  p_size_ml: number
+  p_added_at: string
+}
+
+/** formula_open (0016): open `p_container_id` (a closed one, or a new id to create). */
+export type FormulaOpenArgs = {
+  p_op_id: string
+  p_baby_id: string
+  p_container_id: string
+  p_opened_at: string | null
+}
+
+/** formula_finish (0016): 'empty' always; 'expired' only after 48 h by the server's clock. */
+export type FormulaFinishArgs = {
+  p_op_id: string
+  p_container_id: string
+  p_reason: 'empty' | 'expired'
+  p_at: string | null
+}
+
+/** formula_void (0016): a bottle logged by mistake. */
+export type FormulaVoidArgs = {
+  p_op_id: string
+  p_container_id: string
+}
+
 type Pending<T> = WithPending<T>
 
 /** What the offline view of the inventory comes to (§7.3). */
@@ -417,6 +496,8 @@ export type PendingInventory = {
   containers: Pending<MilkContainer>[]
   drawdowns: Pending<MilkDrawdown>[]
   discards: Pending<MilkDiscard>[]
+  /** Every transfer ("Combinar", 0016) — voided ones are undone combinations. */
+  transfers: Pending<MilkTransfer>[]
   /**
    * Milk that, by what this phone knows, did not go back to its container
    * (D-9) — the screen says it "según lo que sabe este teléfono".
@@ -447,6 +528,15 @@ export type PendingInventory = {
  * A write this phone expects the server to refuse is not applied at all and
  * is listed in `unapplied`.
  *
+ * v5 (0016) — with `transfers`, the same for the new calls: "Ya está fría"
+ * (`milk_mark_cold`), combining and undoing it (`milk_combine`,
+ * `milk_uncombine`, through the same rule, cause 'transfer', and the D5-19
+ * "milk does not go back to a bottle poured into another"), and throwing out
+ * a started bottle (`discard_started_bottle`). A combination the server
+ * already has (its transfers are listed) is not applied twice; one this
+ * phone expects refused — warm, expired, freed, changed meanwhile, or an undo
+ * after the target was used — goes to `unapplied` with the server's code.
+ *
  * The three-argument form (no discards) is the one of v3 and still works.
  * Inputs are not changed: they are what the next refresh starts from.
  */
@@ -460,18 +550,21 @@ export function applyPendingInventory(
   drawdowns: MilkDrawdown[],
   discards: MilkDiscard[],
   pending: PendingWrite[],
+  transfers?: MilkTransfer[],
 ): PendingInventory
 export function applyPendingInventory(
   containers: MilkContainer[],
   drawdowns: MilkDrawdown[],
   discardsOrPending: MilkDiscard[] | PendingWrite[],
   maybePending?: PendingWrite[],
+  transfers?: MilkTransfer[],
 ): PendingInventory {
   const pending = (maybePending ?? discardsOrPending) as PendingWrite[]
   const discards = (maybePending ? discardsOrPending : []) as MilkDiscard[]
   let cs: Pending<MilkContainer>[] = containers.map((c) => ({ ...c }))
   let ds: Pending<MilkDrawdown>[] = drawdowns.map((d) => ({ ...d }))
   let dc: Pending<MilkDiscard>[] = discards.map((d) => ({ ...d }))
+  let tr: Pending<MilkTransfer>[] = (transfers ?? []).map((t) => ({ ...t }))
   const lost: PendingInventory['lost'] = []
   const unapplied: PendingInventory['unapplied'] = []
   const byId = (id: string | null | undefined) => cs.find((c) => c.id === id)
@@ -484,7 +577,7 @@ export function applyPendingInventory(
     atIso: string,
     writeId: string,
   ) => {
-    const r = rebalance(c, cause, residueMl, cs, dc, atIso)
+    const r = rebalance(c, cause, residueMl, cs, dc, atIso, tr)
     cs = cs.map((x) => (x.id === c.id ? { ...r.container, pending: true } : x))
     dc = r.discards.map((d, i) =>
       d.amount_ml !== dc[i].amount_ml || d.voided_at !== dc[i].voided_at
@@ -500,6 +593,35 @@ export function applyPendingInventory(
       d.container_id === containerId && !d.voided_at ? { ...d, voided_at: at, pending: true } : d,
     )
   }
+  /** The started-bottle discard of a feeding follows its "sobró" (0016 trigger, INV-10). */
+  const syncStartedDiscard = (feedingId: string, leftoverMl: number | null, at: string) => {
+    dc = dc.map((d) => {
+      if (d.voided_at || d.reason !== 'started_bottle_expired' || d.feeding_id !== feedingId)
+        return d
+      if (leftoverMl == null || !(leftoverMl > 0)) return { ...d, voided_at: at, pending: true }
+      return Math.abs(Number(d.amount_ml) - leftoverMl) > 1e-9
+        ? { ...d, amount_ml: leftoverMl, pending: true }
+        : d
+    })
+  }
+  const markPending = (ids: string[]) => {
+    for (const id of ids) {
+      const c = byId(id)
+      if (c) c.pending = true
+    }
+  }
+  /** Where the live transfers into `containerId` come from: their earliest expiry, or null. */
+  const sourcesExpiry = (containerId: string): number | null => {
+    let min: number | null = null
+    for (const t of tr) {
+      if (t.voided_at || t.to_container_id !== containerId) continue
+      const src = byId(t.from_container_id)
+      if (!src) continue
+      const e = Date.parse(src.expires_at)
+      if (min === null || e < min) min = e
+    }
+    return min
+  }
 
   const ordered = pending.slice().sort((a, b) => a.queuedAt.localeCompare(b.queuedAt))
   for (const write of ordered) {
@@ -512,19 +634,49 @@ export function applyPendingInventory(
       const total = Number(a.p_left_ml ?? 0) + Number(a.p_right_ml ?? 0)
       const current = cs.find((c) => c.source_session_id === a.p_id && !c.voided_at)
       if (current && op.fn === 'update_pumping_session') {
-        const served = Math.max(0, current.amount_ml - residueParts(current, dc))
-        if (total > 0 && total < served - SERVED_EPSILON_ML) {
+        // 0016: amount + in = served + discarded + lost + remaining + out.
+        const flow = transferredMl(current.id, tr)
+        const served = Math.max(
+          0,
+          current.amount_ml + flow.in - flow.out - residueParts(current, dc),
+        )
+        const storedAt = a.p_pumped_at ?? current.stored_at
+        // The expiry never outlives the sources poured into it (V5-31).
+        const srcMin = sourcesExpiry(current.id)
+        const ownExpiry = Date.parse(a.p_container_expires_at ?? current.expires_at)
+        const expiresMs = srcMin === null ? ownExpiry : Math.min(ownExpiry, srcMin)
+        if (total > 0 && total + flow.in < served + flow.out - SERVED_EPSILON_ML) {
           unapplied.push({ writeId: write.id, fn: op.fn, problem: 'milk_served_exceeds_amount' })
           current.pending = true
+        } else if (total > 0 && expiresMs <= Date.parse(storedAt)) {
+          unapplied.push({ writeId: write.id, fn: op.fn, problem: 'milk_combined' })
+          current.pending = true
         } else if (total > 0) {
+          const fridge = current.fridge_at ?? current.stored_at
           const moved: Pending<MilkContainer> = {
             ...current,
             amount_ml: total,
-            stored_at: a.p_pumped_at ?? current.stored_at,
-            expires_at: a.p_container_expires_at ?? current.expires_at,
+            stored_at: storedAt,
+            expires_at: new Date(expiresMs).toISOString(),
+            fridge_at:
+              Date.parse(fridge) < Date.parse(storedAt) ? storedAt : (current.fridge_at ?? fridge),
           }
           cs = cs.map((x) => (x.id === current.id ? moved : x))
-          settle(moved, 'amount', Math.max(0, total - served), at, write.id)
+          settle(moved, 'amount', Math.max(0, total + flow.in - served - flow.out), at, write.id)
+          // A source: its milk is in the targets, which can't outlive it.
+          if (flow.out > 0) {
+            for (const t of tr) {
+              if (t.voided_at || t.from_container_id !== current.id) continue
+              const dest = byId(t.to_container_id)
+              if (dest && !dest.voided_at && Date.parse(dest.expires_at) > expiresMs) {
+                dest.expires_at = new Date(expiresMs).toISOString()
+                dest.pending = true
+              }
+            }
+          }
+        } else if (flow.in > 0 || flow.out > 0) {
+          unapplied.push({ writeId: write.id, fn: op.fn, problem: 'milk_combined' })
+          current.pending = true
         } else if (served > SERVED_EPSILON_ML) {
           unapplied.push({ writeId: write.id, fn: op.fn, problem: 'milk_already_served' })
           current.pending = true
@@ -539,18 +691,27 @@ export function applyPendingInventory(
         const known = byId(a.p_container_id)
         if (known) known.pending = true
         else {
+          const pumpedAt = a.p_pumped_at ?? at
+          // Into the fridge when "Registrar" was tapped, bounded like the
+          // server: never before the pumping, never past now + 10 min.
+          const fridgeMs = Math.min(
+            Math.max(Date.parse(a.p_fridge_at ?? pumpedAt), Date.parse(pumpedAt)),
+            Date.parse(at) + FUTURE_TOLERANCE_MS,
+          )
           cs.push({
             id: a.p_container_id,
             source_session_id: a.p_id,
             label: a.p_container_label,
             amount_ml: total,
             remaining_ml: total,
-            stored_at: a.p_pumped_at ?? at,
+            stored_at: pumpedAt,
             location: 'fridge',
             expires_at: a.p_container_expires_at ?? at,
             voided_at: null,
             released_at: null,
             lost_ml: 0,
+            fridge_at: new Date(fridgeMs).toISOString(),
+            cold_at: null,
             pending: true,
           })
         }
@@ -562,6 +723,13 @@ export function applyPendingInventory(
       const a = op.args as { p_id: string; p_voided_at?: string }
       for (const c of cs) {
         if (c.source_session_id === a.p_id && !c.voided_at) {
+          // 0016: mixed with another bottle's milk — undo the combination first.
+          const flow = transferredMl(c.id, tr)
+          if (flow.in > 0 || flow.out > 0) {
+            unapplied.push({ writeId: write.id, fn: op.fn, problem: 'milk_combined' })
+            c.pending = true
+            continue
+          }
           c.voided_at = a.p_voided_at ?? at
           c.pending = true
           voidDiscardsOf(c.id, c.voided_at)
@@ -640,7 +808,11 @@ export function applyPendingInventory(
         const c = byId(d.container_id)
         if (c) {
           // Never more than the container ever had (a stale list).
-          const residue = Math.min(c.amount_ml, residueParts(c, dc) + d.amount_ml)
+          const flow = transferredMl(c.id, tr)
+          const residue = Math.min(
+            c.amount_ml + flow.in - flow.out,
+            residueParts(c, dc) + d.amount_ml,
+          )
           settle(c, 'return', residue, at, write.id)
         } else {
           lost.push({
@@ -654,6 +826,7 @@ export function applyPendingInventory(
         d.voided_at = a.p_voided_at ?? at
         d.pending = true
       }
+      syncStartedDiscard(a.p_feeding_id, null, a.p_voided_at ?? at)
       continue
     }
 
@@ -683,6 +856,7 @@ export function applyPendingInventory(
           leftover_ml: a.p_leftover_ml,
         },
         Date.parse(at),
+        tr,
       )
       if (!plan.ok) {
         unapplied.push({ writeId: write.id, fn: op.fn, problem: plan.problem })
@@ -700,10 +874,314 @@ export function applyPendingInventory(
       )
       dc = plan.discards as Pending<MilkDiscard>[]
       for (const l of plan.lost) lost.push({ writeId: write.id, ...l })
+      syncStartedDiscard(a.p_feeding_id, a.p_leftover_ml, at)
+      continue
+    }
+
+    // ---------------------------------------------------------- 0016
+
+    if (op.fn === 'milk_mark_cold') {
+      const a = op.args as unknown as MarkColdArgs
+      const c = byId(a.p_container_id)
+      if (!c || c.voided_at) {
+        unapplied.push({ writeId: write.id, fn: op.fn, problem: 'milk_container_unusable' })
+        continue
+      }
+      // Already confirmed, or already free: a no-op on the server too.
+      if (!c.cold_at && !c.released_at) {
+        const floor = Date.parse(c.fridge_at ?? c.stored_at)
+        const asked = Date.parse(a.p_cold_at ?? at)
+        c.cold_at = new Date(Math.min(Math.max(asked, floor), Date.parse(at))).toISOString()
+      }
+      c.pending = true
+      continue
+    }
+
+    if (op.fn === 'milk_combine') {
+      const a = op.args as unknown as CombineArgs
+      const ids = [a.p_target_id, ...(a.p_source_ids ?? [])]
+      // The server already has it: its transfers came back with the read.
+      if (tr.some((t) => t.op_id === a.p_op_id)) {
+        for (const t of tr) if (t.op_id === a.p_op_id) t.pending = true
+        markPending(ids)
+        continue
+      }
+      const target = byId(a.p_target_id)
+      const sources = (a.p_source_ids ?? []).map(byId)
+      if (!target || sources.some((x) => !x)) {
+        unapplied.push({ writeId: write.id, fn: op.fn, problem: 'milk_container_unusable' })
+        continue
+      }
+      const srcs = (sources as Pending<MilkContainer>[])
+        .slice()
+        .sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0))
+      const problem = combineProblem(target, srcs, Date.parse(at))
+      if (problem) {
+        unapplied.push({
+          writeId: write.id,
+          fn: op.fn,
+          problem: problem.problem === 'bad_input' ? 'milk_bad_input' : problem.code,
+        })
+        markPending(ids)
+        continue
+      }
+      // Another phone served or discarded meanwhile (regla 21).
+      const changed = [target, ...srcs].some(
+        (c) => Math.abs(c.remaining_ml - Number(a.p_expected?.[c.id] ?? NaN)) > 1e-6,
+      )
+      if (changed) {
+        unapplied.push({ writeId: write.id, fn: op.fn, problem: 'milk_combine_conflict' })
+        markPending(ids)
+        continue
+      }
+      const prevExpiry = target.expires_at
+      const newExpiry = combinedExpiry(target, srcs)
+      let movedMl = 0
+      for (const src of srcs) {
+        const ml = src.remaining_ml
+        tr.push({
+          id: `${a.p_op_id}:${src.id}`,
+          op_id: a.p_op_id,
+          from_container_id: src.id,
+          to_container_id: target.id,
+          amount_ml: ml,
+          target_prev_expires_at: prevExpiry,
+          created_at: at,
+          voided_at: null,
+          pending: true,
+        })
+        movedMl += ml
+        settle(byId(src.id)!, 'transfer', residueParts(src, dc) - ml, at, write.id)
+      }
+      const t = byId(target.id)!
+      settle(t, 'transfer', residueParts(t, dc) + movedMl, at, write.id)
+      const after = byId(target.id)!
+      after.expires_at = newExpiry
+      continue
+    }
+
+    if (op.fn === 'milk_uncombine') {
+      const a = op.args as unknown as UncombineArgs
+      const check = canUncombine(a.p_combine_op_id, tr, cs)
+      if (!check.ok) {
+        unapplied.push({
+          writeId: write.id,
+          fn: op.fn,
+          problem: check.problem === 'unknown' ? 'milk_bad_input' : check.code,
+        })
+        continue
+      }
+      const rows = tr.filter((t) => t.op_id === a.p_combine_op_id)
+      const targetId = rows[0].to_container_id
+      if (check.noop) {
+        markPending([targetId])
+        continue
+      }
+      const live = rows.filter((t) => !t.voided_at)
+      const prevMs = Math.min(...live.map((t) => Date.parse(t.target_prev_expires_at)))
+      tr = tr.map((t) =>
+        t.op_id === a.p_combine_op_id && !t.voided_at ? { ...t, voided_at: at, pending: true } : t,
+      )
+      for (const row of live
+        .slice()
+        .sort((x, y) => (x.from_container_id < y.from_container_id ? -1 : 1))) {
+        const src = byId(row.from_container_id)
+        if (src)
+          settle(src, 'transfer', residueParts(src, dc) + Number(row.amount_ml), at, write.id)
+      }
+      const t = byId(targetId)
+      if (t) {
+        settle(t, 'transfer', residueParts(t, dc) - check.returnedMl, at, write.id)
+        const after = byId(targetId)!
+        // The expiry from before, never past what it still holds of OTHER
+        // combinations; a target whose time was moved since keeps its own.
+        const others = sourcesExpiry(targetId)
+        const expMs = others === null ? prevMs : Math.min(prevMs, others)
+        if (expMs > Date.parse(after.stored_at)) after.expires_at = new Date(expMs).toISOString()
+      }
+      continue
+    }
+
+    if (op.fn === 'discard_started_bottle') {
+      const a = op.args as unknown as StartedDiscardArgs
+      const listed = dc.find((d) => d.id === a.p_id)
+      if (listed) {
+        listed.pending = true
+        continue
+      }
+      // Already thrown out (by the other phone): a no-op on the server too.
+      const thrown = dc.some(
+        (d) =>
+          !d.voided_at && d.reason === 'started_bottle_expired' && d.feeding_id === a.p_feeding_id,
+      )
+      const row = op.row as { amount_ml?: unknown; usable_until?: unknown } | undefined
+      const amount = Number(row?.amount_ml)
+      if (thrown || !(amount > 0)) continue
+      const when = Date.parse(a.p_discarded_at ?? at)
+      const until =
+        typeof row?.usable_until === 'string' ? Date.parse(row.usable_until) : Number.NaN
+      if (Number.isFinite(until) && when < until) {
+        // For this phone the hour has not passed: the server decides.
+        unapplied.push({ writeId: write.id, fn: op.fn, problem: 'milk_not_expired:started' })
+        continue
+      }
+      dc.push({
+        id: a.p_id,
+        container_id: null,
+        feeding_id: a.p_feeding_id,
+        amount_ml: amount,
+        discarded_at: new Date(Number.isFinite(until) ? Math.max(when, until) : when).toISOString(),
+        reason: 'started_bottle_expired',
+        label: null,
+        voided_at: null,
+        pending: true,
+      })
     }
   }
 
-  return { containers: cs, drawdowns: ds, discards: dc, lost, unapplied }
+  return { containers: cs, drawdowns: ds, discards: dc, transfers: tr, lost, unapplied }
+}
+
+/** What the offline view of the Similac bottles comes to (0016). */
+export type PendingFormula = {
+  containers: Pending<FormulaContainer>[]
+  /** Queued calls this phone expects the server to refuse; nothing of them is applied. */
+  unapplied: { writeId: string; fn: string; problem: string }[]
+}
+
+/**
+ * Fold the queued Similac calls (`formula_add`, `formula_open`,
+ * `formula_finish`, `formula_void`, 0016) into the bottles the server
+ * returned, in queue order, so a purchase or an open made without a
+ * connection already counts. Every row touched is marked `pending`. A call
+ * the server already applied (the rows came back like that) changes nothing;
+ * one the server is expected to refuse — "Desechar" before 48 h by this
+ * phone's clock, voiding a finished one — goes to `unapplied`.
+ * Inputs are not changed.
+ */
+export function applyPendingFormula(
+  containers: FormulaContainer[],
+  pending: PendingWrite[],
+): PendingFormula {
+  const xs: Pending<FormulaContainer>[] = containers.map((c) => ({ ...c }))
+  const unapplied: PendingFormula['unapplied'] = []
+  const find = (id: string) => xs.find((c) => c.id === id)
+  const ordered = pending.slice().sort((a, b) => a.queuedAt.localeCompare(b.queuedAt))
+
+  for (const write of ordered) {
+    const op = write.op
+    if (op.kind !== 'rpc') continue
+    const at = write.queuedAt
+
+    if (op.fn === 'formula_add') {
+      const a = op.args as unknown as FormulaAddArgs
+      for (const id of a.p_ids ?? []) {
+        const known = find(id)
+        if (known) known.pending = true
+        else
+          xs.push({
+            id,
+            size_ml: Number(a.p_size_ml),
+            added_at: a.p_added_at ?? at,
+            opened_at: null,
+            finished_at: null,
+            finish_reason: null,
+            voided_at: null,
+            pending: true,
+          })
+      }
+      continue
+    }
+
+    if (op.fn === 'formula_open') {
+      const a = op.args as unknown as FormulaOpenArgs
+      const openedAt = new Date(
+        Math.min(Date.parse(a.p_opened_at ?? at), Date.parse(at) + FUTURE_TOLERANCE_MS),
+      ).toISOString()
+      const target = find(a.p_container_id)
+      if (target && (target.voided_at || target.opened_at)) {
+        // Already opened (the server has it) — or not openable: the server says.
+        if (!target.opened_at)
+          unapplied.push({ writeId: write.id, fn: op.fn, problem: 'milk_bad_input' })
+        target.pending = true
+        continue
+      }
+      for (const c of xs) {
+        if (c.id !== a.p_container_id && !c.voided_at && c.opened_at && !c.finished_at) {
+          c.finished_at = Date.parse(openedAt) > Date.parse(c.opened_at) ? openedAt : c.opened_at
+          c.finish_reason = 'replaced'
+          c.pending = true
+        }
+      }
+      if (target) {
+        target.opened_at = openedAt
+        target.pending = true
+      } else {
+        xs.push({
+          id: a.p_container_id,
+          size_ml: FORMULA_BOTTLE_ML,
+          added_at: openedAt,
+          opened_at: openedAt,
+          finished_at: null,
+          finish_reason: null,
+          voided_at: null,
+          pending: true,
+        })
+      }
+      continue
+    }
+
+    if (op.fn === 'formula_finish') {
+      const a = op.args as unknown as FormulaFinishArgs
+      const c = find(a.p_container_id)
+      if (!c || c.voided_at || !c.opened_at) {
+        unapplied.push({ writeId: write.id, fn: op.fn, problem: 'milk_bad_input' })
+        continue
+      }
+      if (c.finished_at) {
+        c.pending = true
+        continue
+      }
+      const when = Date.parse(a.p_at ?? at)
+      const opened = Date.parse(c.opened_at)
+      const limit = opened + FORMULA_OPEN_MAX_MS
+      if (a.p_reason === 'expired' && when < limit) {
+        unapplied.push({ writeId: write.id, fn: op.fn, problem: 'milk_not_expired:formula' })
+        continue
+      }
+      c.finished_at = new Date(
+        Math.max(when, a.p_reason === 'expired' ? limit : opened),
+      ).toISOString()
+      c.finish_reason = a.p_reason
+      c.pending = true
+      continue
+    }
+
+    if (op.fn === 'formula_void') {
+      const a = op.args as unknown as FormulaVoidArgs
+      const c = find(a.p_container_id)
+      if (!c) {
+        unapplied.push({ writeId: write.id, fn: op.fn, problem: 'milk_bad_input' })
+        continue
+      }
+      if (c.voided_at) {
+        c.pending = true
+        continue
+      }
+      if (c.finished_at) {
+        unapplied.push({ writeId: write.id, fn: op.fn, problem: 'milk_bad_input' })
+        continue
+      }
+      c.voided_at = at
+      c.pending = true
+    }
+  }
+  return { containers: xs, unapplied }
+}
+
+/** Used by the started-bottle op (lib/db.ts): the hour it stops being good, ISO. */
+export function startedUsableUntil(fedAt: string): string {
+  return new Date(Date.parse(fedAt) + BOTTLE_STARTED_MAX_MS).toISOString()
 }
 
 // ------------------------------------------------------------- typing

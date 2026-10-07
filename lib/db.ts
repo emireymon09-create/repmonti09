@@ -23,11 +23,27 @@ import { createClient } from '@/lib/supabaseClient'
 import { formatMilkOz, formatVolume } from '@/lib/format'
 import {
   containerExpiresAt,
+  startedUsableUntil,
   type BottleFeedArgs,
+  type CombineArgs,
   type DiscardArgs,
   type EditBottleArgs,
+  type FormulaAddArgs,
+  type FormulaFinishArgs,
+  type FormulaOpenArgs,
+  type FormulaVoidArgs,
+  type MarkColdArgs,
   type PumpingArgs,
+  type StartedDiscardArgs,
+  type UncombineArgs,
 } from '@/lib/milk'
+import { combineExpected } from '@/lib/milkCombine'
+import {
+  BOTTLE_STARTED_MAX_MIN,
+  FORMULA_BOTTLE_ML,
+  FORMULA_OPEN_MAX_H,
+  FORMULA_PACK_COUNT,
+} from '@/lib/milkParams'
 import { effectiveBottleCount, planBottleEdit } from '@/lib/milkBottles'
 import { PAGE_SIZE, readAll } from '@/lib/readAll'
 import { estimateLegacySplit, type LegacySplit } from '@/lib/milkEstimate'
@@ -57,12 +73,14 @@ import type {
   DoctorAppointment,
   Feeding,
   FeedingType,
+  FormulaContainer,
   GrowthMeasurement,
   MilkContainer,
   MilkDiscard,
   MilkDrawdown,
   MilkRules,
   MilkSettings,
+  MilkTransfer,
   NursingSession,
   PumpingSession,
   PumpSide,
@@ -273,11 +291,29 @@ const THING: Record<string, MessageKey> = {
 }
 
 /**
+ * The milk operations of 0016 are not "a row (new)": they are named by what
+ * they do — "Combined bottles", "Similac opened".
+ */
+const OPERATION: Record<string, MessageKey> = {
+  milk_combine: 'sync.op.milk_combine',
+  milk_uncombine: 'sync.op.milk_uncombine',
+  milk_mark_cold: 'sync.op.milk_mark_cold',
+  discard_started_bottle: 'sync.op.discard_started_bottle',
+  formula_add: 'sync.op.formula_add',
+  formula_open: 'sync.op.formula_open',
+  formula_finish: 'sync.op.formula_finish',
+  formula_void: 'sync.op.formula_void',
+}
+
+/**
  * A queued entry named for the user, in the interface language — "Diaper
- * (new)", "Pañal (edición)". Not the `label` stored with it: that is
- * written once, in English, when it is queued.
+ * (new)", "Pañal (edición)", "Combinar biberones". Not the `label` stored with
+ * it: that is written once, in English, when it is queued.
  */
 export function describeWrite(write: PendingWrite, lang: Lang = 'en'): string {
+  if (write.op.kind === 'rpc' && OPERATION[write.op.fn]) {
+    return translate(lang, OPERATION[write.op.fn])
+  }
   const thing = translate(lang, THING[write.op.table] ?? 'sync.thing.other')
   const created =
     write.op.kind === 'insert' || (write.op.kind === 'rpc' && write.op.effect === 'insert')
@@ -866,6 +902,8 @@ export function logPumpingOp(
   ctx: Pick<MilkContext, 'rules'>,
   label: string | null | undefined,
   id: string = newId(),
+  /** When "Registrar" was tapped: the milk went into the fridge then (V5-20). */
+  fridgeAt: string = new Date().toISOString(),
 ): { op: RpcOp; label: string | null } | null {
   const total = totalOf(input)
   if (total > 0 && !label) return null
@@ -881,6 +919,7 @@ export function logPumpingOp(
     p_container_id: container?.id ?? null,
     p_container_label: container?.label ?? null,
     p_container_expires_at: container?.expires_at ?? null,
+    p_fridge_at: container ? fridgeAt : null,
   }
   return {
     label: container?.label ?? null,
@@ -1041,7 +1080,7 @@ export async function listContainers(
       db
         .from('milk_containers')
         .select(
-          'id, source_session_id, label, amount_ml, remaining_ml, stored_at, location, expires_at, released_at, lost_ml',
+          'id, source_session_id, label, amount_ml, remaining_ml, stored_at, location, expires_at, released_at, lost_ml, fridge_at, cold_at',
         )
         .eq('baby_id', babyId)
         .is('voided_at', null)
@@ -1058,6 +1097,8 @@ export async function listContainers(
       remaining_ml: Number(c.remaining_ml),
       released_at: c.released_at ?? null,
       lost_ml: Number(c.lost_ml ?? 0),
+      fridge_at: c.fridge_at ?? null,
+      cold_at: c.cold_at ?? null,
     })),
   )
 }
@@ -1098,6 +1139,11 @@ export async function listDrawdowns(
  * Every live discard (0015), oldest first, with its bottle's number. No limit:
  * "Discarded milk" is a total over all of them (D-13), and History lists each.
  * A page at a time (lib/readAll.ts).
+ *
+ * 0016: also the started bottles thrown out (`reason`
+ * 'started_bottle_expired', `feeding_id`, no container and no number).
+ * "Discarded milk" leaves them out (`discardedTotalMl`, D5-11);
+ * `startedBottle` reads them to stop offering "Desechar".
  */
 export async function listDiscards(
   babyId: string,
@@ -1108,7 +1154,9 @@ export async function listDiscards(
     (from, to) =>
       db
         .from('milk_discards')
-        .select('id, container_id, amount_ml, discarded_at, reason, milk_containers(label)')
+        .select(
+          'id, container_id, feeding_id, amount_ml, discarded_at, reason, milk_containers(label)',
+        )
         .eq('baby_id', babyId)
         .is('voided_at', null)
         .order('discarded_at', { ascending: true })
@@ -1122,10 +1170,135 @@ export async function listDiscards(
     ((rows ?? []) as unknown as Row[]).map(({ milk_containers: c, ...d }) => ({
       ...d,
       amount_ml: Number(d.amount_ml),
+      container_id: d.container_id ?? null,
+      feeding_id: d.feeding_id ?? null,
       label: (Array.isArray(c) ? c[0]?.label : c?.label) ?? null,
       voided_at: null,
     })),
   )
+}
+
+/**
+ * Every transfer of "Combinar" (0016), voided ones included — a voided one is
+ * a combination that was undone, and "Deshacer" needs to know which are. No
+ * limit (the offline accounting of a container needs all of its live ones;
+ * a page at a time, lib/readAll.ts).
+ */
+export async function listTransfers(
+  babyId: string,
+  db: Db = data(),
+  pageSize = PAGE_SIZE,
+): Promise<Result<MilkTransfer[]>> {
+  const { data: rows, error } = await readAll(
+    (from, to) =>
+      db
+        .from('milk_transfers')
+        .select(
+          'id, op_id, from_container_id, to_container_id, amount_ml, target_prev_expires_at, created_at, voided_at',
+        )
+        .eq('baby_id', babyId)
+        .order('created_at', { ascending: true })
+        .order('id')
+        .range(from, to),
+    pageSize,
+  )
+  if (error) return fail([] as MilkTransfer[], error)
+  return ok(
+    ((rows ?? []) as MilkTransfer[]).map((t) => ({
+      ...t,
+      amount_ml: Number(t.amount_ml),
+      voided_at: t.voided_at ?? null,
+    })),
+  )
+}
+
+/**
+ * Every Similac bottle that was not voided (0016): closed, open and finished
+ * — the finished ones are the windows the past feedings' formula is counted
+ * in (lib/formulaStock.ts). No limit, a page at a time.
+ */
+export async function listFormulaContainers(
+  babyId: string,
+  db: Db = data(),
+  pageSize = PAGE_SIZE,
+): Promise<Result<FormulaContainer[]>> {
+  const { data: rows, error } = await readAll(
+    (from, to) =>
+      db
+        .from('formula_containers')
+        .select('id, size_ml, added_at, opened_at, finished_at, finish_reason, voided_at')
+        .eq('baby_id', babyId)
+        .is('voided_at', null)
+        .order('added_at', { ascending: true })
+        .order('id')
+        .range(from, to),
+    pageSize,
+  )
+  if (error) return fail([] as FormulaContainer[], error)
+  return ok(
+    ((rows ?? []) as FormulaContainer[]).map((x) => ({
+      ...x,
+      size_ml: Number(x.size_ml),
+      voided_at: x.voided_at ?? null,
+    })),
+  )
+}
+
+/**
+ * The bottle feedings with formula or a "sobró", every one since `sinceIso`
+ * — what the Similac count (its open windows) and the started bottle need.
+ * No limit: a count cut at N rows would be quietly wrong. Pass the oldest
+ * `opened_at` still relevant (the open bottle's), or a fixed window.
+ */
+export async function bottleFeedingsSince(
+  babyId: string,
+  sinceIso: string,
+  db: Db = data(),
+  pageSize = PAGE_SIZE,
+): Promise<Result<Feeding[]>> {
+  const { data: rows, error } = await readAll(
+    (from, to) =>
+      db
+        .from('feedings')
+        .select(FEEDING_COLUMNS)
+        .eq('baby_id', babyId)
+        .is('voided_at', null)
+        .eq('feeding_type', 'bottle')
+        .gte('fed_at', sinceIso)
+        .order('fed_at', { ascending: true })
+        .order('id')
+        .range(from, to),
+    pageSize,
+  )
+  if (error) return fail([] as Feeding[], error)
+  const num = (x: unknown) => (x == null ? null : Number(x))
+  return ok(
+    ((rows ?? []) as Feeding[]).map((f) => ({
+      ...f,
+      amount_ml: num(f.amount_ml),
+      breast_milk_ml: num(f.breast_milk_ml),
+      formula_ml: num(f.formula_ml),
+      leftover_ml: num(f.leftover_ml),
+    })),
+  )
+}
+
+/**
+ * Everything the v5 milk screens add to `MilkContext` (0016): transfers,
+ * Similac bottles. One call so a page reads them together; each keeps its own
+ * error in `keepLastGood` style through the `Result`s.
+ */
+export type MilkV5Reads = {
+  transfers: Result<MilkTransfer[]>
+  formula: Result<FormulaContainer[]>
+}
+
+export async function milkV5Reads(babyId: string, db: Db = data()): Promise<MilkV5Reads> {
+  const [transfers, formula] = await Promise.all([
+    listTransfers(babyId, db),
+    listFormulaContainers(babyId, db),
+  ])
+  return { transfers, formula }
 }
 
 /**
@@ -1301,6 +1474,355 @@ export function discardContainer(
   return write('Discard milk', discardContainerOp(babyId, userId, container), {
     queueOnly: !!opts?.pending,
   })
+}
+
+// --------------------------------------------------------------- v5 (0016)
+
+/*
+ * The writes of v5, every one a queued `rpc` with ids made on this device:
+ * sending one twice (a replay, two tabs) is a no-op on the server. `pending`
+ * in the opts: something it builds on is itself still in the queue (a
+ * container whose pumping session, or a feeding, has not synced), so it waits
+ * behind it instead of going ahead to a server that doesn't know the row.
+ * `refs` / `creates` let the sync banner's "Discard this entry" take the
+ * dependents along (dependentsOf, lib/queue.ts).
+ */
+
+/** The jsonb of milk_combine / milk_uncombine: the numbers involved. */
+export type MilkCombineResult = {
+  target: string
+  moved_ml: number
+  returned_ml: number
+  sources: string[]
+}
+
+/** The jsonb of milk_combine / milk_uncombine, typed. Null if it isn't one. */
+export function combineResultOf(value: unknown): MilkCombineResult | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const v = value as Record<string, unknown>
+  if (typeof v.target !== 'string') return null
+  return {
+    target: v.target,
+    moved_ml: Number(v.moved_ml ?? 0),
+    returned_ml: Number(v.returned_ml ?? 0),
+    sources: Array.isArray(v.sources) ? v.sources.map(String) : [],
+  }
+}
+
+/** "Ya está fría" (milk_mark_cold). `at` is the time on this phone. */
+export function markMilkColdOp(
+  container: Pick<MilkContainer, 'id'>,
+  at: string = new Date().toISOString(),
+  opId: string = newId(),
+): RpcOp {
+  const args: MarkColdArgs = { p_op_id: opId, p_container_id: container.id, p_cold_at: at }
+  return {
+    kind: 'rpc',
+    fn: 'milk_mark_cold',
+    args,
+    table: 'milk_containers',
+    id: container.id,
+    effect: 'update',
+    patch: { cold_at: at },
+    refs: [container.id],
+  }
+}
+
+/**
+ * Confirm a cooling container is cold already (a thermometer, V5-21). The
+ * server bounds the time to [into the fridge, now]; already confirmed or
+ * already free is a no-op. `pending`: the container is still a queued insert.
+ */
+export function markMilkCold(
+  container: Pick<MilkContainer, 'id'>,
+  opts?: { pending?: boolean },
+): Promise<Result<null>> {
+  return write('Milk is cold', markMilkColdOp(container), { queueOnly: !!opts?.pending })
+}
+
+/**
+ * The queued call that pours `sources` into `target` (milk_combine). The
+ * containers are the ones the screen showed: their `remaining_ml` becomes
+ * `p_expected`, so a bottle served from on another phone meanwhile makes the
+ * server refuse it (`milk_combine_conflict`, regla 21). `creates: [opId]` so
+ * an undo queued behind it is its dependent.
+ */
+export function combineMilkOp(
+  babyId: string,
+  target: Pick<MilkContainer, 'id' | 'remaining_ml'>,
+  sources: Pick<MilkContainer, 'id' | 'remaining_ml'>[],
+  opId: string = newId(),
+): RpcOp {
+  const args: CombineArgs = {
+    p_op_id: opId,
+    p_baby_id: babyId,
+    p_target_id: target.id,
+    p_source_ids: sources.map((s) => s.id),
+    p_expected: combineExpected(target, sources),
+  }
+  return {
+    kind: 'rpc',
+    fn: 'milk_combine',
+    args,
+    table: 'milk_containers',
+    id: target.id,
+    effect: 'update',
+    creates: [opId],
+    refs: [target.id, ...sources.map((s) => s.id)],
+  }
+}
+
+/**
+ * Combine bottles (V5-30): every source pours all it has into the target and
+ * is left free; the target expires when the oldest does. Cold and not expired
+ * by the DATABASE's clock (`milk_not_cold:M#`, `milk_container_unusable:M#`).
+ * Online, `data` says what moved and `opId` is what "Deshacer" needs; queued,
+ * `data` is null and the offline view (applyPendingInventory) shows it.
+ */
+export async function combineMilk(
+  babyId: string,
+  target: Pick<MilkContainer, 'id' | 'remaining_ml'>,
+  sources: Pick<MilkContainer, 'id' | 'remaining_ml'>[],
+  opts?: { pending?: boolean },
+): Promise<Result<MilkCombineResult | null> & { opId: string }> {
+  const op = combineMilkOp(babyId, target, sources)
+  const opId = (op.args as CombineArgs).p_op_id
+  const result = await send('Combine milk', op, { queueOnly: !!opts?.pending })
+  return { ...result, data: combineResultOf(result.data), opId }
+}
+
+/** The queued call that undoes a combination (milk_uncombine). */
+export function uncombineMilkOp(
+  combineOpId: string,
+  targetId: string,
+  opId: string = newId(),
+): RpcOp {
+  const args: UncombineArgs = { p_op_id: opId, p_combine_op_id: combineOpId }
+  return {
+    kind: 'rpc',
+    fn: 'milk_uncombine',
+    args,
+    table: 'milk_containers',
+    id: targetId,
+    effect: 'update',
+    refs: [combineOpId, targetId],
+  }
+}
+
+/**
+ * "Deshacer" a combination (V5-35): every source gets back what it gave and
+ * its number again; the target its expiry. Refused when the target was used
+ * since (`milk_combine_used:M#`) or a source's number is taken
+ * (`milk_label_taken:M#`); already undone is a no-op. `pending`: the
+ * combination itself is still queued.
+ */
+export async function uncombineMilk(
+  combineOpId: string,
+  targetId: string,
+  opts?: { pending?: boolean },
+): Promise<Result<MilkCombineResult | null>> {
+  const result = await send('Undo combine', uncombineMilkOp(combineOpId, targetId), {
+    queueOnly: !!opts?.pending,
+  })
+  return { ...result, data: combineResultOf(result.data) }
+}
+
+/**
+ * The queued call that throws out a started bottle (discard_started_bottle).
+ * `row` is what the offline view shows meanwhile (its `usable_until` is not a
+ * column: it is how applyPendingInventory knows the hour had passed).
+ */
+export function discardStartedBottleOp(
+  babyId: string,
+  userId: string | null,
+  started: { feedingId: string; leftoverMl: number; fedAt: string },
+  at: string = new Date().toISOString(),
+  id: string = newId(),
+): RpcOp {
+  const args: StartedDiscardArgs = {
+    p_id: id,
+    p_feeding_id: started.feedingId,
+    p_discarded_at: at,
+  }
+  return {
+    kind: 'rpc',
+    fn: 'discard_started_bottle',
+    args,
+    table: 'milk_discards',
+    id,
+    effect: 'insert',
+    row: {
+      id,
+      ...scope(babyId, userId),
+      container_id: null,
+      feeding_id: started.feedingId,
+      amount_ml: started.leftoverMl,
+      discarded_at: at,
+      reason: 'started_bottle_expired',
+      label: null,
+      voided_at: null,
+      usable_until: startedUsableUntil(started.fedAt),
+    },
+    refs: [started.feedingId],
+  }
+}
+
+/**
+ * "Desechar" the leftover of a bottle an hour after it was given (V5-11). The
+ * hour is the DATABASE's call (`milk_not_expired:started`); already thrown out
+ * is a no-op. `pending`: the feeding is still a queued insert.
+ */
+export function discardStartedBottle(
+  babyId: string,
+  userId: string | null,
+  started: { feedingId: string; leftoverMl: number; fedAt: string },
+  opts?: { pending?: boolean },
+): Promise<Result<null>> {
+  return write('Discard started bottle', discardStartedBottleOp(babyId, userId, started), {
+    queueOnly: !!opts?.pending,
+  })
+}
+
+/** The jsonb of the formula functions, as they answer (opened / finished ids). */
+export type FormulaResult = Record<string, unknown>
+
+/**
+ * "Anotar compra" (formula_add): `count` closed bottles of `sizeMl`, ids made
+ * here. 1 to 24 (the server refuses anything else, `milk_bad_input`).
+ */
+export function addFormulaOp(
+  babyId: string,
+  input: { count?: number; sizeMl?: number; addedAt?: string } = {},
+  opId: string = newId(),
+): RpcOp {
+  const count = input.count ?? FORMULA_PACK_COUNT
+  const ids = Array.from({ length: count }, () => newId())
+  const args: FormulaAddArgs = {
+    p_op_id: opId,
+    p_baby_id: babyId,
+    p_ids: ids,
+    p_size_ml: input.sizeMl ?? FORMULA_BOTTLE_ML,
+    p_added_at: input.addedAt ?? new Date().toISOString(),
+  }
+  return {
+    kind: 'rpc',
+    fn: 'formula_add',
+    args,
+    table: 'formula_containers',
+    id: ids[0] ?? opId,
+    effect: 'insert',
+    creates: ids,
+  }
+}
+
+export function addFormula(
+  babyId: string,
+  input: { count?: number; sizeMl?: number; addedAt?: string } = {},
+): Promise<Result<null>> {
+  return write('Formula bought', addFormulaOp(babyId, input))
+}
+
+/**
+ * "Abrí una Similac" (formula_open). `closed` is the bottle to open — the
+ * oldest closed one (`formulaStock().closed[0]`); with none, a new id and the
+ * server creates an open bottle of 8 oz (never blocks, V5-02). The open one
+ * before it becomes 'replaced'.
+ */
+export function openFormulaOp(
+  babyId: string,
+  closed: Pick<FormulaContainer, 'id'> | null,
+  at: string = new Date().toISOString(),
+  opId: string = newId(),
+): RpcOp {
+  const containerId = closed?.id ?? newId()
+  const args: FormulaOpenArgs = {
+    p_op_id: opId,
+    p_baby_id: babyId,
+    p_container_id: containerId,
+    p_opened_at: at,
+  }
+  return {
+    kind: 'rpc',
+    fn: 'formula_open',
+    args,
+    table: 'formula_containers',
+    id: containerId,
+    effect: closed ? 'update' : 'insert',
+    creates: closed ? [] : [containerId],
+    refs: closed ? [closed.id] : [],
+  }
+}
+
+export function openFormula(
+  babyId: string,
+  closed: Pick<FormulaContainer, 'id'> | null,
+  opts?: { pending?: boolean },
+): Promise<Result<null>> {
+  return write('Formula opened', openFormulaOp(babyId, closed), { queueOnly: !!opts?.pending })
+}
+
+/**
+ * "Se terminó" ('empty', always) or "Desechar" the expired open bottle
+ * ('expired': only after 48 h by the DATABASE's clock, else
+ * `milk_not_expired:formula`). Already finished is a no-op.
+ */
+export function finishFormulaOp(
+  container: Pick<FormulaContainer, 'id'>,
+  reason: 'empty' | 'expired',
+  at: string = new Date().toISOString(),
+  opId: string = newId(),
+): RpcOp {
+  const args: FormulaFinishArgs = {
+    p_op_id: opId,
+    p_container_id: container.id,
+    p_reason: reason,
+    p_at: at,
+  }
+  return {
+    kind: 'rpc',
+    fn: 'formula_finish',
+    args,
+    table: 'formula_containers',
+    id: container.id,
+    effect: 'update',
+    patch: { finished_at: at, finish_reason: reason },
+    refs: [container.id],
+  }
+}
+
+export function finishFormula(
+  container: Pick<FormulaContainer, 'id'>,
+  reason: 'empty' | 'expired',
+  opts?: { pending?: boolean },
+): Promise<Result<null>> {
+  return write('Formula finished', finishFormulaOp(container, reason), {
+    queueOnly: !!opts?.pending,
+  })
+}
+
+/** Void a Similac bottle logged by mistake (closed or open; a finished one is history). */
+export function voidFormulaOp(
+  container: Pick<FormulaContainer, 'id'>,
+  opId: string = newId(),
+): RpcOp {
+  const args: FormulaVoidArgs = { p_op_id: opId, p_container_id: container.id }
+  return {
+    kind: 'rpc',
+    fn: 'formula_void',
+    args,
+    table: 'formula_containers',
+    id: container.id,
+    effect: 'delete',
+    patch: { voided_at: new Date().toISOString() },
+    refs: [container.id],
+  }
+}
+
+export function voidFormula(
+  container: Pick<FormulaContainer, 'id'>,
+  opts?: { pending?: boolean },
+): Promise<Result<null>> {
+  return write('Formula removed', voidFormulaOp(container), { queueOnly: !!opts?.pending })
 }
 
 // --------------------------------------------------------------- bottles (0014, 0015)
@@ -1670,6 +2192,11 @@ const MILK_ERRORS: Record<string, MessageKey> = {
   milk_feeding_gone: 'milkError.feedingGone',
   milk_not_inventory: 'milkError.notInventory',
   milk_invariant_broken: 'milkError.invariantBroken',
+  // 0016
+  milk_not_cold: 'milkError.notCold',
+  milk_combine_conflict: 'milkError.combineConflict',
+  milk_combine_used: 'milkError.combineUsed',
+  milk_combined: 'milkError.combined',
   // Not from the server: see MILK_BOTTLE_NEEDED.
   milk_bottle_needed: 'milk.bottleNeeded',
 }
@@ -1703,9 +2230,19 @@ export function milkErrorText(
     if (!Number.isFinite(ml)) key = 'milkError.notEnoughUnknown'
     return translate(lang, key, { amount: Number.isFinite(ml) ? formatMilkOz(ml) : '' })
   }
+  // 0016: not a bottle's number but what had not expired.
+  if (key === 'milkError.notExpired' && suffix === 'started')
+    return translate(lang, 'milkError.startedNotExpired', { minutes: BOTTLE_STARTED_MAX_MIN })
+  if (key === 'milkError.notExpired' && suffix === 'formula')
+    return translate(lang, 'milkError.formulaNotExpired', { hours: FORMULA_OPEN_MAX_H })
   // Without a number to name, the "which one" sentence would have a hole in it.
   if (key === 'milkError.containerUnusable' && !suffix) key = 'milkError.containerUnknown'
   if (key === 'milkError.notExpired' && !suffix) key = 'milkError.notExpiredUnknown'
+  if (key === 'milkError.notCold' && !suffix) key = 'milkError.notColdUnknown'
+  // `milk_combine_used` / `milk_combined` always name a bottle; if one came
+  // without, the label reads '?' rather than leaving a hole.
+  if ((key === 'milkError.combineUsed' || key === 'milkError.combined') && !suffix)
+    return translate(lang, key, { label: '?' })
   if (key === 'milkError.bottleTaken' && context === 'sync') key = 'milkError.bottleTakenQueued'
   return translate(lang, key, { label: suffix ?? '' })
 }
@@ -1968,10 +2505,14 @@ export function discardActivity(
   for (const d of discards) {
     if (d.voided_at || new Date(d.discarded_at).getTime() < since) continue
     const vars = { label: d.label ?? '?', amount: formatMilkOz(d.amount_ml) }
-    let what = translate(lang, 'milk.discardedLine', vars)
+    // 0016: a started bottle has no number — "Started bottle thrown out · 1 oz".
+    const started = d.reason === 'started_bottle_expired'
+    let what = started
+      ? translate(lang, 'milk.startedDiscardedLine', vars)
+      : translate(lang, 'milk.discardedLine', vars)
     // History already labels the kind ("Discarded milk"): the number and the
     // amount are all that is left to say, and they have no words to translate.
-    let detail = `${vars.label} · ${vars.amount}`
+    let detail = started ? what : `${vars.label} · ${vars.amount}`
     if (d.pending) {
       const mark = translate(lang, 'activity.notSynced')
       what = `${what} · ${mark}`

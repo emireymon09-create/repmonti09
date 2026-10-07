@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
+  addFormulaOp,
+  combineMilkOp,
+  combineResultOf,
+  discardStartedBottleOp,
+  finishFormulaOp,
+  markMilkColdOp,
+  openFormulaOp,
+  uncombineMilkOp,
+  voidFormulaOp,
   describeWrite,
   discardActivity,
   discardContainerOp,
@@ -431,5 +440,197 @@ describe('estimateLegacySplits — la lectura sin límite, en arrays', () => {
     )
     expect(split.get('f1')?.breastMl).toBeCloseTo(2 * OZ, 9)
     expect(split.get('f1')?.formulaMl).toBeCloseTo(OZ, 9)
+  })
+})
+
+// --------------------------------------------------------------- v5 (0016), U-E1
+
+describe('U-E1 milkErrorText — los códigos de 0016, en EN y ES', () => {
+  const V5 = [
+    'milk_not_cold:M6',
+    'milk_not_cold',
+    'milk_combine_conflict',
+    'milk_combine_used:M6',
+    'milk_combined:M5',
+    'milk_not_expired:started',
+    'milk_not_expired:formula',
+  ]
+  it('cada código tiene texto, sin el código crudo ni variables sin llenar', () => {
+    for (const code of V5) {
+      for (const lang of ['en', 'es'] as const) {
+        const text = milkErrorText(code, lang)
+        expect(text, `${code} ${lang}`).not.toMatch(/milk_|\{|\}|NaN|undefined/)
+        expect(text.length, `${code} ${lang}`).toBeGreaterThan(15)
+      }
+    }
+  })
+
+  it('nombran el biberón cuando viene', () => {
+    expect(milkErrorText('milk_not_cold:M6', 'es')).toMatch(/^M6 todavía se está enfriando/)
+    expect(milkErrorText('milk_not_cold:M6', 'en')).toMatch(/^M6 is still cooling/)
+    expect(milkErrorText('milk_combine_used:M6', 'es')).toMatch(/leche de M6/)
+    expect(milkErrorText('milk_combined:M5', 'en')).toMatch(/^M5 is combined/)
+    expect(milkErrorText('milk_combined', 'es')).toMatch(/^\? está combinado/)
+  })
+
+  it('milk_not_expired:started / :formula no se leen como "el biberón started"', () => {
+    const started = milkErrorText('milk_not_expired:started', 'es')
+    expect(started).toMatch(/biberón empezado todavía sirve: no pasaron 60 min/)
+    expect(started).not.toMatch(/started/)
+    expect(milkErrorText('milk_not_expired:formula', 'es')).toMatch(/no cumplió 48 h abierta/)
+    expect(milkErrorText('milk_not_expired:formula', 'en')).toMatch(/open 48 h/)
+    // El de 0015 sigue igual.
+    expect(milkErrorText('milk_not_expired:M3', 'es')).toMatch(/de M3 todavía no venció/)
+  })
+})
+
+describe('U-E1 las ops de v5 y cómo se nombran en la cola', () => {
+  const at = '2026-10-08T12:00:00.000Z'
+  const w = (op: PendingOp): PendingWrite => ({
+    id: 'w1',
+    schema: 'public',
+    label: 'x',
+    queuedAt: at,
+    op,
+  })
+  const target = box('M6')
+  const source = box('M5')
+
+  it('combineMilkOp: p_expected con lo que vio la pantalla, refs y creates para dependentsOf', () => {
+    const op = combineMilkOp('b1', target, [source], 'op1')
+    expect(op).toMatchObject({
+      kind: 'rpc',
+      fn: 'milk_combine',
+      args: {
+        p_op_id: 'op1',
+        p_baby_id: 'b1',
+        p_target_id: target.id,
+        p_source_ids: [source.id],
+        p_expected: { [target.id]: target.remaining_ml, [source.id]: source.remaining_ml },
+      },
+      creates: ['op1'],
+      refs: [target.id, source.id],
+    })
+    expect(uncombineMilkOp('op1', target.id, 'op2')).toMatchObject({
+      fn: 'milk_uncombine',
+      args: { p_op_id: 'op2', p_combine_op_id: 'op1' },
+      refs: ['op1', target.id],
+    })
+  })
+
+  it('markMilkColdOp, discardStartedBottleOp y las de fórmula llevan los argumentos de 0016', () => {
+    expect(markMilkColdOp(target, at, 'op3').args).toEqual({
+      p_op_id: 'op3',
+      p_container_id: target.id,
+      p_cold_at: at,
+    })
+    const started = discardStartedBottleOp(
+      'b1',
+      'u1',
+      { feedingId: 'f1', leftoverMl: 20, fedAt: '2026-10-08T10:00:00.000Z' },
+      at,
+      'x1',
+    )
+    expect(started.args).toEqual({ p_id: 'x1', p_feeding_id: 'f1', p_discarded_at: at })
+    expect(started.row).toMatchObject({
+      reason: 'started_bottle_expired',
+      container_id: null,
+      amount_ml: 20,
+      usable_until: '2026-10-08T11:00:00.000Z',
+    })
+    const add = addFormulaOp('b1', { count: 3, addedAt: at }, 'op4')
+    expect(add.args).toMatchObject({ p_op_id: 'op4', p_size_ml: 8 * OZ, p_added_at: at })
+    expect((add.args.p_ids as string[]).length).toBe(3)
+    expect(addFormulaOp('b1').args.p_ids as string[]).toHaveLength(6)
+    expect(openFormulaOp('b1', { id: 'fc1' }, at, 'op5').args).toEqual({
+      p_op_id: 'op5',
+      p_baby_id: 'b1',
+      p_container_id: 'fc1',
+      p_opened_at: at,
+    })
+    expect(finishFormulaOp({ id: 'fc1' }, 'expired', at, 'op6').args).toEqual({
+      p_op_id: 'op6',
+      p_container_id: 'fc1',
+      p_reason: 'expired',
+      p_at: at,
+    })
+    expect(voidFormulaOp({ id: 'fc1' }, 'op7').args).toEqual({
+      p_op_id: 'op7',
+      p_container_id: 'fc1',
+    })
+  })
+
+  it('logPumpingOp manda p_fridge_at (la hora de "Registrar"); sin leche, nulo', () => {
+    const input = {
+      left_ml: 60,
+      right_ml: null,
+      notes: null,
+      pumped_at: '2026-10-08T11:30:00.000Z',
+    }
+    const op = logPumpingOp('b1', null, input, { rules: DEFAULT_MILK_RULES }, 'M2', 'p1', at)!.op
+    expect(op.kind === 'rpc' && op.args.p_fridge_at).toBe(at)
+    const none = logPumpingOp(
+      'b1',
+      null,
+      { ...input, left_ml: null },
+      { rules: DEFAULT_MILK_RULES },
+      null,
+      'p2',
+      at,
+    )!.op
+    expect(none.kind === 'rpc' && none.args.p_fridge_at).toBeNull()
+  })
+
+  it('describeWrite las nombra por lo que hacen, en los dos idiomas', () => {
+    const cases: [PendingOp, string, string][] = [
+      [combineMilkOp('b1', target, [source]), 'Combined bottles', 'Combinar biberones'],
+      [uncombineMilkOp('op1', target.id), 'Undo combined bottles', 'Deshacer combinación'],
+      [markMilkColdOp(target), 'Milk marked cold', 'Leche marcada como fría'],
+      [
+        discardStartedBottleOp('b1', null, { feedingId: 'f1', leftoverMl: 20, fedAt: at }),
+        'Started bottle thrown out',
+        'Biberón empezado desechado',
+      ],
+      [addFormulaOp('b1'), 'Formula bought', 'Compra de fórmula'],
+      [openFormulaOp('b1', null), 'Similac opened', 'Similac abierta'],
+      [finishFormulaOp({ id: 'x' }, 'empty'), 'Similac finished', 'Similac terminada'],
+      [voidFormulaOp({ id: 'x' }), 'Similac removed', 'Similac borrada'],
+    ]
+    for (const [op, en, es] of cases) {
+      expect(describeWrite(w(op), 'en')).toBe(en)
+      expect(describeWrite(w(op), 'es')).toBe(es)
+    }
+  })
+
+  it('combineResultOf lee la respuesta de milk_combine / milk_uncombine', () => {
+    expect(combineResultOf({ target: 'M6', moved_ml: 60, sources: ['M5'] })).toEqual({
+      target: 'M6',
+      moved_ml: 60,
+      returned_ml: 0,
+      sources: ['M5'],
+    })
+    expect(combineResultOf(null)).toBeNull()
+    expect(combineResultOf({ returned_ml: 1 })).toBeNull()
+  })
+
+  it('discardActivity: el biberón empezado en Historial, sin número de biberón', () => {
+    const rows = discardActivity(
+      [
+        {
+          id: 'x1',
+          container_id: null,
+          feeding_id: 'f1',
+          amount_ml: OZ,
+          discarded_at: at,
+          reason: 'started_bottle_expired',
+          label: null,
+          voided_at: null,
+        },
+      ],
+      0,
+      'es',
+    )
+    expect(rows[0].what).toBe('Biberón empezado desechado · 1 oz')
+    expect(rows[0].detail).toBe('Biberón empezado desechado · 1 oz')
   })
 })

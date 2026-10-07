@@ -51,6 +51,7 @@ const LOST_KEY: Record<LostReason, MessageKey> = {
   discarded: 'milk.notReturnedDiscarded',
   voided: 'milk.notReturnedGone',
   unknown: 'milk.notReturnedGone',
+  combined: 'milk.notReturnedCombined',
 }
 
 /** "1 oz didn't go back to M3…" for what the server said could not go back. */

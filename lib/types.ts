@@ -133,6 +133,15 @@ export type MilkContainer = {
    * amount = served + discarded + lost + remaining (docs/arquitectura-v4.md §2.1).
    */
   lost_ml?: number
+  /**
+   * When it went into the fridge (0016, V5-20): the time "Registrar" was
+   * tapped, bounded by the server to [pumped_at, now + 10 min]. Null (a row
+   * read before 0016, or the v0.13 app) falls back to `stored_at`. Only says
+   * whether it is cold yet — the expiry still runs from `stored_at` (V5-22).
+   */
+  fridge_at?: string | null
+  /** "Ya está fría" (0016, V5-21): someone checked it was cold at this time. */
+  cold_at?: string | null
 }
 
 /**
@@ -142,11 +151,87 @@ export type MilkContainer = {
  */
 export type MilkDiscard = {
   id: string
-  container_id: string
+  /** The container thrown out ('expired'); null for a started bottle (0016). */
+  container_id: string | null
   amount_ml: number
   discarded_at: string
-  reason: 'expired'
+  /**
+   * 'expired' (0015): all that was left in an expired container.
+   * 'started_bottle_expired' (0016, V5-11): the "sobró" of a bottle, an hour
+   * after it was given — `feeding_id` says which; it is NOT breast milk from
+   * the stash and "Leche desechada" does not count it (D5-11).
+   */
+  reason: 'expired' | 'started_bottle_expired'
+  /** The feeding whose leftover was thrown out (0016); null for 'expired'. */
+  feeding_id?: string | null
   label?: string | null
+  voided_at?: string | null
+}
+
+/**
+ * "Combinar" (0016, `milk_transfers`): one source container poured ALL it had
+ * into a target. Every row of one combination shares `op_id` — what
+ * `milk_uncombine` undoes. A voided row is a combination that was undone.
+ */
+export type MilkTransfer = {
+  id: string
+  op_id: string
+  from_container_id: string
+  to_container_id: string
+  amount_ml: number
+  /** The target's expiry before this combination: undoing it restores it. */
+  target_prev_expires_at: string
+  created_at: string
+  voided_at?: string | null
+}
+
+/** What `milk_ops` records (0016): one row per operation of the new functions. */
+export type MilkOpKind =
+  | 'combine'
+  | 'uncombine'
+  | 'mark_cold'
+  | 'formula_add'
+  | 'formula_open'
+  | 'formula_finish'
+  | 'formula_void'
+
+export type MilkOp = {
+  op_id: string
+  kind: MilkOpKind
+  request: Record<string, unknown>
+  result: Record<string, unknown>
+  created_at: string
+}
+
+/**
+ * One combination, as the screen needs it to offer "Deshacer": its transfers
+ * grouped by `op_id` (lib/milkCombine.ts `combinationsOf`).
+ */
+export type MilkCombination = {
+  opId: string
+  targetId: string
+  sourceIds: string[]
+  /** What the live transfers moved (0 once undone). */
+  movedMl: number
+  createdAt: string
+  /** Every transfer of it is voided. */
+  undone: boolean
+  pending?: boolean
+}
+
+/**
+ * One bottle of Similac (0016, `formula_containers`). Closed = `opened_at`
+ * null; open = opened and not finished; finished = `finished_at` ('empty',
+ * 'expired', or 'replaced' when another one was opened). What was used of it
+ * is not written: it comes from the feedings' `formula_ml` (D5-13).
+ */
+export type FormulaContainer = {
+  id: string
+  size_ml: number
+  added_at: string
+  opened_at: string | null
+  finished_at: string | null
+  finish_reason: 'empty' | 'expired' | 'replaced' | null
   voided_at?: string | null
 }
 

@@ -33,7 +33,7 @@ import {
   usableContainers,
 } from '@/lib/milk'
 import { ML_PER_FL_OZ, fromHouseholdInputValue } from '@/lib/format'
-import type { Feeding, MilkContainer, MilkDiscard, MilkDrawdown } from '@/lib/types'
+import type { Feeding, MilkContainer, MilkDiscard, MilkDrawdown, MilkTransfer } from '@/lib/types'
 
 // Lógica pura de v4 (docs/arquitectura-v4.md §1, §2, §3.8, §7.1). Reloj
 // inyectado en todos los casos; corre bajo cuatro TZ (`pnpm test:tz`). Los
@@ -475,7 +475,8 @@ describe('canDiscard, discardedTotalMl, containerBalance (U-14…U-16)', () => {
     const c = box('M3', { amount_ml: 120, remaining_ml: 0, lost_ml: 10, released_at: iso(NOW) })
     const draws = [portion('f1', 'M3', 50), { ...portion('f2', 'M3', 7), voided_at: iso(NOW) }]
     const b = containerBalance(c, draws, [discard('M3', 60)])
-    expect(b).toEqual({ served: 50, discarded: 60, lost: 10, remaining: 0 })
+    // 0016: in and out (transfers) are 0 without any.
+    expect(b).toEqual({ served: 50, discarded: 60, lost: 10, remaining: 0, in: 0, out: 0 })
     expect(b.served + b.discarded + b.lost + b.remaining).toBe(c.amount_ml)
     // Without the portions, served is what the other three leave.
     expect(containerBalance(c, null, [discard('M3', 60)]).served).toBe(50)
@@ -1004,7 +1005,9 @@ describe('milkInvariantFailures (U-42 and the checks themselves)', () => {
     const doc = readFileSync(join(__dirname, '..', '..', 'docs', 'arquitectura-v4.md'), 'utf8')
     const section = doc.slice(doc.indexOf('### 2.4'), doc.indexOf('## 3.'))
     const sqlIds = new Set([...section.matchAll(/'(INV-\d)/g)].map((m) => m[1]))
-    expect([...sqlIds].sort()).toEqual(MILK_INVARIANT_IDS.filter((x) => x !== 'INV-7'))
+    // v4's nine (0015); 0016 adds INV-10…INV-12, checked against 0016 below.
+    const v4Ids = MILK_INVARIANT_IDS.filter((x) => x !== 'INV-7' && Number(x.slice(4)) < 10)
+    expect([...sqlIds].sort()).toEqual(v4Ids)
     // And the block that 0015 runs at the end of the migration: the same ids,
     // in the same order as the document (re-auditoría H6).
     const mig = readFileSync(
@@ -1014,7 +1017,15 @@ describe('milkInvariantFailures (U-42 and the checks themselves)', () => {
     const invBlock = mig.slice(mig.indexOf('=== INVARIANTE'), mig.indexOf('notify pgrst'))
     const migIds = [...invBlock.matchAll(/'(INV-\d)/g)].map((m) => m[1])
     expect(migIds).toEqual([...section.matchAll(/'(INV-\d)/g)].map((m) => m[1]))
-    expect(migIds).toEqual(MILK_INVARIANT_IDS.filter((x) => x !== 'INV-7'))
+    expect(migIds).toEqual(v4Ids)
+    // And 0016's closing block: every id, the new ones too, once each in order.
+    const m16 = readFileSync(
+      join(__dirname, '..', '..', 'supabase', 'migrations', '0016_milk_phase3_4.sql'),
+      'utf8',
+    )
+    const block16 = m16.slice(m16.indexOf('=== INVARIANTE'), m16.indexOf('notify pgrst'))
+    const ids16 = [...new Set([...block16.matchAll(/'(INV-\d+)/g)].map((m) => m[1]))]
+    expect(ids16).toEqual(MILK_INVARIANT_IDS.filter((x) => x !== 'INV-7'))
     // And the integration helper, once it exists, names the same ones.
     const helper = join(__dirname, '..', 'helpers', 'milkInvariant.ts')
     if (existsSync(helper)) {
@@ -1057,6 +1068,162 @@ describe('milkInvariantFailures (U-42 and the checks themselves)', () => {
       ],
       sessions: [{ id: 's-M2', amount_ml: 1 }], // INV-8
     })
-    expect([...new Set(fails.map((f) => f.check))].sort()).toEqual([...MILK_INVARIANT_IDS])
+    // 0016's three, on rows of their own.
+    const more = milkInvariantFailures({
+      containers: [
+        box('M6', { remaining_ml: 2 * OZ, amount_ml: 3 * OZ }), // a source NOT released
+        box('M7', { remaining_ml: 4 * OZ }),
+      ],
+      drawdowns: [],
+      discards: [
+        {
+          id: 'x-started',
+          container_id: null,
+          feeding_id: 'fs',
+          amount_ml: 30,
+          discarded_at: iso(NOW),
+          reason: 'started_bottle_expired',
+        }, // INV-10: the feeding says 20 left over
+      ],
+      feedings: [{ ...feed('fs', WED, 0, 60), leftover_ml: 20 }],
+      transfers: [
+        {
+          id: 't1',
+          op_id: 'op1',
+          from_container_id: 'c-M6',
+          to_container_id: 'c-M7',
+          amount_ml: 1 * OZ,
+          target_prev_expires_at: iso(MON + 4 * DAY),
+          created_at: iso(NOW),
+        }, // INV-11 (and INV-1 on both)
+      ],
+      formula: [
+        { id: 'o1', opened_at: iso(MON), finished_at: null },
+        { id: 'o2', opened_at: iso(TUE), finished_at: null }, // INV-12: two open
+      ],
+    })
+    expect([...new Set([...fails, ...more].map((f) => f.check))].sort()).toEqual(
+      [...MILK_INVARIANT_IDS].sort(),
+    )
+  })
+})
+
+// --------------------------------------------------------------- transfers (0016, U-I1)
+
+describe('U-I1 rebalance y la invariante con transferencias (0016)', () => {
+  const t1 = (ml: number, over: Partial<MilkTransfer> = {}): MilkTransfer => ({
+    id: 't1',
+    op_id: 'op1',
+    from_container_id: 'c-M5',
+    to_container_id: 'c-M6',
+    amount_ml: ml,
+    target_prev_expires_at: iso(MON + 5 * DAY),
+    created_at: iso(NOW),
+    voided_at: null,
+    ...over,
+  })
+  // M5 (2 oz) volcado entero en M6 (3 oz): M5 libre y vacío, M6 con 5 oz.
+  const src = box('M5', { amount_ml: 2 * OZ, remaining_ml: 0, released_at: iso(NOW) })
+  const dst = box('M6', { amount_ml: 3 * OZ, remaining_ml: 5 * OZ })
+
+  it('containerBalance: amount + in = served + discarded + lost + remaining + out', () => {
+    expect(containerBalance(src, [], [], [t1(2 * OZ)])).toMatchObject({
+      in: 0,
+      out: 2 * OZ,
+      served: 0,
+    })
+    expect(containerBalance(dst, [], [], [t1(2 * OZ)])).toMatchObject({
+      in: 2 * OZ,
+      out: 0,
+      served: 0,
+    })
+    // Sin las porciones, lo servido sale de la cuenta con transferencias.
+    const servedDst = { ...dst, remaining_ml: 4 * OZ }
+    expect(containerBalance(servedDst, null, [], [t1(2 * OZ)]).served).toBeCloseTo(OZ, 9)
+    // Una transferencia anulada (deshecha) no cuenta.
+    expect(containerBalance(dst, null, [], [t1(2 * OZ, { voided_at: iso(NOW) })]).in).toBe(0)
+  })
+
+  it('milkInvariantFailures: la combinación cierra (INV-1 con entra/sale, INV-11)', () => {
+    expect(
+      milkInvariantFailures({
+        containers: [src, dst],
+        drawdowns: [],
+        discards: [],
+        transfers: [t1(2 * OZ)],
+      }),
+    ).toEqual([])
+    // Sin la transferencia, las dos cuentas fallan.
+    expect(
+      milkInvariantFailures({ containers: [src, dst], drawdowns: [], discards: [] }).map(
+        (f) => f.check,
+      ),
+    ).toEqual(['INV-1', 'INV-1'])
+    // Un anulado con transferencias vivas: INV-4.
+    expect(
+      milkInvariantFailures({
+        containers: [{ ...src, voided_at: iso(NOW) }, dst],
+        drawdowns: [],
+        discards: [],
+        transfers: [t1(2 * OZ)],
+      }).map((f) => f.check),
+    ).toContain('INV-4')
+  })
+
+  it("leche que vuelve por 'return' o 'amount' a un origen volcado → lost 'combined' (D5-19)", () => {
+    for (const cause of ['return', 'amount'] as const) {
+      const r = rebalance(src, cause, OZ, [src, dst], [], iso(NOW), [t1(2 * OZ)])
+      expect(r.lostMl).toBeCloseTo(OZ, 9)
+      expect(r.lostReason).toBe('combined')
+      expect(r.container.remaining_ml).toBe(0)
+      expect(r.container.released_at).toBe(iso(NOW))
+    }
+  })
+
+  it("por 'transfer' (deshacer) el origen vuelve a ocupar su número", () => {
+    const r = rebalance(src, 'transfer', 2 * OZ, [src, dst], [], iso(NOW), [])
+    expect(r.returnedMl).toBeCloseTo(2 * OZ, 9)
+    expect(r.container.released_at).toBeNull()
+    // Con el número ocupado por otra extracción, no (el servidor lo rechaza antes).
+    const other = box('M5', { id: 'c-M5b' })
+    const taken = rebalance(src, 'transfer', 2 * OZ, [src, dst, other], [], iso(NOW), [])
+    expect(taken.lostReason).toBe('reused')
+  })
+
+  it('sin transferencias, rebalance hace exactamente lo de 0015', () => {
+    const freed = box('M5', { remaining_ml: 0, released_at: iso(NOW) })
+    const r = rebalance(freed, 'return', OZ, [freed], [], iso(NOW))
+    expect(r.returnedMl).toBeCloseTo(OZ, 9)
+    expect(r.container.released_at).toBeNull()
+  })
+
+  it('discardedTotalMl deja afuera el biberón empezado (D5-11)', () => {
+    const started: MilkDiscard = {
+      id: 'x-s',
+      container_id: null,
+      feeding_id: 'f1',
+      amount_ml: 50,
+      discarded_at: iso(NOW),
+      reason: 'started_bottle_expired',
+      voided_at: null,
+    }
+    expect(discardedTotalMl([discard('M3', 30), started])).toBe(30)
+  })
+
+  it('planBottleEdit: menos leche de una toma de un origen volcado → lost combined', () => {
+    const served = box('M5', { amount_ml: 3 * OZ, remaining_ml: 0, released_at: iso(NOW) })
+    const f = feed('f1', WED, OZ, 0)
+    const plan = planBottleEdit(
+      f,
+      [portion('f1', 'M5', OZ)],
+      [served, dst],
+      [],
+      { fed_at: f.fed_at, breast_milk_ml: 0, formula_ml: OZ, leftover_ml: null },
+      NOW,
+      [t1(2 * OZ)],
+    )
+    expect(plan.ok && plan.lost).toEqual([
+      { containerId: 'c-M5', label: 'M5', ml: OZ, reason: 'combined' },
+    ])
   })
 })

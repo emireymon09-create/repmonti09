@@ -364,6 +364,7 @@ export const en = {
   'milk.deletedPending': 'Deleted on this device — not synced yet.',
   'milk.bottleNeeded': 'Choose which bottle the milk went into.',
   'milk.discardedLine': 'Discarded milk · {label} · {amount}',
+  'milk.startedDiscardedLine': 'Started bottle thrown out · {amount}',
   'milk.leftUnit': 'Unit for the left side',
   'milk.rightUnit': 'Unit for the right side',
   'milk.bottle': 'Bottle',
@@ -395,6 +396,8 @@ export const en = {
   'milk.notReturnedDiscarded': '{amount} doesn’t go back to {label}: it was discarded.',
   'milk.notReturnedGone':
     '{amount} doesn’t go back to {label}: that pumping session no longer exists.',
+  'milk.notReturnedCombined':
+    '{amount} doesn’t go back to {label}: it was poured into another bottle, so it’s empty.',
   'milk.byThisPhone': 'By what this phone knows: {text}',
 
   // ------------------------------------------------------------ bottle (0014)
@@ -517,6 +520,36 @@ export const en = {
     'This feeding is from before milk was counted bottle by bottle, so its milk and formula can’t be changed here. Its time, total and note can.',
   'milkError.invariantBroken':
     'The milk totals don’t add up on the server. Nothing was changed — let whoever looks after the app know.',
+
+  // ------------------------------------------------------------ milk errors (0016)
+  'milkError.notCold':
+    '{label} is still cooling. Only cold milk can be combined: wait, or mark it cold if you checked it.',
+  'milkError.notColdUnknown':
+    'One of these bottles is still cooling. Only cold milk can be combined. Nothing was combined.',
+  'milkError.combineConflict':
+    'These bottles changed on another phone while you were combining them. Nothing was combined: look at them again.',
+  'milkError.combineUsed':
+    'Milk from {label} was used after combining, so the combination can’t be undone anymore.',
+  'milkError.combined':
+    '{label} is combined with another bottle. Undo the combination first; then this session can be changed or deleted.',
+  'milkError.startedNotExpired':
+    'By the server’s clock, the started bottle is still good — {minutes} min haven’t passed yet. Nothing was thrown out.',
+  'milkError.formulaNotExpired':
+    'By the server’s clock, this Similac hasn’t been open {hours} h yet. Nothing was thrown out.',
+
+  // ------------------------------------------------------------ queued milk operations (0016)
+  'sync.op.milk_combine': 'Combined bottles',
+  'sync.op.milk_uncombine': 'Undo combined bottles',
+  'sync.op.milk_mark_cold': 'Milk marked cold',
+  'sync.op.discard_started_bottle': 'Started bottle thrown out',
+  'sync.op.formula_add': 'Formula bought',
+  'sync.op.formula_open': 'Similac opened',
+  'sync.op.formula_finish': 'Similac finished',
+  'sync.op.formula_void': 'Similac removed',
+
+  // ------------------------------------------------------------ recipe (0016)
+  'recipe.milkPart': '{amount} breast milk',
+  'recipe.formulaPart': '{amount} Similac',
 
   // ------------------------------------------------------------ growth
   'growth.title': 'Growth',

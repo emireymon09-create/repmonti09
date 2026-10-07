@@ -133,6 +133,7 @@ const LOST_KEY: Record<LostReason, MessageKey> = {
   discarded: 'milk.notReturnedDiscarded',
   voided: 'milk.notReturnedGone',
   unknown: 'milk.notReturnedGone',
+  combined: 'milk.notReturnedCombined',
 }
 
 /** One calendar day's worth of entries, household timezone. */

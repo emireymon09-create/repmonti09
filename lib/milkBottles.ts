@@ -22,9 +22,11 @@
 
 import type {
   Feeding,
+  FormulaContainer,
   MilkContainer,
   MilkDiscard,
   MilkDrawdown,
+  MilkTransfer,
   PumpingSession,
   WithPending,
 } from '@/lib/types'
@@ -128,9 +130,34 @@ export function canDiscard(
   return containerState(c, discards, atMs) === 'expired'
 }
 
-/** "Leche desechada": every live discard, no window (D-13). In ml. */
+/**
+ * "Leche desechada": every live discard of EXPIRED breast milk, no window
+ * (D-13). In ml. A started bottle thrown out (0016, 'started_bottle_expired')
+ * is not milk from the stash and is left out (D5-11): History shows it.
+ */
 export function discardedTotalMl(discards: readonly MilkDiscard[]): number {
-  return discards.reduce((sum, d) => (d.voided_at ? sum : sum + Number(d.amount_ml)), 0)
+  return discards.reduce(
+    (sum, d) =>
+      d.voided_at || (d.reason ?? 'expired') !== 'expired' ? sum : sum + Number(d.amount_ml),
+    0,
+  )
+}
+
+// ------------------------------------------------------------- transfers (0016)
+
+/** What came into and went out of `containerId` through live transfers ("Combinar"). */
+export function transferredMl(
+  containerId: string,
+  transfers: readonly MilkTransfer[] | null | undefined,
+): { in: number; out: number } {
+  let inMl = 0
+  let outMl = 0
+  for (const t of transfers ?? []) {
+    if (t.voided_at) continue
+    if (t.to_container_id === containerId) inMl += Number(t.amount_ml)
+    if (t.from_container_id === containerId) outMl += Number(t.amount_ml)
+  }
+  return { in: inMl, out: outMl }
 }
 
 // ------------------------------------------------------------- the selector
@@ -275,18 +302,27 @@ export function validateLeftover(
 // ------------------------------------------------------------- the accounting
 
 /**
- * Where a container's milk went (§2.1):
- *   amount = served + discarded + lost + remaining.
+ * Where a container's milk went (§2.1, with 0016's transfers):
+ *   amount + in = served + discarded + lost + remaining + out.
  * Replaces v3's `servedMl = amount − remaining`, which in v4 would count a
  * discard as served. With `drawdowns: null` (a page that did not read them),
- * `served` is what the other three leave — exact as long as the invariant
- * holds.
+ * `served` is what the others leave — exact as long as the invariant holds.
+ * Without `transfers`, in and out are 0 (the v4 accounting).
  */
 export function containerBalance(
   c: MilkContainer,
   drawdowns: readonly MilkDrawdown[] | null,
   discards: readonly MilkDiscard[],
-): { served: number; discarded: number; lost: number; remaining: number } {
+  transfers?: readonly MilkTransfer[] | null,
+): {
+  served: number
+  discarded: number
+  lost: number
+  remaining: number
+  in: number
+  out: number
+} {
+  const moved = transferredMl(c.id, transfers)
   const discarded = discards
     .filter((d) => d.container_id === c.id && !d.voided_at)
     .reduce((s, d) => s + Number(d.amount_ml), 0)
@@ -296,8 +332,8 @@ export function containerBalance(
     ? drawdowns
         .filter((d) => d.container_id === c.id && !d.voided_at)
         .reduce((s, d) => s + Number(d.amount_ml), 0)
-    : Math.max(0, Number(c.amount_ml) - discarded - lost - remaining)
-  return { served, discarded, lost, remaining }
+    : Math.max(0, Number(c.amount_ml) + moved.in - moved.out - discarded - lost - remaining)
+  return { served, discarded, lost, remaining, in: moved.in, out: moved.out }
 }
 
 /** remaining + live discard + lost: the residue as the container holds it now. */
@@ -311,9 +347,14 @@ function labelHeldByOther(c: MilkContainer, containers: readonly MilkContainer[]
   return containers.some((o) => o.id !== c.id && o.label === c.label && isOccupied(o))
 }
 
-export type RebalanceCause = 'serve' | 'return' | 'amount'
+/** 'transfer' (0016): a combination made or undone. */
+export type RebalanceCause = 'serve' | 'return' | 'amount' | 'transfer'
 
-export type LostReason = 'discarded' | 'reused' | 'voided' | 'unknown'
+/**
+ * Why milk could not go back: 'combined' (0016, D5-19) — the container was
+ * poured into another one, so it is physically empty and its milk is there.
+ */
+export type LostReason = 'discarded' | 'reused' | 'voided' | 'unknown' | 'combined'
 
 /**
  * `milk_rebalance` (§2.3), exactly: the caller has changed the container's
@@ -331,6 +372,12 @@ export type LostReason = 'discarded' | 'reused' | 'voided' | 'unknown'
  *     positive) and the container stays free without one (AJ-10).
  *   · then an occupied container below EMPTY_ML is released at `atIso`.
  *
+ * 0016 (`transfers`): the residue is `amount + in − served − out` (the caller
+ * counts the transfers in it). A container with live OUTGOING transfers — it
+ * was poured into another — takes nothing back by 'amount' or 'return': that
+ * milk is lost (`lostReason: 'combined'`, D5-19). By 'transfer' (an undo) it
+ * takes it back with the normal rule.
+ *
  * A voided container is left as it is, as on the server (it has no portions
  * or discards to balance, INV-4); milk "coming back" to one is reported as
  * lost (`lostReason: 'voided'`) so the screen can say so, but booked nowhere.
@@ -345,6 +392,7 @@ export function rebalance(
   containers: readonly MilkContainer[],
   discards: readonly MilkDiscard[],
   atIso: string,
+  transfers?: readonly MilkTransfer[] | null,
 ): {
   container: MilkContainer
   discards: MilkDiscard[]
@@ -371,11 +419,15 @@ export function rebalance(
     if (cause === 'amount' && live) {
       live.amount_ml = Number(live.amount_ml) + delta
     } else {
+      const pouredOut =
+        (cause === 'amount' || cause === 'return') && transferredMl(c.id, transfers).out > 0
       const reason: LostReason | null = live
         ? 'discarded'
-        : container.released_at && labelHeldByOther(container, containers)
-          ? 'reused'
-          : null
+        : pouredOut
+          ? 'combined'
+          : container.released_at && labelHeldByOther(container, containers)
+            ? 'reused'
+            : null
       if (reason === null) {
         container.remaining_ml += delta
         container.released_at = null
@@ -489,6 +541,8 @@ export function planBottleEdit(
   discards: readonly MilkDiscard[],
   request: BottleEditRequest,
   atMs: number,
+  /** 0016: the live transfers, so milk going back to a combined source is lost (D5-19). */
+  transfers?: readonly MilkTransfer[] | null,
 ): BottleEditPlan | BottleEditRefusal {
   const { breast_milk_ml: breast, formula_ml: formula, leftover_ml: leftover } = request
   const fedMs = Date.parse(request.fed_at)
@@ -585,7 +639,7 @@ export function planBottleEdit(
         })
         continue
       }
-      const r = rebalance(c, 'return', residueParts(c, dc) + back, cs, dc, atIso)
+      const r = rebalance(c, 'return', residueParts(c, dc) + back, cs, dc, atIso, transfers)
       cs = cs.map((x) => (x.id === c.id ? r.container : x))
       dc = r.discards
       if (r.returnedMl > 0) returned.push({ containerId: c.id, label: c.label, ml: r.returnedMl })
@@ -631,7 +685,7 @@ export function planBottleEdit(
           },
         ]
       }
-      const r = rebalance(c, 'serve', residueParts(c, dc) - ml, cs, dc, atIso)
+      const r = rebalance(c, 'serve', residueParts(c, dc) - ml, cs, dc, atIso, transfers)
       cs = cs.map((x) => (x.id === c.id ? r.container : x))
       dc = r.discards
       taken.push({ containerId: c.id, label: c.label, ml })
@@ -670,6 +724,10 @@ export const MILK_INVARIANT_IDS = [
   'INV-7',
   'INV-8',
   'INV-9',
+  // 0016: started bottle, transfers, formula.
+  'INV-10',
+  'INV-11',
+  'INV-12',
 ] as const
 export type MilkInvariantId = (typeof MILK_INVARIANT_IDS)[number]
 
@@ -678,10 +736,12 @@ export type MilkInvariantFailure = { check: MilkInvariantId; id: string; detail:
 type Voidable = { voided_at?: string | null }
 
 /**
- * §2.1–§2.2 in TypeScript, the same arithmetic as the SQL of §2.4: every row
- * that breaks a rule, empty when it all adds up. Pass EVERY row, voided ones
+ * §2.1–§2.2 in TypeScript, the same arithmetic as the SQL of §2.4 — and of
+ * 0016's closing block (INV-1 with transfers, INV-10…INV-12): every row that
+ * breaks a rule, empty when it all adds up. Pass EVERY row, voided ones
  * included (the voided ones are what INV-4 and INV-9 look at). Usable by the
  * integration helper (reading with the admin client) and by unit tests.
+ * `transfers` and `formula` left out = none.
  */
 export function milkInvariantFailures(input: {
   containers: readonly (MilkContainer & { baby_id?: string })[]
@@ -691,8 +751,12 @@ export function milkInvariantFailures(input: {
     Feeding,
     'id' | 'amount_ml' | 'breast_milk_ml' | 'formula_ml' | 'leftover_ml'
   > &
+    Partial<Pick<Feeding, 'feeding_type'>> &
     Voidable)[]
   sessions?: readonly (Pick<PumpingSession, 'id' | 'amount_ml'> & Voidable)[]
+  transfers?: readonly (MilkTransfer & { baby_id?: string })[]
+  formula?: readonly (Pick<FormulaContainer, 'id' | 'opened_at' | 'finished_at'> &
+    Voidable & { baby_id?: string })[]
 }): MilkInvariantFailure[] {
   const out: MilkInvariantFailure[] = []
   const eps = 1e-9
@@ -702,7 +766,7 @@ export function milkInvariantFailures(input: {
     return m
   }
   const liveDraws = input.drawdowns.filter((d) => !d.voided_at)
-  const liveDiscards = input.discards.filter((d) => !d.voided_at)
+  const liveDiscards = input.discards.filter((d) => !d.voided_at && d.container_id != null)
   const served = sumBy(
     liveDraws,
     (d) => d.container_id,
@@ -710,8 +774,19 @@ export function milkInvariantFailures(input: {
   )
   const discarded = sumBy(
     liveDiscards,
-    (d) => d.container_id,
+    (d) => d.container_id as string,
     (d) => Number(d.amount_ml),
+  )
+  const liveTransfers = (input.transfers ?? []).filter((t) => !t.voided_at)
+  const tin = sumBy(
+    liveTransfers,
+    (t) => t.to_container_id,
+    (t) => Number(t.amount_ml),
+  )
+  const tout = sumBy(
+    liveTransfers,
+    (t) => t.from_container_id,
+    (t) => Number(t.amount_ml),
   )
   const byFeeding = sumBy(
     liveDraws,
@@ -723,16 +798,18 @@ export function milkInvariantFailures(input: {
     const s = served.get(c.id) ?? 0
     const d = discarded.get(c.id) ?? 0
     const lost = Number(c.lost_ml ?? 0)
+    const i = tin.get(c.id) ?? 0
+    const o = tout.get(c.id) ?? 0
     if (c.voided_at) {
-      if (served.has(c.id) || discarded.has(c.id))
+      if (served.has(c.id) || discarded.has(c.id) || tin.has(c.id) || tout.has(c.id))
         out.push({ check: 'INV-4', id: c.id, detail: `${c.label}: voided with live rows` })
       continue
     }
-    if (Math.abs(c.amount_ml - s - d - lost - c.remaining_ml) > eps)
+    if (Math.abs(Number(c.amount_ml) + i - s - d - lost - Number(c.remaining_ml) - o) > eps)
       out.push({
         check: 'INV-1',
         id: c.id,
-        detail: `${c.label}: ${c.amount_ml} ≠ ${s} + ${d} + ${lost} + ${c.remaining_ml}`,
+        detail: `${c.label}: ${c.amount_ml} + ${i} ≠ ${s} + ${d} + ${lost} + ${c.remaining_ml} + ${o}`,
       })
     if (discarded.has(c.id) && (!c.released_at || c.remaining_ml !== 0))
       out.push({ check: 'INV-3', id: c.id, detail: `${c.label}: discard on a held container` })
@@ -777,6 +854,56 @@ export function milkInvariantFailures(input: {
   for (const d of liveDraws)
     if (voidedFeedings.has(d.feeding_id))
       out.push({ check: 'INV-9', id: d.feeding_id, detail: `portion ${d.id} on a voided bottle` })
+
+  // INV-10: a live started-bottle discard ⇒ its feeding is live, a bottle, and
+  // has the same "sobró".
+  const feedingById = new Map(feedings.map((f) => [f.id, f]))
+  for (const x of input.discards) {
+    if (x.voided_at || x.reason !== 'started_bottle_expired') continue
+    const f = x.feeding_id ? feedingById.get(x.feeding_id) : undefined
+    if (
+      !f ||
+      f.voided_at ||
+      (f.feeding_type !== undefined && f.feeding_type !== 'bottle') ||
+      f.leftover_ml == null ||
+      Math.abs(Number(f.leftover_ml) - Number(x.amount_ml)) > eps
+    )
+      out.push({ check: 'INV-10', id: x.id, detail: `started bottle ${x.feeding_id ?? '?'}` })
+  }
+
+  // INV-11: a live transfer ⇒ same baby, the source not voided and released
+  // (empty), the target not voided.
+  const containerById = new Map(input.containers.map((c) => [c.id, c]))
+  for (const t of liveTransfers) {
+    const from = containerById.get(t.from_container_id)
+    const to = containerById.get(t.to_container_id)
+    if (
+      !from ||
+      !to ||
+      (t.baby_id !== undefined &&
+        ((from.baby_id !== undefined && from.baby_id !== t.baby_id) ||
+          (to.baby_id !== undefined && to.baby_id !== t.baby_id))) ||
+      from.voided_at ||
+      !from.released_at ||
+      Number(from.remaining_ml) >= EMPTY_ML ||
+      to.voided_at
+    )
+      out.push({ check: 'INV-11', id: t.id, detail: `transfer ${t.op_id}` })
+  }
+
+  // INV-12: one live open Similac per baby; never finished before it opened.
+  const open = new Map<string, string[]>()
+  for (const x of input.formula ?? []) {
+    if (!x.voided_at && x.opened_at && !x.finished_at) {
+      const key = x.baby_id ?? ''
+      open.set(key, [...(open.get(key) ?? []), x.id])
+    }
+    if (x.opened_at && x.finished_at && Date.parse(x.finished_at) < Date.parse(x.opened_at))
+      out.push({ check: 'INV-12', id: x.id, detail: 'finished before it was opened' })
+  }
+  for (const [key, ids] of open)
+    if (ids.length > 1)
+      out.push({ check: 'INV-12', id: ids.slice().sort()[0], detail: `${key}: ${ids.length} open` })
 
   return out
 }

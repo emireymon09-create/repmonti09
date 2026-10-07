@@ -356,6 +356,7 @@ export const es: Dictionary = {
   'milk.deletedPending': 'Borrada en este dispositivo — sin sincronizar todavía.',
   'milk.bottleNeeded': 'Elegí en qué biberón quedó.',
   'milk.discardedLine': 'Leche desechada · {label} · {amount}',
+  'milk.startedDiscardedLine': 'Biberón empezado desechado · {amount}',
   'milk.leftUnit': 'Unidad del izquierdo',
   'milk.rightUnit': 'Unidad del derecho',
   'milk.bottle': 'Biberón',
@@ -384,6 +385,8 @@ export const es: Dictionary = {
   'milk.notReturnedReused': '{amount} no vuelve a {label}: ese biberón ya tiene otra extracción.',
   'milk.notReturnedDiscarded': '{amount} no vuelve a {label}: se desechó.',
   'milk.notReturnedGone': '{amount} no vuelve a {label}: esa extracción ya no existe.',
+  'milk.notReturnedCombined':
+    '{amount} no vuelve a {label}: se pasó a otro biberón, así que está vacío.',
   'milk.byThisPhone': 'Según lo que sabe este teléfono: {text}',
 
   // ------------------------------------------------------------ bottle (0014)
@@ -507,6 +510,36 @@ export const es: Dictionary = {
     'Esta toma es de antes de que la leche se contara por biberón: acá no se puede cambiar su leche ni su fórmula. Sí la hora, el total y la nota.',
   'milkError.invariantBroken':
     'Las cuentas de la leche no cierran en el servidor. No se cambió nada: avisale a quien se ocupa de la app.',
+
+  // ------------------------------------------------------------ errores de leche (0016)
+  'milkError.notCold':
+    '{label} todavía se está enfriando. Solo se combina leche fría: esperá, o marcala como fría si ya la revisaste.',
+  'milkError.notColdUnknown':
+    'Uno de estos biberones todavía se está enfriando. Solo se combina leche fría. No se combinó nada.',
+  'milkError.combineConflict':
+    'Estos biberones cambiaron desde otro teléfono mientras los combinabas. No se combinó nada: miralos de nuevo.',
+  'milkError.combineUsed':
+    'Ya se usó leche de {label} después de combinar, así que la combinación no se puede deshacer.',
+  'milkError.combined':
+    '{label} está combinado con otro biberón. Deshacé la combinación primero; después se puede cambiar o borrar esta extracción.',
+  'milkError.startedNotExpired':
+    'Según el servidor, el biberón empezado todavía sirve: no pasaron {minutes} min. No se desechó nada.',
+  'milkError.formulaNotExpired':
+    'Según el servidor, esta Similac todavía no cumplió {hours} h abierta. No se desechó nada.',
+
+  // ------------------------------------------------------------ operaciones de leche en cola (0016)
+  'sync.op.milk_combine': 'Combinar biberones',
+  'sync.op.milk_uncombine': 'Deshacer combinación',
+  'sync.op.milk_mark_cold': 'Leche marcada como fría',
+  'sync.op.discard_started_bottle': 'Biberón empezado desechado',
+  'sync.op.formula_add': 'Compra de fórmula',
+  'sync.op.formula_open': 'Similac abierta',
+  'sync.op.formula_finish': 'Similac terminada',
+  'sync.op.formula_void': 'Similac borrada',
+
+  // ------------------------------------------------------------ receta (0016)
+  'recipe.milkPart': '{amount} de leche',
+  'recipe.formulaPart': '{amount} de Similac',
 
   // ------------------------------------------------------------ growth
   'growth.title': 'Crecimiento',
