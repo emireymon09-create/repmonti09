@@ -252,7 +252,9 @@ desde el 22 sep 2026 `Banner` está definido en `components/Banner.tsx` y
 `.spread` `.grow`.
 
 **Clases tipográficas:** `.title` `.name` `.age` `.eyebrow` `.value`
-`.meta` `.empty` `.note` `.label` `.side` `.strike`.
+`.meta` `.empty` `.note` `.label` `.side` `.strike`, y `.recipe-line` (v5, 7 oct
+2026): un `.meta` en `--c-text` y 600 — "Próximo biberón: …" es lo primero que se
+lee del biberón y no puede tener el gris de una nota.
 
 **Controles adicionales:** `.input` (con `.narrow`), `.linkish`, `.pill`,
 `.check` (con `.is-done`), `.tab`, `.gear`, `.nav-menu`, `.nav-menu-links`,

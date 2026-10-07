@@ -185,3 +185,26 @@ corridas fallaba. Causa: `rollback-leche-v5.sql` elegía "la toma más nueva" po
 `created_at`, que es igual para porciones de una misma transacción; el
 desempate por uuid era al azar. Arreglo: ordenar por `feedings.fed_at`. Después:
 6/6 corridas pasan.
+
+## H8 — revisión de pantallas, capas y runbook 0.13→0.14 (7 oct 2026)
+
+Disparador: Luis vio elementos encimados en Inicio. Detalle completo, inventario
+y tabla de la matriz: `docs/revision-ui-v5.md`. Política: `docs/politica-capas.md`.
+
+| Commit | Qué |
+|---|---|
+| `0ba04bf` | Banco `tests/e2e` (`pnpm test:layout`, fuera de `test:all`): matriz en Chromium que mide superposición, capas tapadas, scroll horizontal, desbordes, objetivos < 44 px y contraste |
+| `bac51c3` | Política de capas: `lib/popover.ts` (puro, 6 unitarias) + `lib/usePopover.ts` en Nav y RowMenu; tokens `--z-bar`/`--z-popover`; ⋯ abre hacia arriba; `card-quick` sin pisar contenido; contraste del menú y de "Borrar" |
+| `dc96d5a` | Pared: fila de pañal de Inicio con `row-wrap`; `a.btn` centrado y sin subrayado |
+| `557c924` | `docs/politica-capas.md`, runbook 0.13→0.14 reescrito y verificado contra la rama, design.md y CLAUDE.md al día |
+| `017a942` | Pared: filas de pañal de las secciones con `row-wrap`; marca "sin sincronizar" del biberón empezado |
+
+- Matriz v5 antes: subconjunto 116 celdas / 74 FAIL → después 0. Completa
+  (4 viewports × ES/EN × claro/oscuro × 12 páginas + 2 combos de Inicio + menús):
+  508 celdas, 0 FAIL; anchos 600/1180/1440: 383 celdas, 0 FAIL.
+- **0.13.0 con el mismo banco: 508 celdas, 258 FAIL**, mismas clases → los 8
+  defectos son **preexistentes**. Ningún encimado nuevo de v5. El de Inicio
+  reportado no se reprodujo en Chromium (hipótesis en `revision-ui-v5.md` §5).
+- `pnpm test:all`: 691 × 4 husos + integración 28 archivos / 391 (igual que
+  antes: sin regresión de lógica). tsc, lint, format, build: exit 0.
+- Sin cambios de lógica de negocio ni RPCs; migraciones 0001–0016 intactas.
