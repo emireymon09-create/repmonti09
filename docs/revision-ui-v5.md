@@ -68,7 +68,45 @@ Por cada celda: la página, la página con el menú abierto (Escape cierra, el f
 vuelve), y en `/history` el ⋯ de la última fila, las dos cadenas con puntero y
 sin puntero, y Escape del ⋯.
 
-## 3. Defectos encontrados y arreglados
+## 3. Matriz final (después de los arreglos y de endurecer el banco)
+
+Corrida final del 7 oct 2026 sobre `c00f92d` + el banco endurecido por la
+revisión independiente (barra y menús medidos por dentro, desborde vertical
+recortado, barra contra `fixed`, sin 0016 falla, cadenas omitidas escritas).
+Cada celda de Inicio es un estado completo; "datos+menú" es el mismo con el menú
+abierto. Por celda: 0 scroll horizontal, 0 superposiciones, 0 capas cruzadas, 0
+ítems tapados, 0 fuera de ventana, 0 desbordes, 0 objetivos < 44 px, 0 contraste
+bajo, 0 botones mal formados, nunca más de un menú abierto.
+
+| Página | 360x640 | 390x844 | 430x932 | 768x1024 | 600x960 | 1180x820 | 1440x900 |
+|---|---|---|---|---|---|---|---|
+| /dashboard | PASS 24/24 | PASS 24/24 | PASS 24/24 | PASS 24/24 | PASS 24/24 | PASS 24/24 | PASS 24/24 |
+| /feeding | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 |
+| /diapers | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 |
+| /sleep | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 |
+| /pumping | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 |
+| /statistics | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 |
+| /growth | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 |
+| /appointments | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 |
+| /history | PASS 24/24 | PASS 28/28 | PASS 28/28 | PASS 28/28 | PASS 28/28 | PASS 28/28 | PASS 27/27 |
+| /settings | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 |
+| /version | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 | PASS 8/8 |
+| /login | PASS 4/4 | PASS 4/4 | PASS 4/4 | PASS 4/4 | PASS 4/4 | PASS 4/4 | PASS 4/4 |
+
+máximos sobre todas las celdas: hscroll=0 overlaps=0 layers=0 covered=0 offViewport=0 boxOverflow=0 smallTargets=0 lowContrast=0 btnText=0 menusOpen= 1
+estados de Inicio: datos · datos+menú · comboB+biberón+offline · comboB+biberón+offline+menú · comboA+lactancia+sueño+offline · comboA+lactancia+sueño+offline+menú
+celdas 891 FAIL 0
+
+Omitidas (escritas por el banco, no son FAIL): `/history` "menú→⋯ con puntero" a
+360×640 (las 4: el menú abierto tapa todos los ⋯) y a 1440×900 ES claro; la
+cadena **sin puntero** sí se midió en todas.
+
+Revisión independiente (re-ejecutó las dos matrices: 508/0 y 383/0): **SIN
+BLOQUEANTES**. Sus hallazgos sobre el banco (M1, M2, m4, m5, m6) se cerraron antes
+de esta corrida; m3 (texto suelto de un contenedor contra un control absoluto
+hijo) queda anotado como teórico.
+
+## 4. Defectos encontrados y arreglados
 
 **Clasificación medida, no leída:** el mismo banco, con los mismos estados, contra
 un build de **0.13.0** (`66462fa`, worktree desacoplado, `127.0.0.1:3113`) dio
@@ -96,7 +134,7 @@ posible en `combine.rowNote` (`app/pumping/page.tsx:551`) si un biberón ya no
 existe; `.choice input` usa `--s-5` como tamaño; `.recipe-line` es un cuarto
 nivel tipográfico (ahora anotado en `design.md` §4).
 
-## 4. Artefactos del banco que se corrigieron (no eran defectos)
+## 5. Artefactos del banco que se corrigieron (no eran defectos)
 
 - Un `click({force})` sobre un ⋯ tapado por el menú abierto **navegaba** y se
   medía la página siguiente a mitad de carga (ratios 1:1, "foco no vuelve").
@@ -107,7 +145,7 @@ nivel tipográfico (ahora anotado en `design.md` §4).
 - Medir antes de que termine el fundido de entrada da contrastes falsos: el
   banco espera a que no haya animaciones corriendo.
 
-## 5. Lo que NO se reprodujo, y lo que no se puede ver desde acá
+## 6. Lo que NO se reprodujo, y lo que no se puede ver desde acá
 
 - **El encimado en Inicio que reportó Luis no se reprodujo en Chromium** con
   todos los estados a la vez, a 360/390/430/600/768 px, ES/EN, claro/oscuro. Lo

@@ -124,6 +124,7 @@ let server: ChildProcess | undefined
 let browser: Browser
 const families: { a?: UiFamily; b?: UiFamily } = {}
 const cells: Cell[] = []
+const omitted: string[] = []
 let skip = false
 
 beforeAll(async () => {
@@ -168,6 +169,7 @@ afterAll(async () => {
     return `${f.length ? 'FAIL' : 'PASS'} | ${c.vp} | ${c.lang} | ${c.theme} | ${c.page} | ${c.state} | hs=${c.audit.hscroll} ov=${c.audit.counts.overlaps} ly=${c.audit.counts.layers} cov=${c.audit.counts.covered} off=${c.audit.counts.offViewport} box=${c.audit.counts.boxOverflow} tap=${c.audit.counts.smallTargets} con=${c.audit.counts.lowContrast} btn=${c.audit.counts.btnText} menus=${c.menusOpen}${f.length ? ' | ' + f.join(' ') : ''}`
   })
   console.log(['RESULTADO | vp | idioma | tema | página | estado | medidas', ...rows].join('\n'))
+  console.log(`omitidas=${omitted.length}${omitted.length ? '\n  ' + omitted.join('\n  ') : ''}`)
   console.log(
     `celdas=${cells.length} fail=${cells.filter((c) => failsOf(c).length).length} json=${out}`,
   )
@@ -276,6 +278,12 @@ async function measure(
       await kebabs.nth(freeIdx).click()
       await page.waitForTimeout(100)
       await push(page, { ...base, state: `${state}+menú→⋯` })
+    } else {
+      // Ningún ⋯ queda a la vista y sin tapar con el menú abierto: tocar uno
+      // sería tocar el menú. Queda escrito, no se omite en silencio.
+      omitted.push(
+        `${base.vp} ${base.lang} ${base.theme} ${base.page} ${state}+menú→⋯ (ningún ⋯ libre)`,
+      )
     }
     await page.keyboard.press('Escape')
     await page.waitForTimeout(60)
@@ -373,7 +381,8 @@ async function stateCell(
 
 describe('layout: matriz completa', () => {
   it('mide cada celda', async () => {
-    if (skip) return
+    // Sin 0016 no hay matriz que valga: que falle, no que pase con 0 celdas.
+    expect(skip, 'la base local no tiene 0016 (pnpm db:up)').toBe(false)
     const { a, b } = families as { a: UiFamily; b: UiFamily }
     for (const vp of VIEWPORTS) {
       for (const lang of LANGS) {

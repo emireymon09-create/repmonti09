@@ -104,22 +104,32 @@ function ameliaAudit(opts) {
 
   const related = (a, b) =>
     a.owner === b.owner || a.owner.contains(b.owner) || b.owner.contains(a.owner)
-  const flow = items.filter((i) => !inLayer(i.el) && !inNav(i.el))
-  flow.sort((a, b) => a.r.top - b.r.top)
+  // Se comparan por GRUPO: el contenido en flujo entre sí, la barra por dentro,
+  // y cada menú abierto por dentro (un menú tapa el contenido a propósito; lo
+  // que no puede es pisarse a sí mismo).
+  const groups = [
+    items.filter((i) => !inLayer(i.el) && !inNav(i.el)),
+    items.filter((i) => inNav(i.el) && !inLayer(i.el)),
+    ...openMenus.map((m) => items.filter((i) => m.contains(i.el))),
+  ]
   let overlapCount = 0
-  for (let i = 0; i < flow.length; i++) {
-    const a = flow[i]
-    for (let j = i + 1; j < flow.length; j++) {
-      const b = flow[j]
-      if (b.r.top >= a.r.bottom) break
-      if (related(a, b)) continue
-      // Dos líneas del MISMO nodo de texto nunca se pisan; dos rects de la
-      // misma etiqueta (texto partido por <span>) tampoco cuentan.
-      if (a.el === b.el && a.kind === 'text' && b.kind === 'text') continue
-      const x = inter(a.r, b.r)
-      if (!x) continue
-      overlapCount++
-      if (out.overlaps.length < MAX) out.overlaps.push({ a: desc(a.owner), b: desc(b.owner), ...x })
+  for (const flow of groups) {
+    flow.sort((a, b) => a.r.top - b.r.top)
+    for (let i = 0; i < flow.length; i++) {
+      const a = flow[i]
+      for (let j = i + 1; j < flow.length; j++) {
+        const b = flow[j]
+        if (b.r.top >= a.r.bottom) break
+        if (related(a, b)) continue
+        // Dos líneas del MISMO nodo de texto nunca se pisan; dos rects de la
+        // misma etiqueta (texto partido por <span>) tampoco cuentan.
+        if (a.el === b.el && a.kind === 'text' && b.kind === 'text') continue
+        const x = inter(a.r, b.r)
+        if (!x) continue
+        overlapCount++
+        if (out.overlaps.length < MAX)
+          out.overlaps.push({ a: desc(a.owner), b: desc(b.owner), ...x })
+      }
     }
   }
   out.counts.overlaps = overlapCount
@@ -153,7 +163,12 @@ function ameliaAudit(opts) {
       const menuB = b.getAttribute('role') === 'menu'
       if (menuA && posB !== 'sticky' && posB !== 'fixed') continue
       if (menuB && posA !== 'sticky' && posA !== 'fixed') continue
-      if ((posA === 'sticky' && !menuB) || (posB === 'sticky' && !menuA)) continue
+      // …pero la barra contra algo `fixed` (un toast, un aviso flotante) sí cuenta.
+      if (
+        (posA === 'sticky' && !menuB && posB !== 'fixed') ||
+        (posB === 'sticky' && !menuA && posA !== 'fixed')
+      )
+        continue
       const x = inter(a.getBoundingClientRect(), b.getBoundingClientRect())
       if (x) {
         layerHits++
@@ -250,6 +265,13 @@ function ameliaAudit(opts) {
     const over = el.scrollWidth - el.clientWidth
     if (over > 1 && el.clientWidth > 0) {
       out.boxOverflow.push({ el: desc(el), over })
+    }
+    // En vertical, solo lo que se RECORTA (overflow hidden/clip): un contenedor
+    // que scrollea a propósito (auto/scroll) no esconde nada.
+    const oy = cs.overflowY
+    const overY = el.scrollHeight - el.clientHeight
+    if ((oy === 'hidden' || oy === 'clip') && overY > 1 && el.clientHeight > 0) {
+      out.boxOverflow.push({ el: desc(el), overY })
     }
   }
   out.counts.boxOverflow = out.boxOverflow.length

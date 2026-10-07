@@ -63,6 +63,15 @@ Criterios que no son obvios y por qué:
   cuenta: cruzarse al scrollear es scroll.
 - **Lo que está dentro de un `<details>` cerrado** no se pinta y no se mide
   (`checkVisibility`).
+- **Se compara por grupos**: el contenido en flujo entre sí, **la barra por
+  dentro** y **cada menú abierto por dentro** (revisión independiente del 7 oct
+  2026, M1). La barra sticky contra algo `fixed` sí cuenta.
+- **`boxOverflow` también mira el alto**, pero solo donde se recorta
+  (`overflow: hidden/clip`); un contenedor que scrollea a propósito no esconde nada.
+- **Sin 0016 en la base, la matriz falla** (no pasa con 0 celdas).
+- **Una cadena que no se puede armar queda escrita** en `omitidas=` (p. ej. a
+  360 px el menú abierto tapa todos los ⋯ de Historial), nunca se omite en
+  silencio.
 - **Un menú largo en un teléfono bajo scrollea por dentro**: cada ítem se trae a
   la vista dentro del menú antes de preguntar qué tiene encima.
 
