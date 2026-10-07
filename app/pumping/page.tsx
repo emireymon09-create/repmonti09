@@ -578,7 +578,7 @@ export default function PumpingPage() {
       setErr(
         problem.problem === 'bad_input'
           ? t(problem.reason === 'no_target' ? 'combine.pickTarget' : 'combine.pickMore')
-          : milkErrorText(problem.code, lang),
+          : milkErrorText(problem.code, lang, 'combine'),
       )
       return
     }
@@ -602,7 +602,7 @@ export default function PumpingPage() {
     })
     setBusy(false)
     if (res.error) {
-      setErr(t('common.couldNotSave', { error: milkErrorText(res.error, lang) }))
+      setErr(t('common.couldNotSave', { error: milkErrorText(res.error, lang, 'combine') }))
       refresh(baby.id)
       return
     }

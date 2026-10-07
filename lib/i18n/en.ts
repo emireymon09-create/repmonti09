@@ -524,6 +524,8 @@ export const en = {
     'One of these bottles is still cooling. Only cold milk can be combined. Nothing was combined.',
   'milkError.combineConflict':
     'These bottles changed on another phone while you were combining them. Nothing was combined: look at them again.',
+  'milkError.combineUnusable':
+    '{label} can’t be combined now: it was used, combined or deleted, maybe from another phone, or it has expired. Nothing was combined: look at the bottles again.',
   'milkError.combineUsed':
     'Milk from {label} was used after combining, so the combination can’t be undone anymore.',
   'milkError.combined':

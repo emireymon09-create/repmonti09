@@ -682,3 +682,19 @@ describe('combineActivity — las combinaciones en Historial (0016)', () => {
     expect(combineActivity([tr('t1', 'op1', 'c6', 'c5', OZ)], containers, NOW, 'en')).toEqual([])
   })
 })
+
+// QA-3 (QA v5, 7 oct 2026): combinar con un biberón que otro teléfono acaba de
+// combinar (o que venció) mostraba el texto de la TOMA: "M3 no se puede usar para
+// este biberón… Elegí otra". En Combinar no hay biberón que elegir: tiene que
+// decir que no se combinó nada.
+describe('QA-3 milkErrorText en Combinar', () => {
+  it.each(['en', 'es'] as const)('%s: milk_container_unusable:M3 habla de combinar', (lang) => {
+    const text = milkErrorText('milk_container_unusable:M3', lang, 'combine')
+    expect(text).toContain('M3')
+    expect(text).not.toMatch(/this bottle|este biberón/)
+    expect(text).toMatch(/Nothing was combined|No se combinó nada/)
+  })
+  it.each(['en', 'es'] as const)('%s: fuera de Combinar el texto de la toma no cambia', (lang) => {
+    expect(milkErrorText('milk_container_unusable:M3', lang)).toMatch(/this bottle|este biberón/)
+  })
+})

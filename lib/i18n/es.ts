@@ -514,6 +514,8 @@ export const es: Dictionary = {
     'Uno de estos biberones todavía se está enfriando. Solo se combina leche fría. No se combinó nada.',
   'milkError.combineConflict':
     'Estos biberones cambiaron desde otro teléfono mientras los combinabas. No se combinó nada: miralos de nuevo.',
+  'milkError.combineUnusable':
+    '{label} ya no se puede combinar: se usó, se combinó o se borró, quizás desde otro teléfono, o venció. No se combinó nada: mirá los biberones de nuevo.',
   'milkError.combineUsed':
     'Ya se usó leche de {label} después de combinar, así que la combinación no se puede deshacer.',
   'milkError.combined':

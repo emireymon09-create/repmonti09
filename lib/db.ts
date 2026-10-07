@@ -2219,8 +2219,10 @@ export function milkErrorText(
    * taken bottle says that (QA, 6 oct 2026: it said "another phone… delete
    * this session" — it may have been this phone offline, and there was
    * nothing to delete).
+   * 'combine': the answer to "Combinar" (QA-3) — there is no bottle being
+   * made to choose another for, and nothing was combined.
    */
-  context?: 'sync',
+  context?: 'sync' | 'combine',
 ): string {
   if (!message) return ''
   const match = /^(milk_[a-z_]+)(?::(.+))?$/.exec(message.trim())
@@ -2239,6 +2241,8 @@ export function milkErrorText(
   if (key === 'milkError.notExpired' && suffix === 'formula')
     return translate(lang, 'milkError.formulaNotExpired', { hours: FORMULA_OPEN_MAX_H })
   // Without a number to name, the "which one" sentence would have a hole in it.
+  if (key === 'milkError.containerUnusable' && suffix && context === 'combine')
+    key = 'milkError.combineUnusable'
   if (key === 'milkError.containerUnusable' && !suffix) key = 'milkError.containerUnknown'
   if (key === 'milkError.notExpired' && !suffix) key = 'milkError.notExpiredUnknown'
   if (key === 'milkError.notCold' && !suffix) key = 'milkError.notColdUnknown'
