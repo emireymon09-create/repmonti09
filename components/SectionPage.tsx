@@ -988,7 +988,7 @@ export function SectionPage({ section }: { section: Section }) {
               </div>
             )}
             {section === 'diapers' && (
-              <div className="row">
+              <div className="row row-wrap">
                 {(['wet', 'dirty', 'both'] as DiaperType[]).map((kind) => (
                   <Btn
                     key={kind}
@@ -1235,7 +1235,7 @@ export function SectionPage({ section }: { section: Section }) {
 
                       {isEditing && editing.kind === 'diaper' && (
                         <div className="edit-panel">
-                          <div className="row">
+                          <div className="row row-wrap">
                             {(['wet', 'dirty', 'both'] as DiaperType[]).map((type) => (
                               <Btn
                                 key={type}

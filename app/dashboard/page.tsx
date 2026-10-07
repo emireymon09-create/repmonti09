@@ -976,6 +976,7 @@ export default function Dashboard() {
               )}
             </div>
           )}
+          {started?.pending && <div className="pending-tag">{t('common.notSyncedYet')}</div>}
           {!activeNursing && feedingPrediction && (
             <div className="meta">
               {t('dash.nextFeeding', {
