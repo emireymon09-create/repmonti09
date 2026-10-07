@@ -268,6 +268,25 @@ function ameliaAudit(opts) {
   out.counts.smallTargets = out.smallTargets.length
   out.smallTargets = out.smallTargets.slice(0, MAX)
 
+  // ---------- botones que no se ven como botones ----------
+  // Un `.btn` (sea <button> o un <a> con esa clase) lleva el texto centrado
+  // en vertical y sin subrayado. Un enlace con forma de botón heredaba el
+  // subrayado y el texto arriba a la izquierda.
+  out.btnText = []
+  for (const b of Array.from(document.querySelectorAll('.btn')).filter(isShown)) {
+    const cs = getComputedStyle(b)
+    const br = b.getBoundingClientRect()
+    const range = document.createRange()
+    range.selectNodeContents(b)
+    const tr = range.getBoundingClientRect()
+    const dy = Math.abs(tr.top + tr.height / 2 - (br.top + br.height / 2))
+    const underline = cs.textDecorationLine.includes('underline')
+    if (underline || (tr.height > 0 && dy > 4))
+      out.btnText.push({ el: desc(b), dy: +dy.toFixed(1), underline })
+  }
+  out.counts.btnText = out.btnText.length
+  out.btnText = out.btnText.slice(0, MAX)
+
   // ---------- contraste ----------
   const parse = (c) => {
     const m = c.match(/rgba?\(([^)]+)\)/)
@@ -333,6 +352,12 @@ function ameliaAudit(opts) {
     }
   }
   out.counts.lowContrast = lowCount
+  // Informativo (no es FAIL): alto del documento y del renglón que reserva el
+  // atajo de cada tarjeta, para medir el costo de no encimar.
+  out.docH = Math.round(se.scrollHeight)
+  out.quickRow = Array.from(document.querySelectorAll('.card.has-quick > .card-quick + *')).map(
+    (e) => +e.getBoundingClientRect().height.toFixed(1),
+  )
   out.counts.hscroll = out.hscroll
   out.counts.covered = out.covered.length
   return out

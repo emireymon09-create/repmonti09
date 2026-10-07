@@ -679,6 +679,16 @@ body {
   font-family: inherit;
   cursor: pointer;
 }
+/* Un enlace con forma de botón ("Abrir Médico" en la tarjeta del turno de
+   Today) se ve como botón: texto centrado y sin subrayado. Hasta el 7 oct 2026
+   heredaba el subrayado de <a> y el texto quedaba arriba a la izquierda (8 px
+   fuera de centro medidos, tests/e2e). */
+a.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
 .btn:disabled {
   opacity: 0.45;
   cursor: default;

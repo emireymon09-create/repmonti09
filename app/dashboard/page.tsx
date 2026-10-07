@@ -1123,7 +1123,11 @@ export default function Dashboard() {
           </div>
           {lastDiaper && <div className="meta">{timeAgo(lastDiaper.changed_at, now, lang)}</div>}
           {lastDiaper?.pending && <div className="pending-tag">{t('common.notSyncedYet')}</div>}
-          <div className="row-tight">
+          {/* row-wrap: en la pared (1180 px, --tap de 84) "Mojado · Sucio ·
+              Ambos" no entra en la columna y "Ambos" se salía 48 px sobre la
+              tarjeta de al lado (medido, tests/e2e). Mismo recurso que la fila
+              de lados de /pumping (v0.10.3). */}
+          <div className="row-tight row-wrap">
             {(['wet', 'dirty', 'both'] as DiaperType[]).map((kind) => (
               <Btn
                 key={kind}

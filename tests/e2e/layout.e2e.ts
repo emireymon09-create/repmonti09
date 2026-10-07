@@ -61,6 +61,7 @@ const CHECKS = [
   'boxOverflow',
   'smallTargets',
   'lowContrast',
+  'btnText',
 ] as const
 
 function failsOf(c: Cell): string[] {
@@ -164,7 +165,7 @@ afterAll(async () => {
   writeFileSync(out, JSON.stringify(cells, null, 1))
   const rows = cells.map((c) => {
     const f = failsOf(c)
-    return `${f.length ? 'FAIL' : 'PASS'} | ${c.vp} | ${c.lang} | ${c.theme} | ${c.page} | ${c.state} | hs=${c.audit.hscroll} ov=${c.audit.counts.overlaps} ly=${c.audit.counts.layers} cov=${c.audit.counts.covered} off=${c.audit.counts.offViewport} box=${c.audit.counts.boxOverflow} tap=${c.audit.counts.smallTargets} con=${c.audit.counts.lowContrast} menus=${c.menusOpen}${f.length ? ' | ' + f.join(' ') : ''}`
+    return `${f.length ? 'FAIL' : 'PASS'} | ${c.vp} | ${c.lang} | ${c.theme} | ${c.page} | ${c.state} | hs=${c.audit.hscroll} ov=${c.audit.counts.overlaps} ly=${c.audit.counts.layers} cov=${c.audit.counts.covered} off=${c.audit.counts.offViewport} box=${c.audit.counts.boxOverflow} tap=${c.audit.counts.smallTargets} con=${c.audit.counts.lowContrast} btn=${c.audit.counts.btnText} menus=${c.menusOpen}${f.length ? ' | ' + f.join(' ') : ''}`
   })
   console.log(['RESULTADO | vp | idioma | tema | página | estado | medidas', ...rows].join('\n'))
   console.log(
