@@ -729,7 +729,7 @@ próximo turno ni "Log a missed session"), las **tres páginas de sección**
 `/feeding`, `/diapers` y `/sleep`, **`/statistics`** (23 sep 2026 — la pantalla
 existe y es destino real, pero **todavía no dibuja nada**), Milk (extracción),
 Growth con editar/borrar (0008), Doctor, History con editar/borrar, PWA instalable, cola offline,
-**RLS en las 15 tablas** (recontado el 25 sep 2026: acá decía 13 y era falso —
+**RLS en todas las tablas: 19 con 0015 (producción) y 22 con 0016** (recontado el 7 oct 2026 en el stack local con 0016: `pg_class` 22 de 22 con `relrowsecurity`; las tres nuevas son `milk_ops`, `milk_transfers` y `formula_containers`. El recuento de abajo, del 25 sep 2026, es el de 15 —
 `family_settings` y `calendar_feeds`, las dos de 0012, no se habían sumado.
 Son las 11 originales; `device_tokens`, la 12ª, con RLS y **sin acceso** para
 `anon`/`authenticated` — solo `service_role`; `push_subscriptions`, la 13ª
