@@ -68,4 +68,18 @@ Cada aserción se contrasta con SQL; invariante = 0 filas tras cada escenario.
 
 ## 5. Resultados
 
-(se completa en H2…H6 — ver `progreso-feeding-v5.md` para la salida pegada)
+Salida pegada en `progreso-feeding-v5.md` (H0…H6, H5b/H7) y, para C, en
+`compatibilidad-v5.md`. Al 7 oct 2026:
+
+| Bloque | Resultado | Dónde |
+|---|---|---|
+| U-P1…U-E1 (unitarias) | PASS — `test:tz` 685 × 4 husos (rol DB, `2dafaff`) | progreso H6 |
+| I-S1…I-O1 (integración v5) | PASS — 27 archivos / 385 (`2dafaff`); con `milkV5Rollback` **28 / 391** (H5b) | progreso H6, H5b |
+| I-R1 (las 19 suites de 0.13.0 en la rama) | PASS, salvo `milkV4Schema` I-101 cambiado a propósito (19 → 22 tablas) y "INV-1 por SQL" con transferencias (QA-4) | progreso H2, H5 |
+| **C-1** v0.12.1 sobre 0016 | **118/118** | compatibilidad §1 |
+| **C-2** 0.13.0 sobre 0016 | **309/310** — I-101 cuenta 19 tablas (test del esquema viejo). "INV-1 por SQL" además falla con una combinación viva en la base (QA-4, reproducido) | compatibilidad §1 |
+| **C-3** llamada de 10 argumentos de 0.13.0 | PASS — `milkV5Cooling` "I-C1 app vieja" | compatibilidad §2 |
+| **C-4** `rollback-leche-v5.sql` | PASS — invariante de 0015 = 0, `pg_dump` idéntico a 0001–0015, dos corridas, RPC de 0015 después, 0016 vuelve a entrar (`milkV5Rollback`, 6/6); C-1 118/118 y C-2 **310/310** sobre la base local revertida | compatibilidad §4 |
+| **C-5** `verificar-antes-v5.sql` | PASS — solo lectura (UPDATE rechazado); 0016 `f` + 0/21 sin 0016, `t` + 21/21 con 0016 (efímera y stack local) | compatibilidad §5 |
+| N-1…N-10 (navegador, ES/EN) | PASS (N-3 y N-8 solo ES; N-9 solo ES) | progreso H5 |
+| NO VERIFICADO | iPhone/WebKit, red real, esperas reales de 60 min y 48 h, la nube | runbook §8 |

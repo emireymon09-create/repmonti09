@@ -274,6 +274,26 @@ lib/schedule.ts    PURO (24 sep 2026): la cuenta regresiva de Today. `lastFeedin
                    de lib/db.ts, que promediaban los últimos 6 intervalos.
 lib/lifeWeek.ts    PURO: la semana de vida (1, 2, 3… desde `birth_date`), en días
                    de calendario del hogar. NO es `kpiWindows().week`.
+lib/milk.ts        PURO: inventario de leche de siempre (0014): caducidad,
+                   utilizables, "Lo que hay", y la vista offline de la cola
+                   (`applyPendingInventory`, `applyPendingFormula`). Detalle de
+                   toda la leche: docs/milk-business-logic.md.
+lib/milkBottles.ts PURO: biberones físicos M1…MN (0015): estados, selector,
+                   desechar, la cuenta `containerBalance`/`rebalance` (con
+                   transferencias desde 0016) y `milkInvariantFailures`.
+lib/milkEstimate.ts  PURO: estimación leche/fórmula de los biberones viejos.
+lib/milkParams.ts  Las 12 constantes clínicas de v5 (60 min de enfriado, 60 min
+                   del biberón empezado, 48 h de Similac, 3.5 oz…), cada una
+                   "decisión a confirmar". Cuatro tienen espejo en 0016:
+                   cambiarlas lleva migración (tests/unit/milkParams.test.ts).
+lib/milkCooling.ts PURO: "Enfriando" — fría ⇔ cold_at ≤ t o fridge_at + 60 min ≤ t.
+lib/milkCombine.ts PURO: validar y describir "Combinar"/"Deshacer" como la base.
+lib/milkRecipe.ts  PURO: la receta del próximo biberón (Hoy y "Registrar uno
+                   pasado"): leche fría más vieja primero + Similac.
+lib/formulaStock.ts  PURO: stock de Similac derivado de `feedings.formula_ml`.
+lib/startedBottle.ts PURO: el "Sobró" como biberón empezado (sirve 60 min).
+components/BottleBuilder.tsx / BottleEditPanel.tsx / BottleSlotPicker.tsx
+                   Filas de un biberón, corrección de una toma, selector M1…MN.
 lib/push/schedule.ts  PURO: cuándo corresponde cada aviso nuevo y qué dice.
                    `shouldAlert` es la regla de repetición cada 30 min.
 lib/calendar/ics.ts   PURO: el VCALENDAR (RFC 5545) — CRLF, plegado a 75 octetos,
@@ -1179,6 +1199,41 @@ Luis.** Detalle, tablas y la predicción falsable: `design.md` §5.20.
 > el script no engancha un listener ni crea un nodo, y el barrido de 132
 > combinaciones dio **0 diferencias sobre 1848 comparaciones** con y sin él.
 > Cómo prenderlo y qué mirar: `docs/diagnostico-viewport.md`.
+
+**Inventario de leche v5 (rama `feat/milk-inventory-v5`, 7 oct 2026 — todavía
+no publicado).** La leche **ya no es la de v3** (una "Cinta" y un total): desde
+0.13.0 son biberones físicos M1…MN que se eligen, se liberan y se desechan
+(0014 + 0015, **en producción** según el dueño), y v5 suma, con la migración
+**0016 — aplicada solo en el stack local, NO en la nube**:
+
+- **Receta** en Hoy ("Próximo biberón: 2.5 oz de leche + 1 oz de Similac"):
+  leche fría y vigente, más vieja primero, hasta 3.5 oz; "Si llora" (< 2 h
+  desde el fin de la última toma → 1 oz); fórmula fija opcional; solo pre-llena
+  el biberón (`lib/milkRecipe.ts`). También en "Registrar uno pasado".
+- **Enfriado:** `milk_containers.fridge_at`/`cold_at`; "Enfriando · lista
+  ~HH:MM" durante 60 min y "Ya está fría" (`milk_mark_cold`). La caducidad no
+  cambia.
+- **Combinar** biberones fríos en uno (`milk_combine`/`milk_uncombine`, tabla
+  `milk_transfers`): el destino vence con el más viejo, los orígenes quedan
+  libres, "Lo que hay" no cambia. Un destino puede tener más que su extracción:
+  la CHECK `remaining ≤ amount` se quitó y la cuenta la cuida la invariante.
+- **Similac** (`formula_containers`, `formula_add/open/finish/void`): compras,
+  la abierta dura 48 h, el consumo se deriva de la fórmula de cada toma
+  (`lib/formulaStock.ts`); nunca bloquea una toma.
+- **Biberón empezado:** el "Sobró" sirve 60 min; después "Desechar"
+  (`discard_started_bottle`, `milk_discards` con `reason
+  'started_bottle_expired'` y sin contenedor). No suma a "Leche desechada".
+- Tablas: **22 en `public`, las 22 con RLS** en la base local con 0016
+  (`milkV5Migration`); 19 en producción.
+
+Estado y evidencia: `docs/progreso-feeding-v5.md`; compatibilidad con 0.13.0 y
+v0.12.1 (suites 309/310 y 118/118 sobre 0016, la única falla es un test que
+cuenta 19 tablas) y reversa probada: `docs/compatibilidad-v5.md`,
+`docs/rollback-leche-v5.sql`, `docs/verificar-antes-v5.sql`; despliegue
+(**0016 antes del código**, versión propuesta 0.14.0):
+`docs/runbook-despliegue-v5.md`; lo que tienen que aprobar mamá y papá:
+`docs/milk-v5-para-aprobar.md`. **Sin verificar:** iPhone/WebKit, red real,
+las esperas reales de 60 min y 48 h, y todo lo de la nube.
 
 **No construido:**
 

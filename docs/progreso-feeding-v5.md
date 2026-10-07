@@ -134,3 +134,46 @@ Auditor: H1–H6 **CERRADOS**; CTE de H2 termina (`union`) y no admite ciclos;
 INV-13 no la rompe ningún flujo legítimo. **VEREDICTO: APROBADO. Bloqueantes:
 ninguno.** INFO: un futuro "pasar al freezer" o recálculo por Ajustes debe
 respetar INV-13.
+
+## H5b — compatibilidad y reversa [VERIFICADO] (rol release, 7 oct 2026)
+
+Detalle y salida pegada: `docs/compatibilidad-v5.md`.
+
+| Qué | Resultado |
+|---|---|
+| C-1 suite de v0.12.1 (`0cbe798`, worktree temporal) sobre la base local 0001–0016 | **118/118** |
+| C-2 suite de 0.13.0 (`66462fa`, worktree temporal) sobre 0001–0016 | **309/310**: `milkV4Schema` I-101 `expected '22\|22' to be '19\|19'` (test del esquema viejo: 0016 agrega 3 tablas, con RLS) |
+| C-2 "INV-1 por SQL" con una combinación viva sembrada (M2 50 → M1 60) | `expected '2' to be '0'` (QA-4: la consulta vieja ignora transferencias); siembra borrada (0 restos) → 1 passed |
+| C-3 | ya cubierto: `milkV5Cooling` "I-C1 app vieja" |
+| C-4 `docs/rollback-leche-v5.sql` (`tests/integration/milkV5Rollback.test.ts`, Postgres efímero sin red, siembra por RPC: cadena M3→M2→M1 servida por encima de la extracción, M6→M5 sin servir, una deshecha, empezado desechado, Similac abierta, enfriando, "ya está fría", caducada desechada) | **6/6**: invariante de 0015 = 0; `pg_dump` = 0001–0015; segunda corrida igual; RPC de 0015 después con invariante 0; 0016 vuelve a entrar (dump = 0016, invariante 0). "Lo que hay" 250 → 220 ml (la leche recibida y no servida de M5) |
+| C-4 en el stack local | reversa → C-1 **118/118**, C-2 **310/310** sobre 0001–0015 → 0016 re-aplicada (0 `ERROR`, historial 0014/0015/0016) |
+| C-5 `docs/verificar-antes-v5.sql` | solo lectura (UPDATE rechazado en `read only`); sin 0016: `f` + 0/21; con 0016: `t` + 21/21 (efímera y stack local) |
+| Suite v5 completa después | `pnpm test:integration` **28 archivos / 391** |
+| `tsc`, `lint`, `format:check` | exit 0 |
+
+Apps viejas sobre datos v5 (lectura del código de `66462fa`): **ninguna pantalla
+se cae**. Raro, sin daño: un origen combinado aparece en Leche con "Ya se
+sirvieron … de acá"; `milk_combined:M#` llega crudo (0.13.0 no lo traduce);
+"Leche desechada" de 0.13.0 suma el empezado desechado y el Historial lo muestra
+con "?"; 0.13.0 no conoce el enfriado; su vista offline de un destino con una
+edición encolada pierde lo recibido hasta sincronizar. Anotados como riesgos de
+ventana (runbook §9).
+
+Decisión de la reversa (a revisar por el dueño): una combinación viva se
+deshace **en la cuenta**: lo servido del destino por encima de su extracción
+pasa a contar contra sus orígenes (la toma no cambia), el resto del origen va a
+`lost_ml`, y lo recibido y no servido sale de "Lo que hay" del destino (nunca se
+inventa leche en un biberón vacío, D5-19). Se evita deshaciendo las
+combinaciones desde v5 antes de volver.
+
+## H7 — documentos (rol release)
+
+`docs/compatibilidad-v5.md`, `docs/runbook-despliegue-v5.md` (0016 antes del
+código; 0.14.0 propuesta con su texto de CHANGELOG, **sin** bump en
+`package.json`; `public/sw.js` no necesita cambio), `docs/milk-v5-para-aprobar.md`
+(D5-1…D5-20 + 7 decisiones de los roles + constantes), `docs/rollback-leche-v5.sql`,
+`docs/verificar-antes-v5.sql`; `docs/milk-business-logic.md` reescrito a v5;
+`CLAUDE.md` §2 (mapa: los `lib/milk*` y componentes de biberón) y §6 (estado
+v5); `docs/plan-pruebas-v5.md` §5 completado. Contradicción encontrada y no
+tocada: `CLAUDE.md` §6 sigue diciendo "RLS en las 15 tablas"; hoy son 19 en
+producción y 22 con 0016 (todas con RLS).
