@@ -70,3 +70,40 @@ Similac" con 7.5 oz de leche fría. Prueba `QA-1` en `tests/unit/milkRecipe.test
 **antes** `Tests 1 failed | 18 passed (19)`; arreglo en `lib/milkRecipe.ts` (la
 fija solo aplica a la toma completa, D5-20); **después** `19 passed (19)`.
 Copy ES del confirm del empezado corregido ("¿Tirar lo que sobró … ({amount})?").
+
+## H5 — QA en navegador [VERIFICADO]
+
+Rol QA (independiente): build de producción en 127.0.0.1, un chrome-headless-shell,
+390×844, Ana y Luis (dos contextos), reloj por SQL (horas pasadas) + `page.clock`.
+Invariante = 0 tras cada escenario.
+
+| Esc. | ES | EN |
+|---|---|---|
+| N-1 Ana extrae y enfría | PASS | PASS |
+| N-2 Receta sin "si llora" | PASS | PASS |
+| N-3 "Si llora" 119/120/121 min, con fija | PASS | — |
+| N-4 Combinar y deshacer, rechazos | PASS | PASS |
+| N-5 Similac 47h59 / 48h01, agotamiento | PASS | PASS |
+| N-6 Biberón empezado 59/61 min | PASS | PASS |
+| N-7 Sin internet y sincronizar | PASS | PASS |
+| N-8 Dos celulares combinando | PASS | — |
+| N-9 Regresión (Hoy, Historial, Crecimiento, Médico, Ajustes, /api/quick, /pumping) | PASS | — |
+| N-10 Layout 390×844 (4 pantallas) | PASS | PASS |
+
+Defectos v5 (prueba falla → pasa):
+- **QA-2** `a142ba1` "Alcanza para unos 0 días" → `wholeDaysLeft` (3 failed → pasa).
+- **QA-3** `c27ccc0` combinar rechazado con texto de la toma → `milkErrorText(…,'combine')` (2 failed → pasa).
+- **QA-4** (director) `milkV4Schema` "INV-1 por SQL" ignoraba las transferencias:
+  con una combinación viva sembrada, consulta vieja `expected '2' to be '0'`,
+  consulta nueva `1 passed`. Siembra borrada (0 huérfanos).
+- **O-1** (director) una Similac abierta caducada seguía sumando al total:
+  `1 failed | 17 passed` → arreglo en `formulaStock` → `18 passed`.
+
+Observaciones sin arreglar (menores, a confirmar): O-2 el desecho del empezado
+hecho sin conexión desaparece de Hoy sin marca propia (sí lo dicen la barra de
+sincronización e Historial); O-3 `size_ml` 236.588 (compra) vs 236.5882365
+(abierta creada por la base); O-4 dos "Combinado con M1" si dos orígenes se
+llamaban igual.
+
+Suites después (director): lint 0, format 0, `test:tz` 683 × 4 husos,
+integración 27 archivos / 375.

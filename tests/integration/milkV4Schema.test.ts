@@ -379,7 +379,11 @@ describe.skipIf(!docker)('v4 · esquema por SQL (I-101…I-103, I-106)', () => {
        where c.voided_at is null and abs(c.amount_ml
          - coalesce((select sum(amount_ml) from milk_drawdowns d where d.container_id = c.id and d.voided_at is null), 0)
          - coalesce((select sum(amount_ml) from milk_discards x where x.container_id = c.id and x.voided_at is null), 0)
-         - c.lost_ml - c.remaining_ml) > 1e-9`)
+         - c.lost_ml - c.remaining_ml
+         -- 0016 (QA-4): lo que el contenedor pasó a otro en una combinación,
+         -- menos lo que recibió.
+         - coalesce((select sum(amount_ml) from milk_transfers t where t.from_container_id = c.id and t.voided_at is null), 0)
+         + coalesce((select sum(amount_ml) from milk_transfers t where t.to_container_id = c.id and t.voided_at is null), 0)) > 1e-9`)
     expect(sql.trim()).toBe('0')
     await assertMilkInvariant()
   })

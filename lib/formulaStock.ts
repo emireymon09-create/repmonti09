@@ -131,7 +131,8 @@ export function formulaStock(input: {
     }
   }
 
-  const remainingMl = closedMl + (open?.remainingMl ?? 0)
+  // An expired open bottle is to be thrown away: what is left in it no longer counts (O-1).
+  const remainingMl = closedMl + (open && open.state !== 'expired' ? open.remainingMl : 0)
   const since = input.nowMs - FORMULA_PER_DAY_WINDOW_MS
   const lastWindowMl = given
     .filter((f) => {

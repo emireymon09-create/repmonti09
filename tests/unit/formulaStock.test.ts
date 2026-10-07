@@ -239,3 +239,28 @@ describe('QA-2 wholeDaysLeft — días enteros que se pueden decir', () => {
     expect(wholeDaysLeft({ daysLeft: null })).toBeNull()
   })
 })
+
+describe('O-1 una abierta caducada no suma al total', () => {
+  it('a las 48 h exactas su resto deja de contar; las cerradas sí', () => {
+    const s = formulaStock({
+      containers: [
+        bottle({ id: 'open', opened_at: iso(NOW - 48 * HOUR) }),
+        bottle({ id: 'closed', opened_at: null }),
+      ],
+      feedings: [],
+      nowMs: NOW,
+    })
+    expect(s.open?.state).toBe('expired')
+    expect(s.remainingMl).toBeCloseTo(Number(s.closedMl), 9)
+  })
+
+  it('a 47 h 59 min todavía suma', () => {
+    const s = formulaStock({
+      containers: [bottle({ id: 'open', opened_at: iso(NOW - 48 * HOUR + MIN) })],
+      feedings: [],
+      nowMs: NOW,
+    })
+    expect(s.open?.state).not.toBe('expired')
+    expect(s.remainingMl).toBeGreaterThan(0)
+  })
+})
