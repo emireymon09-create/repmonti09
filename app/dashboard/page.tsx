@@ -14,13 +14,15 @@ import {
   mergePending,
   pendingWrites,
   familySettings,
-  lastBottleFeeding,
+  bottleFeedingsSince,
+  discardStartedBottle,
   listAppointments,
   listContainers,
   listDiscards,
   listDrawdowns,
   logBottleFeed,
   milkErrorText,
+  milkV5Reads,
   recentDiapers,
   recentFeedings,
   recentNursing,
@@ -37,16 +39,22 @@ import { SeenNote, SyncBar, SyncErrorBanner } from '@/components/SyncStatus'
 import { lastGood, seenKey, type LastGood, type SeenState } from '@/lib/lastSeen'
 import { BottleBuilder, sameAsPlan, type BottleValue } from '@/components/BottleBuilder'
 import { LeftoverField, type LeftoverValue } from '@/components/LeftoverField'
+import { AmountUnit } from '@/components/AmountUnit'
 import { validateLeftover } from '@/lib/milkBottles'
 import {
+  applyPendingFormula,
   applyPendingInventory,
+  convertAmountText,
+  parseAmountMl,
   stashMl,
-  suggestPlan,
-  suggestedTotalMl,
   rereadsInventory,
   usableContainers,
   type BottlePlan,
 } from '@/lib/milk'
+import { formulaReadSince, formulaStock } from '@/lib/formulaStock'
+import { recipe, recipeSummary, type Recipe } from '@/lib/milkRecipe'
+import { RECIPE_CRY_EXTRA_ML } from '@/lib/milkParams'
+import { startedBottle } from '@/lib/startedBottle'
 import { useT } from '@/lib/i18n/react'
 import {
   lastFeedingEvent,
@@ -69,12 +77,15 @@ import type {
   DiaperType,
   DoctorAppointment,
   Feeding,
+  FormulaContainer,
   MilkContainer,
   MilkDiscard,
   MilkDrawdown,
+  MilkTransfer,
   NursingSession,
   Side,
   SleepSession,
+  VolumeUnit,
   WithPending,
 } from '@/lib/types'
 import { looksOffline, type PendingWrite } from '@/lib/queue'
@@ -114,15 +125,22 @@ type ServerRows = {
    */
   appt: DoctorAppointment[]
   /**
-   * El inventario de leche (0014): lo que hay, para la sugerencia del
-   * biberón, y la última toma de biberón — que puede no estar entre las
-   * pocas más nuevas — de la que sale cuánto sugerir.
+   * El inventario de leche (0014): lo que hay, para la receta del biberón.
    */
   containers: MilkContainer[]
   drawdowns: MilkDrawdown[]
   /** Discarded milk (0015): a discarded bottle is free, not in what there is. */
   discards: MilkDiscard[]
-  lastBottle: Feeding[]
+  /** "Combinar" (0016): what moved between bottles. */
+  transfers: MilkTransfer[]
+  /** The Similac bottles (0016), for the recipe's warnings. */
+  formula: FormulaContainer[]
+  /**
+   * The bottle feedings the Similac count and the started bottle need (0016):
+   * every one since `formulaReadSince` — the 20 newest of `feedings` may not
+   * reach back to when the open Similac was opened.
+   */
+  bottleFeeds: Feeding[]
 }
 const NO_ROWS: ServerRows = {
   feedings: [],
@@ -133,7 +151,9 @@ const NO_ROWS: ServerRows = {
   containers: [],
   drawdowns: [],
   discards: [],
-  lastBottle: [],
+  transfers: [],
+  formula: [],
+  bottleFeeds: [],
 }
 
 /**
@@ -151,7 +171,9 @@ function ownRows(rows: ServerRows): ServerRows {
     containers: rows.containers ?? [],
     drawdowns: rows.drawdowns ?? [],
     discards: rows.discards ?? [],
-    lastBottle: rows.lastBottle ?? [],
+    transfers: rows.transfers ?? [],
+    formula: rows.formula ?? [],
+    bottleFeeds: rows.bottleFeeds ?? [],
   }
 }
 
@@ -165,7 +187,14 @@ export default function Dashboard() {
   const [sleep, setSleep] = useState<WithPending<SleepSession>[]>([])
   const [appointments, setAppointments] = useState<DoctorAppointment[]>([])
   const [containers, setContainers] = useState<WithPending<MilkContainer>[]>([])
-  const [lastBottle, setLastBottle] = useState<Feeding[]>([])
+  const [discards, setDiscards] = useState<WithPending<MilkDiscard>[]>([])
+  const [formulaRows, setFormulaRows] = useState<WithPending<FormulaContainer>[]>([])
+  const [bottleFeeds, setBottleFeeds] = useState<WithPending<Feeding>[]>([])
+  // The recipe (0016, V5-42/V5-43): "Si llora" starts off every time; the
+  // fixed formula is empty = not fixed. Both only on this screen, never saved.
+  const [cry, setCry] = useState(false)
+  const [fixedText, setFixedText] = useState('')
+  const [fixedUnit, setFixedUnit] = useState<VolumeUnit>(DISPLAY_UNIT)
   // Los umbrales de la familia (0012). Hasta que la lectura vuelva valen los
   // defaults, que son los mismos números que el DEFAULT de la columna: así la
   // cuenta regresiva funciona antes de que nadie entre a Settings.
@@ -253,15 +282,17 @@ export default function Dashboard() {
     setAppointments(rows.appt ?? [])
     // The queue folded into what there is: a bottle given offline already
     // came out of its containers, a session pumped offline is already in.
-    setContainers(
-      applyPendingInventory(
-        rows.containers ?? [],
-        rows.drawdowns ?? [],
-        rows.discards ?? [],
-        queued,
-      ).containers,
+    const inventory = applyPendingInventory(
+      rows.containers ?? [],
+      rows.drawdowns ?? [],
+      rows.discards ?? [],
+      queued,
+      rows.transfers ?? [],
     )
-    setLastBottle(rows.lastBottle ?? [])
+    setContainers(inventory.containers)
+    setDiscards(inventory.discards)
+    setFormulaRows(applyPendingFormula(rows.formula ?? [], queued).containers)
+    setBottleFeeds(mergePending(rows.bottleFeeds ?? [], 'feedings', queued))
   }, [])
 
   const refresh = useCallback(
@@ -288,7 +319,16 @@ export default function Dashboard() {
         setSeen(last.state(offline))
       }
 
-      const [f, d, n, s, a, c, dd, dc, lb, queued] = await Promise.all([
+      // The Similac bottles first, then the bottle feedings from as far back
+      // as an open one needs (lib/formulaStock.ts), next to the other reads.
+      const v5 = milkV5Reads(babyId).then(async (r) => ({
+        ...r,
+        bottleFeeds: await bottleFeedingsSince(
+          babyId,
+          formulaReadSince(r.formula.data ?? [], Date.now()),
+        ),
+      }))
+      const [f, d, n, s, a, c, dd, dc, more, queued] = await Promise.all([
         recentFeedings(babyId),
         recentDiapers(babyId),
         recentNursing(babyId),
@@ -297,7 +337,7 @@ export default function Dashboard() {
         listContainers(babyId),
         listDrawdowns(babyId),
         listDiscards(babyId),
-        lastBottleFeeding(babyId),
+        v5,
         pendingWrites(),
       ])
       if (read !== latestRead.current) return
@@ -311,7 +351,9 @@ export default function Dashboard() {
         containers: c,
         drawdowns: dd,
         discards: dc,
-        lastBottle: { ...lb, data: lb.data ? [lb.data] : [] },
+        transfers: more.transfers,
+        formula: more.formula,
+        bottleFeeds: more.bottleFeeds,
       })
       setSeen(last.settle(rows, error))
 
@@ -468,16 +510,46 @@ export default function Dashboard() {
 
   // ------------------------------------------------------------ the bottle
 
-  // How much to suggest: the last bottle's total (queued ones included), or
-  // the 3 oz starting value when there never was one (lib/milk.ts).
-  const suggestedMl = suggestedTotalMl([...feedings, ...lastBottle])
-  // Recomputed every second (the clock ticks), but they only CHANGE when the
-  // amount, the containers or an expiry do. The builder gets the same objects
-  // while they are equal: a new one each second would make it redo its work
-  // (or, without its own guard, re-render with this page forever).
+  // Every bottle feeding this screen knows of, once: the newest 20 and the
+  // ones read for the Similac count (queued ones included in both).
+  const allFeeds = useMemo(() => {
+    const byId = new Map<string, WithPending<Feeding>>()
+    for (const f of bottleFeeds) byId.set(f.id, f)
+    for (const f of feedings) byId.set(f.id, f)
+    return [...byId.values()]
+  }, [feedings, bottleFeeds])
+  const stock = formulaStock({ containers: formulaRows, feedings: allFeeds, nowMs: now })
+  const started = startedBottle({ feedings: allFeeds, discards, nowMs: now })
+  // "Fórmula fija": empty = not fixed; something that isn't a number is said
+  // and ignored — the recipe never blocks (V5-44).
+  const fixed = parseAmountMl(fixedText, fixedUnit)
+  const lastEnd = lastFeedingEvent(feedings, nursing)?.endedAt
+  // The recipe (0016, V5-40): only cold milk, oldest first; formula for the
+  // rest. Recomputed every second (the clock ticks), but it only CHANGES when
+  // the containers, an expiry, the cooling or the inputs do. The builder gets
+  // the same objects while they are equal: a new one each second would make
+  // it redo its work (or, without its own guard, re-render with this page
+  // forever).
   const usableSig = JSON.stringify(usableContainers(containers, now))
   const usable = useMemo<WithPending<MilkContainer>[]>(() => JSON.parse(usableSig), [usableSig])
-  const planSig = JSON.stringify(suggestPlan(suggestedMl, usable, now))
+  const recipeSig = JSON.stringify(
+    recipe({
+      nowMs: now,
+      lastFeedingEndMs: lastEnd ? Date.parse(lastEnd) : null,
+      cry,
+      containers: usable,
+      formula: stock,
+      fixedFormulaMl: fixed.ml ?? null,
+    }),
+  )
+  const next = useMemo<Recipe>(() => JSON.parse(recipeSig), [recipeSig])
+  // The builder only needs the bottle itself; the rest (cooling, warnings)
+  // changing must not start its rows over.
+  const planSig = JSON.stringify({
+    portions: next.portions,
+    formulaMl: next.formulaMl,
+    totalMl: next.totalMl,
+  })
   const plan = useMemo<BottlePlan>(() => JSON.parse(planSig), [planSig])
 
   function planLine(p: BottlePlan): string {
@@ -545,6 +617,50 @@ export default function Dashboard() {
         (p) => containers.find((c) => c.id === p.containerId)?.pending,
       ),
     })
+  }
+
+  /**
+   * "Desechar" the leftover of the started bottle (V5-11), once its hour has
+   * passed. Asked first, with the amount. Whether the hour really passed is
+   * the server's call (`milk_not_expired:started`); offline it queues, behind
+   * its feeding when that one hasn't synced.
+   */
+  function discardStarted() {
+    if (!started) return
+    const amount = formatMilkOz(started.leftoverMl)
+    if (!window.confirm(t('started.discardConfirm', { amount }))) return
+    const feeding = allFeeds.find((f) => f.id === started.feedingId)
+    run(t('started.discarded'), async () => {
+      const res = await discardStartedBottle(
+        baby!.id,
+        userId,
+        {
+          feedingId: started.feedingId,
+          leftoverMl: started.leftoverMl,
+          fedAt: feeding?.fed_at ?? new Date(started.fedAtMs).toISOString(),
+        },
+        { pending: started.pending },
+      )
+      return res.error ? { ...res, error: milkErrorText(res.error, lang) } : res
+    })
+  }
+
+  /** The recipe's warning about the Similac, in words, or null. */
+  function formulaWarningText(r: Recipe): string | null {
+    switch (r.formulaWarning) {
+      case 'none_open':
+        return t('recipe.formulaNoneOpen')
+      case 'expired':
+        return t('recipe.formulaExpired')
+      case 'expiring':
+        return t('recipe.formulaExpiring', {
+          time: stock.open ? clockTime(new Date(stock.open.expiresAtMs).toISOString(), lang) : '',
+        })
+      case 'low':
+        return t('recipe.formulaLow', { amount: formatMilkOz(stock.remainingMl) })
+      default:
+        return null
+    }
   }
 
   /**
@@ -833,6 +949,33 @@ export default function Dashboard() {
             <div className="meta">{timeAgo(lastFeed.endedAt, now, lang)}</div>
           )}
           {lastFeed?.row.pending && <div className="pending-tag">{t('common.notSyncedYet')}</div>}
+          {/* El biberón empezado (0016, V5-10/V5-11): lo que sobró de la
+              última toma sirve una hora; pasada, "Desechar". */}
+          {started && (
+            <div className="row-line">
+              <span className="meta">
+                {started.expired
+                  ? t('started.expired', { amount: formatMilkOz(started.leftoverMl) })
+                  : t('started.line', {
+                      amount: formatMilkOz(started.leftoverMl),
+                      time: clockTime(new Date(started.usableUntilMs).toISOString(), lang),
+                    })}
+              </span>
+              {started.expired && (
+                <button
+                  type="button"
+                  className="linkish"
+                  disabled={busy}
+                  aria-label={t('started.discardAria', {
+                    amount: formatMilkOz(started.leftoverMl),
+                  })}
+                  onClick={discardStarted}
+                >
+                  {t('started.discard')}
+                </button>
+              )}
+            </div>
+          )}
           {!activeNursing && feedingPrediction && (
             <div className="meta">
               {t('dash.nextFeeding', {
@@ -874,7 +1017,78 @@ export default function Dashboard() {
               inicio. Sólidos salió de acá el 23 sep 2026. */}
           {!activeNursing && (
             <>
-              <div className="meta">{t('dash.give', { amount: formatMilkOz(suggestedMl) })}</div>
+              {/* La receta (0016, V5-40…V5-44): solo PRE-LLENA el panel del
+                  biberón — todo sigue editable y nunca bloquea. */}
+              <div className="meta recipe-line">
+                {t('recipe.next', { text: recipeSummary(next, lang) })}
+              </div>
+              {next.reason === 'cry_top_up' && <div className="meta">{t('recipe.cryTopUp')}</div>}
+              {next.feedsCovered > 0 && (
+                <div className="meta">{t('recipe.feedsCovered', { count: next.feedsCovered })}</div>
+              )}
+              {next.coolingMl > 0 && next.coolingReadyAtMs !== null && (
+                <div className="meta">
+                  {t('recipe.cooling', {
+                    amount: formatMilkOz(next.coolingMl),
+                    time: clockTime(new Date(next.coolingReadyAtMs).toISOString(), lang),
+                  })}
+                </div>
+              )}
+              {formulaWarningText(next) && (
+                <div className="meta">
+                  {formulaWarningText(next)}
+                  {next.formulaWarning === 'none_open' && (
+                    <>
+                      {' '}
+                      <Link className="linkish" href="/pumping">
+                        {t('recipe.openOne')}
+                      </Link>
+                    </>
+                  )}
+                </div>
+              )}
+              <label className="choice">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  checked={cry}
+                  disabled={busy}
+                  aria-describedby="recipe-cry-hint"
+                  onChange={(e) => setCry(e.target.checked)}
+                />
+                {t('recipe.cry')}
+              </label>
+              <p className="meta" id="recipe-cry-hint">
+                {t('recipe.cryHint', { amount: formatMilkOz(RECIPE_CRY_EXTRA_ML) })}
+              </p>
+              <div>
+                <label className="label" htmlFor="recipe-fixed">
+                  {t('recipe.fixedFormula')}
+                </label>
+                <div className="row-tight row-wrap">
+                  <input
+                    id="recipe-fixed"
+                    className="input narrow"
+                    value={fixedText}
+                    disabled={busy}
+                    inputMode="decimal"
+                    placeholder={t(`unit.${fixedUnit}`)}
+                    aria-label={t('recipe.fixedFormulaAria', { unit: t(`unit.${fixedUnit}`) })}
+                    onChange={(e) => setFixedText(e.target.value)}
+                  />
+                  <AmountUnit
+                    value={fixedUnit}
+                    disabled={busy}
+                    label={t('recipe.fixedFormulaUnit')}
+                    onChange={(u) => {
+                      if (u === fixedUnit) return
+                      setFixedText((x) => convertAmountText(x, fixedUnit, u))
+                      setFixedUnit(u)
+                    }}
+                  />
+                </div>
+                {fixed.problem && <p className="meta">{t('recipe.fixedFormulaBad')}</p>}
+              </div>
               <div className="row-tight">
                 <Btn
                   icon="milk"
@@ -1061,6 +1275,7 @@ export default function Dashboard() {
               disabled={busy}
               onChange={setBuilt}
               idPrefix="dash-bottle"
+              nowMs={now}
             />
             <div className="row-tight row-wrap">
               <Btn

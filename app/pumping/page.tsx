@@ -8,17 +8,25 @@ import { SeenNote, SyncBar, SyncErrorBanner } from '@/components/SyncStatus'
 import { AmountUnit } from '@/components/AmountUnit'
 import { BottleSlotPicker, storedWhen } from '@/components/BottleSlotPicker'
 import {
+  addFormula,
+  bottleFeedingsSince,
+  combineMilk,
   discardContainer,
+  finishFormula,
   keepLastGood,
   listContainers,
   listDiscards,
   listDrawdowns,
   logPumpingSession,
+  markMilkCold,
   mergePending,
   milkErrorText,
   milkRules,
+  milkV5Reads,
+  openFormula,
   pendingWrites,
   recentPumping,
+  uncombineMilk,
   type PumpingInput,
 } from '@/lib/db'
 import { useSync } from '@/lib/useSync'
@@ -29,6 +37,7 @@ import {
   EMPTY_ML,
   SERVED_EPSILON_ML,
   activeContainers,
+  applyPendingFormula,
   applyPendingInventory,
   convertAmountText,
   isUsable,
@@ -44,12 +53,31 @@ import {
   discardedTotalMl,
   labelNumber,
 } from '@/lib/milkBottles'
+import { coolingState } from '@/lib/milkCooling'
+import {
+  canUncombine,
+  combinationsOf,
+  combinedExpiry,
+  combinedMl,
+  combineProblem,
+  isCombinable,
+} from '@/lib/milkCombine'
+import { formulaReadSince, formulaStock } from '@/lib/formulaStock'
+import {
+  FORMULA_BOTTLE_ML,
+  FORMULA_OPEN_MAX_H,
+  FORMULA_PACK_COUNT,
+  FORMULA_PACK_MAX,
+} from '@/lib/milkParams'
 import { useT } from '@/lib/i18n/react'
 import type {
+  Feeding,
+  FormulaContainer,
   MilkContainer,
   MilkDiscard,
   MilkDrawdown,
   MilkSettings,
+  MilkTransfer,
   PumpingSession,
   VolumeUnit,
   WithPending,
@@ -72,8 +100,22 @@ type ServerRows = {
   drawdowns: MilkDrawdown[]
   /** Expired milk thrown out (0015): "Discarded milk", and which bottles it freed. */
   discards: MilkDiscard[]
+  /** "Combinar" (0016): what moved between bottles, undone ones included. */
+  transfers: MilkTransfer[]
+  /** The Similac bottles (0016). */
+  formula: FormulaContainer[]
+  /** The bottle feedings the Similac count needs (lib/formulaStock.ts). */
+  bottleFeeds: Feeding[]
 }
-const NO_ROWS: ServerRows = { sessions: [], containers: [], drawdowns: [], discards: [] }
+const NO_ROWS: ServerRows = {
+  sessions: [],
+  containers: [],
+  drawdowns: [],
+  discards: [],
+  transfers: [],
+  formula: [],
+  bottleFeeds: [],
+}
 
 /** Only the keys this page reads (a copy saved by an older build may carry others, or miss some). */
 function ownRows(rows: ServerRows): ServerRows {
@@ -82,6 +124,9 @@ function ownRows(rows: ServerRows): ServerRows {
     containers: rows.containers ?? [],
     drawdowns: rows.drawdowns ?? [],
     discards: rows.discards ?? [],
+    transfers: rows.transfers ?? [],
+    formula: rows.formula ?? [],
+    bottleFeeds: rows.bottleFeeds ?? [],
   }
 }
 
@@ -115,6 +160,21 @@ export default function PumpingPage() {
   const [sessions, setSessions] = useState<WithPending<PumpingSession>[]>([])
   const [containers, setContainers] = useState<WithPending<MilkContainer>[]>([])
   const [discards, setDiscards] = useState<WithPending<MilkDiscard>[]>([])
+  const [transfers, setTransfers] = useState<WithPending<MilkTransfer>[]>([])
+  const [formulaRows, setFormulaRows] = useState<WithPending<FormulaContainer>[]>([])
+  const [bottleFeeds, setBottleFeeds] = useState<WithPending<Feeding>[]>([])
+  // "Combinar" (V5-30): the bottles ticked, and which of them gets it all.
+  const [picked, setPicked] = useState<string[]>([])
+  const [target, setTarget] = useState<string | null>(null)
+  // The combination just made, for the "Deshacer" of its success banner.
+  const [lastCombine, setLastCombine] = useState<{
+    opId: string
+    targetId: string
+    text: string
+    queued: boolean
+  } | null>(null)
+  // "Anotar compra": how many bottles (V5-01), 6 unless changed.
+  const [buyCount, setBuyCount] = useState(String(FORMULA_PACK_COUNT))
   // The storage rules (for the expiry shown offline) and N, how many bottles
   // the selector offers (0015). Defaults until they arrive.
   const [rules, setRules] = useState<MilkSettings>({
@@ -185,9 +245,18 @@ export default function PumpingPage() {
       b.pumped_at.localeCompare(a.pumped_at),
     )
     setSessions(merged)
-    const view = applyPendingInventory(rows.containers, rows.drawdowns, rows.discards, queued)
+    const view = applyPendingInventory(
+      rows.containers,
+      rows.drawdowns,
+      rows.discards,
+      queued,
+      rows.transfers,
+    )
     setContainers(view.containers)
     setDiscards(view.discards)
+    setTransfers(view.transfers)
+    setFormulaRows(applyPendingFormula(rows.formula, queued).containers)
+    setBottleFeeds(mergePending(rows.bottleFeeds, 'feedings', queued))
   }, [])
 
   const refresh = useCallback(
@@ -214,11 +283,21 @@ export default function PumpingPage() {
         setSeen(last.state(offline))
       }
 
-      const [s, c, d, dc, queued] = await Promise.all([
+      // The Similac bottles first, then the bottle feedings from as far back
+      // as an open one needs (lib/formulaStock.ts), next to the other reads.
+      const v5 = milkV5Reads(babyId).then(async (r) => ({
+        ...r,
+        bottleFeeds: await bottleFeedingsSince(
+          babyId,
+          formulaReadSince(r.formula.data ?? [], Date.now()),
+        ),
+      }))
+      const [s, c, d, dc, more, queued] = await Promise.all([
         recentPumping(babyId, 100),
         listContainers(babyId),
         listDrawdowns(babyId),
         listDiscards(babyId),
+        v5,
         pendingWrites(),
       ])
       if (read !== latestRead.current) return
@@ -231,6 +310,9 @@ export default function PumpingPage() {
         containers: c,
         drawdowns: d,
         discards: dc,
+        transfers: more.transfers,
+        formula: more.formula,
+        bottleFeeds: more.bottleFeeds,
       })
       setSeen(last.settle(rows, error))
       // A good read has the real list (with the refused bottle taken, or free
@@ -430,6 +512,164 @@ export default function PumpingPage() {
     reloadPending()
   }
 
+  /**
+   * One v5 write (0016) from this screen: cold, Similac. Every one goes
+   * through the queue offline (and shows "not synced yet"); a rejection is
+   * said in words and the screen re-reads what there is.
+   */
+  async function act(
+    work: () => Promise<{ error: string | null; queued?: boolean }>,
+    okText: string,
+  ): Promise<boolean> {
+    if (!baby || busy) return false
+    setErr(null)
+    setSaved(null)
+    setLastCombine(null)
+    setBusy(true)
+    const { error, queued } = await work()
+    setBusy(false)
+    if (error) {
+      setErr(t('common.couldNotSave', { error: milkErrorText(error, lang) }))
+      refresh(baby.id)
+      return false
+    }
+    setSaved(queued ? t('common.queued') : okText)
+    refresh(baby.id)
+    reloadPending()
+    return true
+  }
+
+  /** "Ya está fría" (V5-21): a thermometer said so before the hour. */
+  function markCold(c: WithPending<MilkContainer>) {
+    act(
+      () => markMilkCold(c, { pending: !!c.pending }),
+      t('cooling.markedCold', { label: c.label }),
+    )
+  }
+
+  const labelsOf = (ids: string[]) =>
+    ids.map((id) => containers.find((c) => c.id === id)?.label ?? '?').join(', ')
+
+  /**
+   * "Combinar" (V5-30): the ticked bottles go into the one chosen. Checked
+   * here first with the server's rules (combineProblem), asked, then sent.
+   * The server still decides with its own clock and `p_expected`.
+   */
+  async function combine() {
+    if (!baby || busy) return
+    setErr(null)
+    setSaved(null)
+    setLastCombine(null)
+    const chosen = picked
+      .map((id) => live.find((c) => c.id === id))
+      .filter((c): c is WithPending<MilkContainer> => !!c)
+    if (chosen.length < 2) {
+      setErr(t('combine.pickMore'))
+      return
+    }
+    const into = chosen.find((c) => c.id === target)
+    if (!into) {
+      setErr(t('combine.pickTarget'))
+      return
+    }
+    const sources = chosen.filter((c) => c.id !== into.id)
+    const problem = combineProblem(into, sources, Date.now())
+    if (problem) {
+      setErr(
+        problem.problem === 'bad_input'
+          ? t(problem.reason === 'no_target' ? 'combine.pickTarget' : 'combine.pickMore')
+          : milkErrorText(problem.code, lang),
+      )
+      return
+    }
+    const names = sources.map((c) => c.label).join(', ')
+    const expiry = combinedExpiry(into, sources)
+    if (
+      !window.confirm(
+        t('combine.confirm', {
+          count: sources.length,
+          sources: names,
+          target: into.label,
+          amount: formatMilkOz(combinedMl(into, sources)),
+          when: storedWhen(expiry, Date.now(), lang),
+        }),
+      )
+    )
+      return
+    setBusy(true)
+    const res = await combineMilk(baby.id, into, sources, {
+      pending: !!into.pending || sources.some((c) => c.pending),
+    })
+    setBusy(false)
+    if (res.error) {
+      setErr(t('common.couldNotSave', { error: milkErrorText(res.error, lang) }))
+      refresh(baby.id)
+      return
+    }
+    setPicked([])
+    setTarget(null)
+    setLastCombine({
+      opId: res.opId,
+      targetId: into.id,
+      text: res.queued
+        ? t('common.queued')
+        : t('combine.done', { sources: names, target: into.label }),
+      queued: !!res.queued,
+    })
+    refresh(baby.id)
+    reloadPending()
+  }
+
+  /** "Deshacer" a combination (V5-35): each bottle gets its milk back. */
+  async function undoCombine(opId: string, targetId: string, queued: boolean) {
+    if (!window.confirm(t('combine.undoConfirm'))) return
+    await act(() => uncombineMilk(opId, targetId, { pending: queued }), t('combine.undone'))
+  }
+
+  // ------------------------------------------------------------ Similac (V5-01…V5-07)
+
+  const stock = formulaStock({ containers: formulaRows, feedings: bottleFeeds, nowMs: now })
+
+  /** "Abrí una Similac": the oldest closed one, or a new one with none (never blocks). */
+  function openOne() {
+    if (!baby) return
+    if (
+      stock.open &&
+      stock.open.state !== 'expired' &&
+      !window.confirm(t('formula.openReplaceConfirm'))
+    )
+      return
+    const closed = stock.closed[0] ?? null
+    act(() => openFormula(baby.id, closed, { pending: !!closed?.pending }), t('formula.opened'))
+  }
+
+  /** "Se terminó" ('empty') or "Desechar" the expired one ('expired'). */
+  function finishOpen(reason: 'empty' | 'expired') {
+    const open = stock.open
+    if (!open) return
+    if (!window.confirm(t(reason === 'empty' ? 'formula.emptyConfirm' : 'formula.discardConfirm')))
+      return
+    act(
+      () => finishFormula(open.container, reason, { pending: !!open.container.pending }),
+      t(reason === 'empty' ? 'formula.finished' : 'formula.discarded'),
+    )
+  }
+
+  /** "Anotar compra" (V5-01): N closed bottles of 8 oz, 1 to 24. */
+  async function buy(e: React.FormEvent) {
+    e.preventDefault()
+    if (!baby) return
+    const text = buyCount.trim()
+    const n = Number(text)
+    if (!/^[0-9]+$/.test(text) || n < 1 || n > FORMULA_PACK_MAX) {
+      setSaved(null)
+      setErr(t('formula.buyBad', { min: 1, max: FORMULA_PACK_MAX }))
+      return
+    }
+    const ok = await act(() => addFormula(baby.id, { count: n }), t('formula.bought', { count: n }))
+    if (ok) setBuyCount(String(FORMULA_PACK_COUNT))
+  }
+
   if (loading)
     return (
       <Page>
@@ -455,6 +695,16 @@ export default function PumpingPage() {
   const stashPending = shelf.some((c) => c.pending)
   const discardedMl = discardedTotalMl(discards)
   const discardedPending = discards.some((d) => d.pending && !d.voided_at)
+  // "Combinar": the bottles that can go into one now (cold, good, with milk),
+  // and the live combinations, by the bottle that received them.
+  const combinable = shelf.filter((c) => isCombinable(c, now))
+  const pickedNow = picked.filter((id) => combinable.some((c) => c.id === id))
+  const combos = combinationsOf(transfers).filter((x) => !x.undone)
+  const formulaPending = formulaRows.some((f) => f.pending)
+  function togglePick(id: string, on: boolean) {
+    setPicked((xs) => (on ? [...xs.filter((x) => x !== id), id] : xs.filter((x) => x !== id)))
+    if (!on && target === id) setTarget(null)
+  }
   // Is there milk typed? Then the selector shows; with both sides empty there
   // is no container to name (V4-04). A side that isn't a number yet counts as
   // milk, so the selector doesn't flicker while typing "1." or "1,".
@@ -545,6 +795,25 @@ export default function PumpingPage() {
       {loadErr && <Banner kind="error">{loadErr}</Banner>}
       {err && <Banner kind="error">{err}</Banner>}
       {saved && !err && <Banner kind="ok">{saved}</Banner>}
+      {lastCombine && !err && (
+        <Banner kind="ok">
+          <span className="row-line">
+            <span>{lastCombine.text}</span>
+            {canUncombine(lastCombine.opId, transfers, containers).ok && (
+              <button
+                type="button"
+                className="linkish"
+                disabled={busy}
+                onClick={() =>
+                  undoCombine(lastCombine.opId, lastCombine.targetId, lastCombine.queued)
+                }
+              >
+                {t('combine.undo')}
+              </button>
+            )}
+          </span>
+        </Banner>
+      )}
 
       <Grid>
         {/* ---------------- Live session ---------------- */}
@@ -638,6 +907,11 @@ export default function PumpingPage() {
                 const usable = isUsable(c, now)
                 const num = labelNumber(c.label)
                 const outside = num === null || num > count
+                // Enfriando (V5-20): a warning until it's cold, never a lock.
+                const cool = coolingState(c, now)
+                const cooling = usable && cool.state === 'cooling'
+                // What was poured into this one, while it can still be undone.
+                const into = combos.filter((x) => x.targetId === c.id)
                 return (
                   <li key={c.id} className="feed-item">
                     <div className="feed-what">
@@ -658,8 +932,46 @@ export default function PumpingPage() {
                             })
                           : t('milk.expiredShort')}
                       </div>
+                      {cooling && (
+                        <div className="meta">
+                          {t('cooling.line', {
+                            time: clockTime(new Date(cool.readyAtMs).toISOString(), lang),
+                          })}
+                        </div>
+                      )}
+                      {into.map((x) => (
+                        <div key={x.opId} className="row-line">
+                          <span className="meta">
+                            {t('combine.rowNote', { sources: labelsOf(x.sourceIds) })}
+                          </span>
+                          {canUncombine(x.opId, transfers, containers).ok && (
+                            <button
+                              type="button"
+                              className="linkish"
+                              disabled={busy}
+                              aria-label={t('combine.undoAria', { label: c.label })}
+                              onClick={() => undoCombine(x.opId, c.id, !!x.pending)}
+                            >
+                              {t('combine.undo')}
+                            </button>
+                          )}
+                        </div>
+                      ))}
                       {c.pending && <div className="pending-tag">{t('common.notSyncedYet')}</div>}
                     </div>
+                    {cooling && (
+                      <span className="feed-actions">
+                        <button
+                          type="button"
+                          className="linkish"
+                          disabled={busy}
+                          aria-label={t('cooling.markColdAria', { label: c.label })}
+                          onClick={() => markCold(c)}
+                        >
+                          {t('cooling.markCold')}
+                        </button>
+                      </span>
+                    )}
                     {canDiscard(c, discards, now) && (
                       <span className="feed-actions">
                         <button
@@ -679,6 +991,156 @@ export default function PumpingPage() {
             </ul>
           )}
           <p className="meta">{t('milk.rulesHint')}</p>
+        </Card>
+
+        {/* ---------------- Combinar (0016, V5-30…V5-35) ---------------- */}
+        <Card>
+          <Label>{t('combine.title')}</Label>
+          <p className="meta">{t('combine.hint')}</p>
+          {combinable.length < 2 ? (
+            <p className="meta">{t('combine.needTwo')}</p>
+          ) : (
+            <div className="stack">
+              <fieldset className="plain-fieldset">
+                <legend className="label">{t('combine.pick')}</legend>
+                {combinable.map((c) => (
+                  <label key={c.id} className="choice">
+                    <input
+                      type="checkbox"
+                      checked={pickedNow.includes(c.id)}
+                      disabled={busy}
+                      onChange={(e) => togglePick(c.id, e.target.checked)}
+                    />
+                    {t('combine.option', {
+                      label: c.label,
+                      amount: formatMilkOz(c.remaining_ml),
+                      when: storedWhen(c.expires_at, now, lang),
+                    })}
+                  </label>
+                ))}
+              </fieldset>
+              {pickedNow.length >= 2 && (
+                <fieldset className="plain-fieldset">
+                  <legend className="label">{t('combine.target')}</legend>
+                  {pickedNow.map((id) => {
+                    const c = combinable.find((x) => x.id === id)!
+                    return (
+                      <label key={id} className="choice">
+                        <input
+                          type="radio"
+                          name="combine-target"
+                          checked={target === id}
+                          disabled={busy}
+                          onChange={() => setTarget(id)}
+                        />
+                        {c.label}
+                      </label>
+                    )
+                  })}
+                </fieldset>
+              )}
+              <div className="row-tight">
+                <Btn disabled={busy || pickedNow.length < 2} onClick={combine}>
+                  {t('combine.submit')}
+                </Btn>
+              </div>
+            </div>
+          )}
+        </Card>
+
+        {/* ---------------- Similac (0016, V5-01…V5-07) ---------------- */}
+        <Card>
+          <Label>{t('formula.title')}</Label>
+          {stock.closed.length === 0 && !stock.open ? (
+            <div className="value">{unknown ? '—' : t('formula.none')}</div>
+          ) : (
+            <>
+              <div className="value">
+                {[
+                  stock.closed.length > 0
+                    ? t('formula.closed', { count: stock.closed.length })
+                    : null,
+                  stock.open
+                    ? t('formula.openWith', { amount: formatMilkOz(stock.open.remainingMl) })
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(' + ')}
+              </div>
+              <div className="meta">
+                {t('formula.total', { amount: formatMilkOz(stock.remainingMl) })}
+              </div>
+            </>
+          )}
+          {stock.open && (
+            <div className="meta">
+              {stock.open.state === 'expired'
+                ? `${t('formula.expired')} · ${t('formula.expiredNote', { hours: FORMULA_OPEN_MAX_H })}`
+                : t('formula.openSince', {
+                    when: storedWhen(stock.open.container.opened_at!, now, lang),
+                    until: storedWhen(new Date(stock.open.expiresAtMs).toISOString(), now, lang),
+                  })}
+            </div>
+          )}
+          {stock.open?.state === 'expiring' && (
+            <div className="meta">
+              {t('formula.expiring', {
+                until: storedWhen(new Date(stock.open.expiresAtMs).toISOString(), now, lang),
+              })}
+            </div>
+          )}
+          {stock.perDayMl > 0 && (
+            <div className="meta">
+              {t('formula.perDay', { amount: formatMilkOz(stock.perDayMl) })}
+              {stock.daysLeft !== null &&
+                ` ${t('formula.daysLeft', { count: Math.floor(stock.daysLeft) })}`}
+            </div>
+          )}
+          {stock.low && (stock.closed.length > 0 || stock.open) && (
+            <div className="meta">
+              {t('formula.low', { amount: formatMilkOz(stock.remainingMl) })}
+            </div>
+          )}
+          {stock.overdrawn && <div className="meta">{t('formula.overdrawn')}</div>}
+          {stock.unassignedMl > 0 && (
+            <div className="meta">
+              {t('formula.unassigned', { amount: formatMilkOz(stock.unassignedMl) })}
+            </div>
+          )}
+          {formulaPending && <div className="pending-tag">{t('common.notSyncedYet')}</div>}
+          <div className="row-tight row-wrap">
+            <Btn disabled={busy} onClick={openOne}>
+              {t('formula.open')}
+            </Btn>
+            {stock.open && stock.open.state !== 'expired' && (
+              <Btn variant="quiet" disabled={busy} onClick={() => finishOpen('empty')}>
+                {t('formula.empty')}
+              </Btn>
+            )}
+            {stock.open?.state === 'expired' && (
+              <Btn variant="quiet" disabled={busy} onClick={() => finishOpen('expired')}>
+                {t('formula.discard')}
+              </Btn>
+            )}
+          </div>
+          <form onSubmit={buy}>
+            <label className="label" htmlFor="formula-buy">
+              {t('formula.buyCount', { size: formatMilkOz(FORMULA_BOTTLE_ML) })}
+            </label>
+            <div className="row-tight row-wrap">
+              <input
+                id="formula-buy"
+                className="input narrow"
+                inputMode="numeric"
+                value={buyCount}
+                disabled={busy}
+                onChange={(e) => setBuyCount(e.target.value)}
+              />
+              <Btn type="submit" variant="quiet" disabled={busy}>
+                {t('formula.buy')}
+              </Btn>
+            </div>
+          </form>
         </Card>
 
         {/* ---------------- Discarded milk (V4-35, D-13) ---------------- */}
@@ -705,7 +1167,9 @@ export default function PumpingPage() {
               {sessions.map((row) => {
                 const container = containerOf(row.id)
                 // Served = what went into bottles; a discard is not served (v4).
-                const served = container ? containerBalance(container, null, discards).served : 0
+                const served = container
+                  ? containerBalance(container, null, discards, transfers).served
+                  : 0
                 const voided = !!(row as { voided_at?: string | null }).voided_at
                 const hasSides = row.left_ml != null || row.right_ml != null
                 return (

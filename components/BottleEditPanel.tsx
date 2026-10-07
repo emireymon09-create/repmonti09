@@ -150,6 +150,7 @@ export function BottleEditPanel({
           notes: notes.trim() || null,
         },
         now,
+        inventory.transfers,
       )
 
   const planProblem =

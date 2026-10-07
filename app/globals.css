@@ -790,6 +790,58 @@ select.input {
   min-width: var(--tap-min);
 }
 
+/* v5 de la leche (0016): una casilla o un radio con su texto, como UNA
+   cosa tocable — "Si llora", los biberones de "Combinar". El área de toque es
+   la etiqueta entera, con el piso de --tap-min; la casilla nativa sólo se
+   agranda un poco y toma el color de acento. */
+.choice {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: var(--tap-min);
+  font-size: var(--t-body);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.choice input {
+  flex: none;
+  width: var(--s-5);
+  height: var(--s-5);
+  margin: 0;
+  accent-color: var(--c-accent);
+}
+/* Un grupo de casillas con su título (<legend>), sin el marco del navegador. */
+.plain-fieldset {
+  border: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+/* Un renglón de texto con una acción chica al lado ("Sobró 1 oz · ya no
+   sirve" + Desechar): envuelve en vez de desbordar. */
+.row-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--s-3);
+}
+/* La línea corta de la receta en Hoy: es lo primero que se lee del biberón. */
+.recipe-line {
+  color: var(--c-text);
+  font-weight: 600;
+}
+/* Ajustes plegados ("Todavía no se usan"): el resumen es un control más, con
+   el mismo piso táctil. */
+.fold > summary {
+  display: flex;
+  align-items: center;
+  min-height: var(--tap-min);
+  cursor: pointer;
+  color: var(--c-accent);
+  font-weight: 600;
+  font-size: var(--t-body);
+}
+
 .pill {
   background: none;
   border: 1px solid var(--c-line);

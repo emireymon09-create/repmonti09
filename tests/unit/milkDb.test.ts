@@ -10,6 +10,7 @@ import {
   uncombineMilkOp,
   voidFormulaOp,
   describeWrite,
+  combineActivity,
   discardActivity,
   discardContainerOp,
   editBottleFeedOp,
@@ -631,6 +632,53 @@ describe('U-E1 las ops de v5 y cómo se nombran en la cola', () => {
       'es',
     )
     expect(rows[0].what).toBe('Biberón empezado desechado · 1 oz')
-    expect(rows[0].detail).toBe('Biberón empezado desechado · 1 oz')
+    // Its own kind: History's label already says "Biberón empezado
+    // desechado", so the detail is only the amount (no repeating it).
+    expect(rows[0].kind).toBe('started_discard')
+    expect(rows[0].detail).toBe('1 oz')
+  })
+})
+
+describe('combineActivity — las combinaciones en Historial (0016)', () => {
+  const tr = (id: string, op: string, from: string, to: string, ml: number, voided = false) => ({
+    id,
+    op_id: op,
+    from_container_id: from,
+    to_container_id: to,
+    amount_ml: ml,
+    target_prev_expires_at: iso(NOW + DAY),
+    created_at: iso(NOW - HOUR),
+    voided_at: voided ? iso(NOW) : null,
+  })
+  const containers = [
+    { id: 'c5', label: 'M5' },
+    { id: 'c6', label: 'M6' },
+    { id: 'c7', label: 'M7' },
+  ]
+
+  it('una fila por combinación, en los dos idiomas, sin las deshechas', () => {
+    const rows = [tr('t1', 'op1', 'c6', 'c5', 2 * OZ), tr('t2', 'op2', 'c7', 'c5', OZ, true)]
+    const es = combineActivity(rows, containers, 0, 'es')
+    expect(es).toHaveLength(1)
+    expect(es[0]).toMatchObject({
+      id: 'op1',
+      kind: 'combine',
+      what: 'Combinado M6 → M5 · 2 oz',
+      detail: 'M6 → M5 · 2 oz',
+    })
+    expect(combineActivity(rows, containers, 0, 'en')[0].what).toBe('Combined M6 → M5 · 2 oz')
+  })
+
+  it('varios orígenes en una sola fila, y la marca de sin sincronizar', () => {
+    const rows = [
+      { ...tr('t1', 'op1', 'c6', 'c5', OZ), pending: true },
+      tr('t2', 'op1', 'c7', 'c5', OZ),
+    ]
+    const [row] = combineActivity(rows, containers, 0, 'es')
+    expect(row.detail).toBe('M6, M7 → M5 · 2 oz · sin sincronizar')
+  })
+
+  it('respeta el corte de `since`', () => {
+    expect(combineActivity([tr('t1', 'op1', 'c6', 'c5', OZ)], containers, NOW, 'en')).toEqual([])
   })
 })

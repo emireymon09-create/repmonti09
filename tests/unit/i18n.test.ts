@@ -37,6 +37,8 @@ const SAME_ON_PURPOSE = new Set<MessageKey>([
   'unit.ml',
   'offset.minutes',
   'settings.minutes',
+  // Una marca: Similac se llama igual en los dos idiomas.
+  'formula.title',
   // Puro andamiaje: no tienen una sola palabra propia, solo variables y
   // puntuación. Traducirlas sería inventar una diferencia que no existe.
   'week.range',

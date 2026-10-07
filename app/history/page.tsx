@@ -8,12 +8,14 @@ import { SeenNote, SyncBar, SyncErrorBanner } from '@/components/SyncStatus'
 import { lastGood, seenKey, type LastGood, type SeenState } from '@/lib/lastSeen'
 import {
   buildActivity,
+  combineActivity,
   discardActivity,
   estimateLegacySplits,
   keepLastGood,
   legacySplitInputs,
   listContainers,
   listDiscards,
+  listTransfers,
   listDrawdowns,
   mergePending,
   milkErrorText,
@@ -74,6 +76,7 @@ import type {
   FeedingType,
   MilkContainer,
   MilkDiscard,
+  MilkTransfer,
   MilkDrawdown,
   MilkSettings,
   NursingSession,
@@ -111,6 +114,8 @@ type ServerRows = {
   drawdowns: MilkDrawdown[]
   /** Discarded milk (0015): its own read-only rows, and what freed each bottle. */
   discards: MilkDiscard[]
+  /** "Combinar" (0016): its rows here, and what each bottle got or gave. */
+  transfers: MilkTransfer[]
   /** What the estimate of an old bottle's milk / formula is made from (2B). */
   legacy: LegacySplitInputs
 }
@@ -124,6 +129,7 @@ const NO_ROWS: ServerRows = {
   containers: [],
   drawdowns: [],
   discards: [],
+  transfers: [],
   legacy: NO_LEGACY,
 }
 
@@ -194,6 +200,7 @@ export default function HistoryPage() {
   // check what was already served from its container, like /pumping does.
   const [containers, setContainers] = useState<WithPending<MilkContainer>[]>([])
   const [discards, setDiscards] = useState<WithPending<MilkDiscard>[]>([])
+  const [transfers, setTransfers] = useState<WithPending<MilkTransfer>[]>([])
   const [legacy, setLegacy] = useState<LegacySplitInputs>(NO_LEGACY)
   // Milk that, by what this phone knows, won't go back to its bottle when the
   // queue syncs (D-9, §8.2): said while it is queued.
@@ -283,10 +290,12 @@ export default function HistoryPage() {
         rows.drawdowns ?? [],
         rows.discards ?? [],
         queued,
+        rows.transfers ?? [],
       )
       setDrawdowns(inventory.drawdowns)
       setContainers(inventory.containers)
       setDiscards(inventory.discards)
+      setTransfers(inventory.transfers)
       setLegacy(rows.legacy ?? NO_LEGACY)
       setLostQueued(
         inventory.lost.map((l) =>
@@ -318,6 +327,8 @@ export default function HistoryPage() {
       )
         // The milk thrown out with "Discard" (V4-37): read-only rows, by time.
         .concat(discardActivity(inventory.discards, 0, lang))
+        // Bottles combined (0016): read-only too; undone from Milk.
+        .concat(combineActivity(inventory.transfers, inventory.containers, 0, lang))
         .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
       setDays(groupByHouseholdDay(entries, lang))
     },
@@ -353,6 +364,7 @@ export default function HistoryPage() {
         containersRead,
         drawdownsRead,
         discardsRead,
+        transfersRead,
         legacyRead,
         queued,
       ] = await Promise.all([
@@ -364,6 +376,7 @@ export default function HistoryPage() {
         listContainers(babyId),
         listDrawdowns(babyId),
         listDiscards(babyId),
+        listTransfers(babyId),
         legacySplitInputs(babyId),
         pendingWrites(),
       ])
@@ -378,6 +391,7 @@ export default function HistoryPage() {
         containers: containersRead,
         drawdowns: drawdownsRead,
         discards: discardsRead,
+        transfers: transfersRead,
         legacy: legacyRead,
       })
       setSeen(last.settle(rows, error))
@@ -419,11 +433,11 @@ export default function HistoryPage() {
   // What already went into bottles from a session's container. A discard is
   // not served (v4: amount = served + discarded + lost + remaining).
   const servedOf = (c: MilkContainer | undefined) =>
-    c ? containerBalance(c, drawdowns, discards).served : 0
+    c ? containerBalance(c, drawdowns, discards, transfers).served : 0
   // The estimated split of every old bottle without a breakdown (2B). Nothing
   // is written and what there is doesn't move (V4-62).
   const estimates = estimateLegacySplits(legacy, rules.milk_fridge_days)
-  const bottleInventory = { containers, drawdowns, discards }
+  const bottleInventory = { containers, drawdowns, discards, transfers }
 
   /**
    * Does the session being edited gain its first container with what is typed

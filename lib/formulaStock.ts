@@ -153,3 +153,22 @@ export function formulaStock(input: {
     unassignedMl,
   }
 }
+
+/**
+ * From when the screens have to read the bottle feedings for `formulaStock`
+ * (lib/db.ts bottleFeedingsSince): the last 72 h (consumption per day), and
+ * further back if a bottle still open was opened before that — every feeding
+ * of its window counts against it. ISO.
+ */
+export function formulaReadSince(
+  containers: readonly Pick<FormulaContainer, 'opened_at' | 'finished_at' | 'voided_at'>[],
+  nowMs: number,
+): string {
+  let since = nowMs - FORMULA_PER_DAY_WINDOW_MS
+  for (const c of containers) {
+    if (c.voided_at || !c.opened_at || c.finished_at) continue
+    const opened = Date.parse(c.opened_at)
+    if (Number.isFinite(opened) && opened < since) since = opened
+  }
+  return new Date(since).toISOString()
+}

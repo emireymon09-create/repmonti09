@@ -37,7 +37,7 @@ import {
   type StartedDiscardArgs,
   type UncombineArgs,
 } from '@/lib/milk'
-import { combineExpected } from '@/lib/milkCombine'
+import { combinationsOf, combineExpected } from '@/lib/milkCombine'
 import {
   BOTTLE_STARTED_MAX_MIN,
   FORMULA_BOTTLE_ML,
@@ -1976,6 +1976,8 @@ export type BottleEditContext = {
   containers: WithPending<MilkContainer>[]
   drawdowns: WithPending<MilkDrawdown>[]
   discards: WithPending<MilkDiscard>[]
+  /** 0016: the transfers ("Combinar"), so milk going back to a combined source is lost (D5-19). */
+  transfers?: WithPending<MilkTransfer>[]
 }
 
 /**
@@ -2025,6 +2027,7 @@ export function editBottleFeedOp(
       notes: input.notes,
     },
     atMs,
+    ctx.transfers,
   )
   const refs = new Set(
     ctx.drawdowns
@@ -2506,21 +2509,63 @@ export function discardActivity(
     if (d.voided_at || new Date(d.discarded_at).getTime() < since) continue
     const vars = { label: d.label ?? '?', amount: formatMilkOz(d.amount_ml) }
     // 0016: a started bottle has no number — "Started bottle thrown out · 1 oz".
+    // It is its own kind, so History's label says that and the detail is just
+    // the amount (it used to read "Discarded milk · Started bottle thrown out
+    // · 1 oz", the same thing twice — and it is not breast milk from the stash).
     const started = d.reason === 'started_bottle_expired'
     let what = started
       ? translate(lang, 'milk.startedDiscardedLine', vars)
       : translate(lang, 'milk.discardedLine', vars)
-    // History already labels the kind ("Discarded milk"): the number and the
-    // amount are all that is left to say, and they have no words to translate.
-    let detail = started ? what : `${vars.label} · ${vars.amount}`
+    // History already labels the kind: the number and the amount are all that
+    // is left to say, and they have no words to translate.
+    let detail = started ? vars.amount : `${vars.label} · ${vars.amount}`
     if (d.pending) {
       const mark = translate(lang, 'activity.notSynced')
       what = `${what} · ${mark}`
       detail = `${detail} · ${mark}`
     }
-    out.push({ id: d.id, at: d.discarded_at, kind: 'discard', what, detail })
+    out.push({
+      id: d.id,
+      at: d.discarded_at,
+      kind: started ? 'started_discard' : 'discard',
+      what,
+      detail,
+    })
   }
   return out.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+}
+
+/**
+ * History's rows for "Combinar" (0016): "Combined M6 → M5 · 2 oz" at the
+ * time it was done. One per combination; an undone one is not listed (the
+ * milk is back where it was). Read-only, like the discards — undoing is done
+ * from Milk.
+ */
+export function combineActivity(
+  transfers: WithPending<MilkTransfer>[],
+  containers: Pick<MilkContainer, 'id' | 'label'>[],
+  since: number,
+  lang: Lang = 'en',
+): ActivityEntry[] {
+  const label = (id: string) => containers.find((c) => c.id === id)?.label ?? '?'
+  const out: ActivityEntry[] = []
+  for (const x of combinationsOf(transfers)) {
+    if (x.undone || new Date(x.createdAt).getTime() < since) continue
+    const vars = {
+      sources: x.sourceIds.map(label).join(', '),
+      target: label(x.targetId),
+      amount: formatMilkOz(x.movedMl),
+    }
+    let what = translate(lang, 'combine.activity', vars)
+    let detail = `${vars.sources} → ${vars.target} · ${vars.amount}`
+    if (x.pending) {
+      const mark = translate(lang, 'activity.notSynced')
+      what = `${what} · ${mark}`
+      detail = `${detail} · ${mark}`
+    }
+    out.push({ id: x.opId, at: x.createdAt, kind: 'combine', what, detail })
+  }
+  return out
 }
 
 // --------------------------------------------------- family settings (0012)

@@ -29,6 +29,7 @@ import {
   portionMl,
   type BottlePlan,
 } from '@/lib/milk'
+import { isCold } from '@/lib/milkCooling'
 import type { MilkContainer, VolumeUnit, WithPending } from '@/lib/types'
 
 export type BottleValue = {
@@ -79,6 +80,7 @@ export function BottleBuilder({
   disabled,
   onChange,
   idPrefix,
+  nowMs,
 }: {
   /** Containers a bottle can come from right now, oldest first, queue folded in. */
   usable: WithPending<MilkContainer>[]
@@ -88,6 +90,12 @@ export function BottleBuilder({
   onChange: (value: BottleValue) => void
   /** Keeps ids unique when two builders could be on one page. */
   idPrefix: string
+  /**
+   * The instant the bottle is for (0016, V5-23): a container still cooling
+   * then is offered all the same, marked "Cooling" — a warning, not a lock.
+   * Without it nothing is marked.
+   */
+  nowMs?: number
 }) {
   const { t } = useT()
   const [unit, setUnit] = useState<VolumeUnit>(DISPLAY_UNIT)
@@ -254,6 +262,7 @@ export function BottleBuilder({
                   label: c.label,
                   amount: formatMilkOz(c.remaining_ml),
                 })}
+                {nowMs !== undefined && !isCold(c, nowMs) ? ` · ${t('recipe.coolingTag')}` : ''}
               </option>
             ))}
           </select>

@@ -24,7 +24,7 @@
  *     antes se mantiene; lo que no hay es forma de hacer uno nuevo.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useBaby } from '@/lib/useBaby'
 import { Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
@@ -332,10 +332,11 @@ function ScheduleSettings({ familyId }: { familyId: string | null }) {
  * registren de acá en adelante: la caducidad se calcula al guardar cada una.
  *
  * v4 (0015): en la misma tarjeta y con el mismo botón (AJ-17), cuántos
- * biberones físicos hay — N, 1 a 30, el selector de Leche ofrece M1…MN. Y
- * ambiente y congelador quedan a la vista con "Todavía no se usa" (D-12): hoy
- * toda la leche se cuenta en el refrigerador, pero esos valores son los que
- * va a usar una fase siguiente, así que no se esconden ni se borran.
+ * biberones físicos hay — N, 1 a 30, el selector de Leche ofrece M1…MN.
+ * v5 (D5-18): ambiente y congelador van dentro de un <details> plegado
+ * "Todavía no se usan": hoy toda la leche se cuenta en el refrigerador, pero
+ * esos valores son los que va a usar una fase siguiente, así que no se borran
+ * y siguen editables.
  */
 function MilkStorageSettings({ babyId }: { babyId: string | null }) {
   const { t, lang } = useT()
@@ -348,6 +349,7 @@ function MilkStorageSettings({ babyId }: { babyId: string | null }) {
   // D-2: N lowered under bottles that still have milk — saved anyway, and said.
   const [above, setAbove] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const unusedRef = useRef<HTMLDetailsElement>(null)
 
   useEffect(() => {
     if (!babyId) return
@@ -384,6 +386,8 @@ function MilkStorageSettings({ babyId }: { babyId: string | null }) {
     setAbove(null)
     const checked = validateMilkRules({ room, fridge, freezer })
     if (!checked.rules) {
+      // The field with the problem may be folded away: open it to show it.
+      if (checked.field !== 'fridge' && unusedRef.current) unusedRef.current.open = true
       const field = t(NAMES[checked.field])
       setErr(
         t(`milkRules.problem.${checked.problem}`, {
@@ -447,13 +451,10 @@ function MilkStorageSettings({ babyId }: { babyId: string | null }) {
     value: string,
     set: (v: string) => void,
     unit: MessageKey,
-    notUsed = false,
   ) => (
     <div className="setting-group">
       <label className="label" htmlFor={id}>
         {t(NAMES[name])}
-        {/* D-12: kept, editable, and honest about doing nothing yet. */}
-        {notUsed && <span className="meta"> · {t('milkRules.notUsedYet')}</span>}
       </label>
       <div className="row-tight">
         <input
@@ -473,11 +474,17 @@ function MilkStorageSettings({ babyId }: { babyId: string | null }) {
     <Card>
       <Label>{t('milkRules.title')}</Label>
       <p className="setting-note">{t('milkRules.note')}</p>
-      <p className="setting-note">{t('milkRules.fridgeOnlyNote')}</p>
       <form onSubmit={save}>
-        {field('milk-room', 'room', room, setRoom, 'milkRules.hours', true)}
         {field('milk-fridge', 'fridge', fridge, setFridge, 'milkRules.days')}
-        {field('milk-freezer', 'freezer', freezer, setFreezer, 'milkRules.months', true)}
+        {/* v5 (D5-18): ambiente y congelador, plegados. Siguen guardándose
+            con el mismo botón y los mismos valores — solo dejan de estar a la
+            vista como si se usaran. */}
+        <details className="fold setting-group" ref={unusedRef}>
+          <summary>{t('milkRules.unusedTitle')}</summary>
+          <p className="setting-note">{t('milkRules.unusedNote')}</p>
+          {field('milk-room', 'room', room, setRoom, 'milkRules.hours')}
+          {field('milk-freezer', 'freezer', freezer, setFreezer, 'milkRules.months')}
+        </details>
         <div className="setting-group">
           <label className="label" htmlFor="milk-bottles">
             {t('milkRules.bottles')}

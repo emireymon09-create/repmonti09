@@ -37,7 +37,7 @@ import {
   feedingsSince,
   keepLastGood,
   estimateLegacySplits,
-  lastBottleFeeding,
+  listTransfers,
   legacySplitInputs,
   listContainers,
   listDiscards,
@@ -82,14 +82,13 @@ import { BottleBuilder, type BottleValue } from '@/components/BottleBuilder'
 import { BottleEditPanel, legacyBottleLine, notReturnedLines } from '@/components/BottleEditPanel'
 import { LeftoverField, type LeftoverValue } from '@/components/LeftoverField'
 import { validateLeftover } from '@/lib/milkBottles'
+import { recipe } from '@/lib/milkRecipe'
 import {
   DEFAULT_MILK_RULES,
   applyPendingInventory,
   describeBottle,
   isInventoryBottleFeed,
   rereadsInventory,
-  suggestPlan,
-  suggestedTotalMl,
   usableContainers,
   type BottlePlan,
 } from '@/lib/milk'
@@ -106,6 +105,7 @@ import type {
   MilkContainer,
   MilkDiscard,
   MilkDrawdown,
+  MilkTransfer,
   NursingSession,
   Result,
   Side,
@@ -157,8 +157,8 @@ type ServerRows = {
   discards: MilkDiscard[]
   /** What the estimate of an old bottle's milk / formula is made from (2B). */
   legacy: LegacySplitInputs
-  /** The last bottle, which the log may not reach: what the suggestion starts from. */
-  lastBottle: Feeding[]
+  /** "Combinar" (0016): what moved between bottles. */
+  transfers: MilkTransfer[]
 }
 const NO_LEGACY: LegacySplitInputs = { feedings: [], pumping: [], containerSessionIds: [] }
 const NO_ROWS: ServerRows = {
@@ -166,7 +166,7 @@ const NO_ROWS: ServerRows = {
   drawdowns: [],
   discards: [],
   legacy: NO_LEGACY,
-  lastBottle: [],
+  transfers: [],
   feedings: [],
   nursing: [],
   diapers: [],
@@ -195,7 +195,7 @@ function readSection(section: Section, babyId: string, sinceIso: string): Promis
     drawdowns: NOT_READ,
     discards: NOT_READ,
     legacy: { data: NO_LEGACY, error: null },
-    lastBottle: NOT_READ,
+    transfers: NOT_READ,
   }
   if (section === 'feeding') {
     return Promise.all([
@@ -207,7 +207,7 @@ function readSection(section: Section, babyId: string, sinceIso: string): Promis
       listDrawdowns(babyId),
       listDiscards(babyId),
       legacySplitInputs(babyId),
-      lastBottleFeeding(babyId),
+      listTransfers(babyId),
     ]).then(
       ([
         feedings,
@@ -218,7 +218,7 @@ function readSection(section: Section, babyId: string, sinceIso: string): Promis
         drawdowns,
         discards,
         legacy,
-        lastBottle,
+        transfers,
       ]) => ({
         ...none,
         feedings,
@@ -229,7 +229,7 @@ function readSection(section: Section, babyId: string, sinceIso: string): Promis
         drawdowns,
         discards,
         legacy,
-        lastBottle: { ...lastBottle, data: lastBottle.data ? [lastBottle.data] : [] },
+        transfers,
       }),
     )
   }
@@ -257,7 +257,7 @@ type Shown = {
   drawdowns: WithPending<MilkDrawdown>[]
   discards: WithPending<MilkDiscard>[]
   legacy: LegacySplitInputs
-  lastBottle: Feeding[]
+  transfers: WithPending<MilkTransfer>[]
 }
 
 /** One calendar day of the log, household timezone (as on /history). */
@@ -414,9 +414,9 @@ export function SectionPage({ section }: { section: Section }) {
           rows.drawdowns ?? [],
           rows.discards ?? [],
           queued,
+          rows.transfers ?? [],
         ),
         legacy: rows.legacy ?? NO_LEGACY,
-        lastBottle: rows.lastBottle ?? [],
       }
       // Only this section's tables: the others were never read and stay empty.
       if (section !== 'feeding') {
@@ -425,7 +425,7 @@ export function SectionPage({ section }: { section: Section }) {
         next.drawdowns = []
         next.discards = []
         next.legacy = NO_LEGACY
-        next.lastBottle = []
+        next.transfers = []
       }
       if (section !== 'diapers') next.diapers = next.weekDiapers = []
       if (section !== 'sleep') next.sleep = next.weekSleep = []
@@ -773,9 +773,12 @@ export function SectionPage({ section }: { section: Section }) {
 
   // ------------------------------------------------------------ render
 
-  // The past bottle starts from the same suggestion as Today's, with what
-  // could be used AT THE TIME PICKED: not expired then, and already pumped by
-  // then — a bottle at 08:00 can't come from milk pumped at 10:00. Memoized on
+  // The past bottle starts from the same recipe as Today's (0016, V5-40), at
+  // the time picked, with what could be used THEN: not expired, already
+  // pumped by then — a bottle at 08:00 can't come from milk pumped at 10:00 —
+  // and cold then (the recipe only proposes cold milk). No "si llora" here:
+  // a full feeding. No Similac warnings either: this page doesn't read the
+  // Similac stock, and a past bottle is logged as it was given. Memoized on
   // what they contain, so the builder doesn't start over on every render;
   // `pPlanKey` starts it over after a save.
   const pAtMs = Date.parse(instant(pAt) ?? '') || now
@@ -785,7 +788,16 @@ export function SectionPage({ section }: { section: Section }) {
   const pUsable = useMemo<WithPending<MilkContainer>[]>(() => JSON.parse(pUsableSig), [pUsableSig])
   const pPlanSig = JSON.stringify({
     key: pPlanKey,
-    plan: suggestPlan(suggestedTotalMl([...shown.feedings, ...shown.lastBottle]), pUsable, pAtMs),
+    plan: (() => {
+      const r = recipe({
+        nowMs: pAtMs,
+        lastFeedingEndMs: null,
+        cry: false,
+        containers: pUsable,
+        formula: null,
+      })
+      return { portions: r.portions, formulaMl: r.formulaMl, totalMl: r.totalMl }
+    })(),
   })
   const pPlan = useMemo<BottlePlan>(() => JSON.parse(pPlanSig).plan, [pPlanSig])
   // The estimated split of every old bottle without a breakdown (2B). Read-only:
@@ -998,6 +1010,7 @@ export function SectionPage({ section }: { section: Section }) {
                 disabled={busy}
                 onChange={setPBuilt}
                 idPrefix="past-bottle"
+                nowMs={pAtMs}
               />
             )}
             {section === 'feeding' && pKind === 'bottle' && (

@@ -314,9 +314,20 @@ export type WithPending<T> = T & { pending?: boolean }
 export type ActivityEntry = {
   id: string
   at: string
-  // 'discard' (0015): milk thrown out, never editable. app/history/page.tsx
-  // builds an i18n key from this union — `history.kind.discard` exists.
-  kind: 'feeding' | 'nursing' | 'diaper' | 'sleep' | 'pumping' | 'growth' | 'discard'
+  // 'discard' (0015): milk thrown out, never editable. 'started_discard' and
+  // 'combine' (0016): a started bottle thrown out, bottles combined — also
+  // read-only. app/history/page.tsx builds an i18n key from this union —
+  // `history.kind.<kind>` exists for each.
+  kind:
+    | 'feeding'
+    | 'nursing'
+    | 'diaper'
+    | 'sleep'
+    | 'pumping'
+    | 'growth'
+    | 'discard'
+    | 'started_discard'
+    | 'combine'
   /** Stands on its own: "Diaper · wet". */
   what: string
   /** For a view that already labels the kind: "Wet". */
