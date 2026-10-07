@@ -177,3 +177,11 @@ código; 0.14.0 propuesta con su texto de CHANGELOG, **sin** bump en
 v5); `docs/plan-pruebas-v5.md` §5 completado. Contradicción encontrada y no
 tocada: `CLAUDE.md` §6 sigue diciendo "RLS en las 15 tablas"; hoy son 19 en
 producción y 22 con 0016 (todas con RLS).
+
+### QA-5 (director, verificación final) — reversa no determinista
+`pnpm test:all` final: `milkV5Rollback` C-4 falló una vez (`expected
+'170|150|20|M1=70,M2=30,M3=50' to be '…M1=40,M2=60,M3=50'`); aislado, 1 de 4
+corridas fallaba. Causa: `rollback-leche-v5.sql` elegía "la toma más nueva" por
+`created_at`, que es igual para porciones de una misma transacción; el
+desempate por uuid era al azar. Arreglo: ordenar por `feedings.fed_at`. Después:
+6/6 corridas pasan.

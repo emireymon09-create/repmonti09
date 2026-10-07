@@ -224,9 +224,12 @@ begin
 
     -- 1. Lo servido: las porciones más nuevas pasan a los que dieron.
     for d in
-      select * from milk_drawdowns
-       where container_id = r.id and voided_at is null
-       order by created_at desc, id desc
+      -- La toma más NUEVA por su hora (fed_at), no por created_at: varias
+      -- porciones guardadas en una misma transacción (o sincronizadas juntas)
+      -- comparten created_at y el desempate por id sería al azar.
+      select dd.* from milk_drawdowns dd join feedings f on f.id = dd.feeding_id
+       where dd.container_id = r.id and dd.voided_at is null
+       order by f.fed_at desc, dd.created_at desc, dd.id desc
     loop
       exit when v_need <= 0;
       v_move := least(d.amount_ml, v_need);
