@@ -4,6 +4,12 @@ Every version of Amelia, newest first. The current version is the `version`
 field in `package.json`; this file is the history. A test fails if the two
 disagree. Shown in the app under the settings gear → Version history.
 
+## [0.13.1] - 2026-10-07
+
+- **Nothing in the app changed.** A short notes file (`GROK.md`) was added for the Grok Bot
+  agent that works on this project, with a checklist for its role. The hard rules still live in
+  `CLAUDE.md`.
+
 ## [0.13.0] - 2026-10-06
 
 Breast milk is now kept in the app bottle by bottle, in your reusable bottles.
