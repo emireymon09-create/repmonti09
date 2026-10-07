@@ -12,7 +12,9 @@ entero: un auditor que arregla mientras mira deja de mirar.
 > Supabase (PostgREST, Auth, RLS), sin ORM, CSS plano, pnpm, Vitest.
 >
 > Es una app de seguimiento de bebé para uso doméstico, usada por dos padres
-> desde el teléfono y desde una pantalla de pared de 27" en modo kiosco.
+> sobre todo desde el teléfono (lo primario), y también desde una pantalla
+> táctil en el cambiador y como una tarjeta del dashboard de Home Assistant en
+> una pantalla de pared de 27".
 >
 > **Antes de leer nada, leé `CLAUDE.md`, `PROJECT.md` y `docs/manual-buenas-practicas.md`.**
 >

@@ -38,6 +38,20 @@ export type Feeding = {
   feeding_type: FeedingType
   amount_ml: number | null
   notes: string | null
+  /**
+   * The breakdown of a bottle logged through the milk inventory (0014):
+   * breast milk served from containers, and formula on top. Both null on a
+   * feeding logged before that — the "legacy" rows, still fully editable.
+   * Written by the server (log_bottle_feed), never typed by a page.
+   */
+  breast_milk_ml?: number | null
+  formula_ml?: number | null
+  /**
+   * "Sobró X oz" (0015, D-10): what the baby left in the bottle. Statistics
+   * only — it never gives milk back to a container and never counts as
+   * discarded milk. Null = not known / nothing left. At most `amount_ml`.
+   */
+  leftover_ml?: number | null
 }
 
 export type DiaperChange = {
@@ -80,9 +94,84 @@ export type PumpingSession = {
   id: string
   pumped_at: string
   side: PumpSide
+  /** The total, written by the server as left + right (0014). */
   amount_ml: number | null
   notes: string | null
+  /** Each breast on its own (0014). Null on sessions logged before that. */
+  left_ml?: number | null
+  right_ml?: number | null
 }
+
+/** Where a container of expressed milk is kept. Only the fridge is used today. */
+export type MilkLocation = 'fridge' | 'freezer'
+
+/**
+ * One physical container of expressed milk (0014): the bottle with "M7" on
+ * its tape. Created by the server together with the pumping session that
+ * filled it; `remaining_ml` goes down as bottles are served from it.
+ */
+export type MilkContainer = {
+  id: string
+  source_session_id: string | null
+  label: string
+  amount_ml: number
+  remaining_ml: number
+  stored_at: string
+  location: MilkLocation
+  expires_at: string
+  voided_at?: string | null
+  /**
+   * When it stopped holding its number (0015): emptied by bottles, or
+   * discarded. Null = occupied (if not voided). Set by the server; the
+   * offline view sets it too while the write is queued.
+   */
+  released_at?: string | null
+  /**
+   * Milk that came back from a bottle (voided or edited down) or from a
+   * pumping session edited up, and could not go back in: the container was
+   * discarded, voided, or its number already held by another one (D-9, AJ-4).
+   * amount = served + discarded + lost + remaining (docs/arquitectura-v4.md §2.1).
+   */
+  lost_ml?: number
+}
+
+/**
+ * Expired milk thrown away with "Desechar" (0015, `milk_discards`): ALL that
+ * was left in one container (D-5). Not editable or undoable in v4 (D-11).
+ * `label` is the container's, read along with it for display.
+ */
+export type MilkDiscard = {
+  id: string
+  container_id: string
+  amount_ml: number
+  discarded_at: string
+  reason: 'expired'
+  label?: string | null
+  voided_at?: string | null
+}
+
+/**
+ * One portion of a bottle: how much of one container went into one feeding
+ * (0014). `label` is the container's, read along with it for display.
+ */
+export type MilkDrawdown = {
+  id: string
+  feeding_id: string
+  container_id: string
+  amount_ml: number
+  label?: string | null
+  voided_at?: string | null
+}
+
+/** The pediatrician's storage rules, one set per family (0014, on `babies`). */
+export type MilkRules = {
+  milk_room_hours: number
+  milk_fridge_days: number
+  milk_freezer_months: number
+}
+
+/** The rules plus how many physical bottles (M1…MN) there are (0015, D-23). */
+export type MilkSettings = MilkRules & { milk_bottle_count: number }
 
 export type GrowthMeasurement = {
   id: string
@@ -140,7 +229,9 @@ export type WithPending<T> = T & { pending?: boolean }
 export type ActivityEntry = {
   id: string
   at: string
-  kind: 'feeding' | 'nursing' | 'diaper' | 'sleep' | 'pumping' | 'growth'
+  // 'discard' (0015): milk thrown out, never editable. app/history/page.tsx
+  // builds an i18n key from this union — `history.kind.discard` exists.
+  kind: 'feeding' | 'nursing' | 'diaper' | 'sleep' | 'pumping' | 'growth' | 'discard'
   /** Stands on its own: "Diaper · wet". */
   what: string
   /** For a view that already labels the kind: "Wet". */

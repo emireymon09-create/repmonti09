@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { runInNewContext } from 'node:vm'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { en, type MessageKey, type Plural } from '@/lib/i18n/en'
 import { es } from '@/lib/i18n/es'
 import { LANG_BOOT_SCRIPT, LANG_KEY } from '@/lib/i18n/boot'
@@ -73,6 +76,33 @@ describe('diccionarios', () => {
   })
 })
 
+describe('U-63: claves de v3 que v4 borró', () => {
+  const gone = (k: string) => k.startsWith('milk.tape') || k === 'bottle.timeOnly'
+
+  it('milk.tape* y bottle.timeOnly no existen en en ni en es', () => {
+    expect(Object.keys(en).filter(gone)).toEqual([])
+    expect(Object.keys(es).filter(gone)).toEqual([])
+  })
+
+  it('y ningún archivo de la app las usa', () => {
+    const root = fileURLToPath(new URL('../../', import.meta.url))
+    const hits: string[] = []
+    const walk = (dir: string) => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const p = join(dir, e.name)
+        if (e.isDirectory()) walk(p)
+        else if (
+          /\.(ts|tsx)$/.test(e.name) &&
+          /['"`](milk\.tape|bottle\.timeOnly)/.test(readFileSync(p, 'utf8'))
+        )
+          hits.push(p.slice(root.length))
+      }
+    }
+    for (const d of ['app', 'components', 'lib']) walk(join(root, d))
+    expect(hits).toEqual([])
+  })
+})
+
 describe('translate con una clave armada desde datos que no existe', () => {
   it('muestra el último segmento (el valor crudo) y avisa solo fuera de producción', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
@@ -108,10 +138,12 @@ describe('translate', () => {
   })
 
   it('elige singular o plural por count', () => {
-    expect(translate('en', 'milk.counted', { count: 1 })).toBe('1 session counted')
-    expect(translate('en', 'milk.counted', { count: 0 })).toBe('0 sessions counted')
-    expect(translate('es', 'milk.counted', { count: 1 })).toBe('1 sesión contada')
-    expect(translate('es', 'milk.counted', { count: 3 })).toBe('3 sesiones contadas')
+    // (Usaba 'milk.counted', que se fue con el total de sesiones de Leche el
+    // 4 oct 2026: lo que hay ahora se cuenta en onzas, no en sesiones.)
+    expect(translate('en', 'age.days', { count: 1 })).toBe('1 day old')
+    expect(translate('en', 'age.days', { count: 0 })).toBe('0 days old')
+    expect(translate('es', 'age.days', { count: 1 })).toBe('1 día')
+    expect(translate('es', 'age.days', { count: 3 })).toBe('3 días')
     expect(translate('es', 'sync.offlinePending', { count: 2 })).toBe(
       'Sin conexión · 2 registros guardados en este dispositivo, todavía sin sincronizar.',
     )

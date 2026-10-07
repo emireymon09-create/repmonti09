@@ -198,6 +198,7 @@ export const en = {
   'sync.thing.doctor_appointments': 'Appointment',
   'sync.thing.babies': 'Baby profile',
   'sync.thing.other': 'Entry',
+  'sync.thing.milk_discards': 'Discarded milk',
   'sync.nothingSaved':
     'Offline — nothing is saved on this device yet. It will show up once there’s a connection.',
 
@@ -231,7 +232,6 @@ export const en = {
   'dash.label.sleepStart': 'Sleep start',
   'dash.label.sleepEnd': 'Sleep end',
   'dash.birthWeightNote': 'Birth weight',
-  'dash.bottleNotNumber': 'Bottle amount has to be a number of {unit}.',
   'dash.expecting': 'Expecting {name}',
   'dash.notBornYet': 'Not born yet',
   'dash.notBornNote':
@@ -247,7 +247,6 @@ export const en = {
   'dash.stopNursing': 'Stop nursing',
   'dash.startOn': 'Start on the {side} next',
   'dash.nextFeeding': 'Next feeding {time} · {due}',
-  'dash.bottleAmount': 'Bottle amount in {unit}',
   'dash.bottle': 'Bottle',
   'dash.detected': 'detected',
   'dash.asleep': 'asleep',
@@ -324,20 +323,200 @@ export const en = {
   'milk.title': 'Milk',
   'milk.couldNotLoad': 'Couldn’t load sessions — {error}',
   'milk.amountNotNumber': 'Amount has to be a number.',
+  'milk.amountTooSmall':
+    'That is too little to keep as a bottle. Leave it empty if no milk came out.',
   'milk.logged': 'Session logged',
-  'milk.removeConfirm': 'Remove this session? It comes out of the stash total too.',
+  'milk.removeConfirm': 'Remove this session? Its milk comes out of what there is too.',
+  'milk.removeConfirmLegacy':
+    'Remove this session? It was logged before milk was kept by container, so what there is doesn’t change.',
+  'milk.removeConfirmNoMilk':
+    'Remove this session? It has no amount, so what there is doesn’t change.',
   'milk.logTitle': 'Log a pumping session',
-  'milk.amount': 'Amount, {unit}',
   'milk.when': 'When (defaults to now)',
   'milk.logSession': 'Log session',
-  'milk.inStash': 'In the stash',
-  'milk.counted': { one: '{count} session counted', other: '{count} sessions counted' },
-  'milk.since': ' since {date}',
+  'milk.inStash': 'What there is',
   'milk.empty': 'No sessions logged yet.',
-  'milk.editSession': 'Edit session',
   'milk.noAmount': 'No amount',
   'milk.editInHistory': 'Fix or delete a session in History',
   'milk.sessions': 'Sessions',
+  'milk.live.title': 'Pump now',
+  'milk.live.start': 'Start',
+  'milk.live.running': 'Since {time}',
+  'milk.live.finish': 'Finish and log',
+  'milk.live.cancel': 'Discard timer',
+  'milk.live.cancelConfirm': 'Stop the timer without logging anything?',
+  'milk.live.hint':
+    'The timer keeps running on this device even if you reload. The other phone doesn’t see it.',
+  'milk.sidesHint': 'Each breast on its own. Leave a side empty if it gave nothing.',
+  'milk.left': 'Left, {unit}',
+  'milk.right': 'Right, {unit}',
+  'milk.sidesLine': 'Left {left} · Right {right}',
+  'milk.stashNote': 'Breast milk only, from containers that can still be used.',
+  'milk.stashPending': 'This includes entries not synced yet.',
+  'milk.noContainers': 'No milk stored yet.',
+  'milk.containerLine': '{label} · {amount} left',
+  'milk.expires': 'Use by {when}',
+  'milk.rulesHint': 'How long milk lasts is set in Settings → Milk storage.',
+  'milk.nothingSaved': 'Offline, and nothing saved on this device yet.',
+  'milk.servedNote': '{amount} already served from it',
+  'milk.legacyHint':
+    'Logged before left and right were separate: its {amount} total stays as it is unless you type the sides.',
+  'milk.deletedPending': 'Deleted on this device — not synced yet.',
+  'milk.bottleNeeded': 'Choose which bottle the milk went into.',
+  'milk.discardedLine': 'Discarded milk · {label} · {amount}',
+  'milk.leftUnit': 'Unit for the left side',
+  'milk.rightUnit': 'Unit for the right side',
+  'milk.bottle': 'Bottle',
+  'milk.bottlePick':
+    'Which bottle did the milk go into? The ones with milk in them can’t be chosen.',
+  'milk.slotFree': 'Free',
+  'milk.slotTaken': 'Has {amount} · {when}',
+  'milk.slotJustTaken': 'Just taken on another phone',
+  'milk.outOfRange': 'outside M1–M{n}',
+  'milk.bottlesUnknown':
+    'Offline: this phone doesn’t know which bottles have milk. If you pick one that does, you’ll be told when it syncs.',
+  'milk.bottlesFromSaved':
+    'Offline: the bottles as this phone saw them {when}. The other phone may have used one since.',
+  'milk.loggedIn': 'Session logged in {label}.',
+  'milk.queuedIn': 'Saved on this device in {label} — not synced yet.',
+  'milk.storedAt': 'In the fridge since {when}',
+  'milk.expiredShort': 'Expired',
+  'milk.discard': 'Discard',
+  'milk.discardAria': 'Discard {label}',
+  'milk.discardConfirm':
+    'Discard {label} ({amount})? It’s logged as thrown-out milk and the bottle becomes free.',
+  'milk.discardedOk': '{label} discarded — the bottle is free.',
+  'milk.discardedTotal': 'Discarded milk',
+  'milk.discardedNote': 'Expired milk thrown out with “Discard”, all of it so far.',
+  'milk.notReturned':
+    '{amount} didn’t go back to {label}: that bottle was discarded or already has another pumping session in it.',
+  'milk.notReturnedReused':
+    '{amount} doesn’t go back to {label}: that bottle already has another pumping session in it.',
+  'milk.notReturnedDiscarded': '{amount} doesn’t go back to {label}: it was discarded.',
+  'milk.notReturnedGone':
+    '{amount} doesn’t go back to {label}: that pumping session no longer exists.',
+  'milk.byThisPhone': 'By what this phone knows: {text}',
+
+  // ------------------------------------------------------------ bottle (0014)
+  'bottle.formulaPart': 'formula {amount}',
+  'bottle.leftoverPart': '{amount} left over',
+  'bottle.panelTitle': 'Bottle',
+  'bottle.planFormula': '{amount} of formula',
+  'bottle.stashLeft': 'Breast milk left: {amount}',
+  'bottle.logAsIs': 'Log as is',
+  'bottle.changeHint': 'Or change it — any container, any amount — and log the changes:',
+  'bottle.logChanges': 'Log with changes',
+  'bottle.close': 'Close',
+  'bottle.pickContainer': 'Choose a container for every milk row, or remove the row.',
+  'bottle.sameTwice': '{label} is in two rows. Put it in one.',
+  'bottle.amountFor': 'How much from {label}?',
+  'bottle.notEnough': '{label} only has {amount} left.',
+  'bottle.formulaNotNumber': 'Formula has to be a number.',
+  'bottle.empty': 'There’s nothing in this bottle yet.',
+  'bottle.noMilk': 'No breast milk that can be used right now — it’s all formula.',
+  'bottle.containerAria': 'Milk row {n}: container',
+  'bottle.chooseContainer': 'Container…',
+  'bottle.containerOption': '{label} · {amount} left',
+  'bottle.amountAria': 'Milk row {n}: amount, {unit}',
+  'bottle.planChanged': 'The suggestion changed while you were editing.',
+  'bottle.startOver': 'Start over from it',
+  'bottle.removeConfirm':
+    'Delete this bottle? The milk it took goes back to each container; the formula is just not counted anymore.',
+  'bottle.removeRow': 'Remove',
+  'bottle.addRow': '+ Add row',
+  'bottle.formula': 'Formula',
+  'bottle.total': 'Total: {amount}',
+  'bottle.leftover': 'Left over (optional)',
+  'bottle.leftoverHint':
+    'What the baby didn’t drink. Only for the numbers: it doesn’t go back to any bottle.',
+  'bottle.leftoverAria': 'Left over, {unit}',
+  'bottle.leftoverUnit': 'Unit for what was left over',
+  'bottle.leftoverTooMuch': 'More was left over than was served.',
+  'bottle.leftoverNotNumber': 'Left over has to be a number.',
+  'bottle.editTitle': 'Correct this bottle',
+  'bottle.editMilk': 'Breast milk, {unit}',
+  'bottle.editFormula': 'Formula, {unit}',
+  'bottle.milkNotNumber': 'Breast milk has to be a number.',
+  'bottle.editPlan': 'When you save:',
+  'bottle.editReturns': '{amount} goes back to {label}',
+  'bottle.editTakes': '{amount} comes out of {label}',
+  'bottle.editNoMilkChange': 'The breast milk doesn’t change.',
+  'bottle.estimated': '≈ {milk} breast milk + {formula} formula (estimated)',
+  'bottle.estimatedHint':
+    'Estimated from the pumping logged back then: this bottle is from before milk was counted bottle by bottle. It can’t be edited and doesn’t change what there is.',
+  'dash.give': 'Give {amount}',
+
+  // ------------------------------------------------------------ milk storage (0014)
+  'milkRules.title': 'Milk storage',
+  'milkRules.note':
+    'The pediatrician’s rules, for the whole family. Each new pumping session gets its use-by time from them when it is saved.',
+  'milkRules.room': 'At room temperature',
+  'milkRules.fridge': 'In the fridge',
+  'milkRules.freezer': 'In the freezer',
+  'milkRules.hours': 'hours',
+  'milkRules.days': 'days',
+  'milkRules.months': 'months',
+  'milkRules.problem.empty': '“{field}” can’t be empty.',
+  'milkRules.problem.number': '“{field}” has to be a number.',
+  'milkRules.problem.whole': '“{field}” has to be a whole number of months.',
+  'milkRules.problem.range': '“{field}” has to be more than 0 and at most {max}.',
+  'milkRules.offline': 'You’re offline. Nothing was saved — try again when you’re back online.',
+  'milkRules.saved': 'Saved for the whole family.',
+  'milkRules.couldNotSave': 'Couldn’t save — {error}',
+  'milkRules.couldNotLoad': 'Couldn’t load the storage rules — {error}',
+  'milkRules.bottles': 'Milk bottles',
+  'milkRules.bottlesUnit': 'bottles',
+  'milkRules.bottlesHint': 'How many reusable bottles there are. Milk offers M1 up to this number.',
+  'milkRules.notUsedYet': 'Not used yet',
+  'milkRules.fridgeOnlyNote':
+    'For now all milk is counted as being in the fridge: only the fridge rule is used.',
+  'milkRules.problem.bottles': '“{field}” has to be a whole number from {min} to {max}.',
+  'milkRules.bottlesAbove':
+    '{labels} still have milk: they stay visible until they’re used or discarded.',
+
+  // ------------------------------------------------------------ milk errors (0014)
+  'milkError.overdraw':
+    '{label} doesn’t have that much milk left — someone may have just served from it. Choose again.',
+  'milkError.containerUnusable':
+    '{label} can’t be used for this bottle: it was deleted, it ran out, or it had expired by then. Choose another.',
+  'milkError.containerUnknown':
+    'One of the containers in this bottle no longer exists or isn’t this baby’s. Choose again.',
+  'milkError.alreadyServed':
+    'Milk from {label} was already served. Delete those bottles first; then this session can be changed.',
+  'milkError.servedExceedsAmount':
+    'More than that was already served from {label}. The amount can’t go below what was served.',
+  'milkError.idempotencyConflict':
+    'This entry was already saved with different details. Delete it and log it again.',
+  'milkError.rpcOnly':
+    'This change has to be made from the latest version of the app. Reload and try again.',
+  'milkError.badInput': 'Something in this entry isn’t valid. Check the amounts and try again.',
+  'milkError.babyNotFound': 'This baby isn’t in your family on the server.',
+  'milkError.notSignedIn': 'You’re signed out. Sign in again and try again.',
+  'milkError.sessionGone':
+    'That session no longer exists — it may have been deleted on another phone.',
+  'milkError.bottleTaken':
+    'Bottle {label} already has milk from another pumping session — another phone may have just used it. Nothing was saved: choose another bottle.',
+  'milkError.bottleTakenQueued':
+    'Bottle {label} already has milk from another pumping session — another phone used it, or this one picked it without a connection. This session never reached the server: tap “Discard this entry” and log it again in another bottle.',
+
+  // ------------------------------------------------------------ milk errors (0015)
+  'milkError.notExpired':
+    'By the server’s clock, the milk in {label} hasn’t expired yet. Nothing was thrown out.',
+  'milkError.notExpiredUnknown':
+    'By the server’s clock, this milk hasn’t expired yet. Nothing was thrown out.',
+  'milkError.notEnough':
+    'There isn’t that much breast milk that could be used at that time — only {amount}. Nothing was changed.',
+  'milkError.notEnoughUnknown':
+    'There isn’t that much breast milk that could be used at that time. Nothing was changed.',
+  'milkError.editConflict':
+    'This feeding was changed on another phone while you were editing it. Nothing was saved: open it again to see how it is now.',
+  'milkError.futureTime': 'That time is in the future. Check the time and try again.',
+  'milkError.feedingGone':
+    'That feeding no longer exists — it may have been deleted on another phone.',
+  'milkError.notInventory':
+    'This feeding is from before milk was counted bottle by bottle, so its milk and formula can’t be changed here. Its time, total and note can.',
+  'milkError.invariantBroken':
+    'The milk totals don’t add up on the server. Nothing was changed — let whoever looks after the app know.',
 
   // ------------------------------------------------------------ growth
   'growth.title': 'Growth',
@@ -411,6 +590,7 @@ export const en = {
   'history.kind.pumping': 'Pumping',
   'history.rowOptions': 'Options: {kind}, {time}',
   'history.kind.growth': 'Growth',
+  'history.kind.discard': 'Discarded milk',
 
   // ------------------------------------------------------------ version
   'version.title': 'Version history',

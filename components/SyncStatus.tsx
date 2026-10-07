@@ -2,7 +2,7 @@
 
 import { useSync } from '@/lib/useSync'
 import { isDeletion, type PendingWrite } from '@/lib/queue'
-import { describeWrite, discardPendingPlan } from '@/lib/db'
+import { describeWrite, discardPendingPlan, milkErrorText } from '@/lib/db'
 import { Banner, Btn } from '@/components/ui'
 import type { SeenState } from '@/lib/lastSeen'
 import { timeAgo } from '@/lib/format'
@@ -118,7 +118,7 @@ export function SyncErrorBanner({
 
   return (
     <Banner kind="error">
-      {t('common.couldNotSync', { error })}
+      {t('common.couldNotSync', { error: milkErrorText(error, lang, 'sync') })}
       {failed && what && (
         <>
           <div className="meta">

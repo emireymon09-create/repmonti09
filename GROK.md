@@ -29,7 +29,7 @@ Order of surfaces for this household:
 3. **HA 27" wall** — Amelia is **one card/panel** on the Home Assistant
    dashboard, not a dedicated full-screen kiosk
 
-Open PR #2 (`docs/display-priority`) writes this into `PROJECT.md` /
+PR #2 (`docs/display-priority`, merged) wrote this into `PROJECT.md` /
 `design.md`. Do not push `design.md`'s primary-target wording further
 without asking Emilio. `CLAUDE.md` §1 still describes the wall as a design
 target for layout scale — that hard rule stands until he says otherwise.
@@ -64,15 +64,29 @@ order).
 
 ---
 
-## Milk work — do not implement schema yet
+## Milk — v4 (reusable bottles) is released
 
-Luis has a milk rules doc. Emilio's answers are in review with Ana. Until
-an **approved** rules proposal lands and Emilio OK's implementing it:
+Released in **0.13.0** (see `CHANGELOG.md`). Current state:
 
-- Do **not** add milk schema / migrations / stash bottle UI as product code
-- Answer-sheet and design talk is fine; shipping schema is not
+- Pumping logs **left and right** separately (each in oz or ml); the server
+  stores the total. Milk goes into a reusable bottle **M1–M6** (count set
+  in Settings → Milk storage → Milk bottles, 1–30, default 6). None is
+  pre-picked; a bottle still holding milk can't be chosen.
+- Milk page lists usable milk per bottle; fridge milk lasts 4 days from
+  pumping start (configurable). Expired bottles stop counting; "Discard"
+  frees the bottle and adds to the "Discarded milk" total.
+- Today suggests each bottle (oldest milk first, topped up with formula);
+  optional "Left over" is stats only. Past bottles are editable from
+  History / Feeding with a server-side check before saving.
+- Schema: `supabase/migrations/0014_milk_inventory.sql` +
+  `0015_milk_phase1_2.sql`; logic in `lib/milk.ts`, writes via `lib/db.ts`.
+  Detail: `docs/milk-business-logic.md`, `docs/spec-feeding-v4.md`,
+  `docs/milk-v4-para-aprobar.md`, rollback `docs/rollback-leche-v4.sql`,
+  deploy `docs/runbook-despliegue-v4.md`.
+- Before claiming 0014/0015 are applied in the cloud, verify it
+  (`docs/verificar-antes-v4.sql`) — older docs disagree on this.
 
-Propose in `proposals/` if useful; wait for the green light to build.
+Changes to milk rules still need Emilio's OK; follow `CLAUDE.md`.
 
 ---
 
@@ -83,8 +97,7 @@ Propose in `proposals/` if useful; wait for the green light to build.
 - Detail: `proposals/nursery-camera-integration.md`
 - Video stays on-LAN; Amelia only consumes derived events
 
-`PROJECT.md` on `main` may still say Argus / HA Green until PR #2 merges —
-prefer the proposal and Emilio's correction when they disagree.
+`PROJECT.md` on `main` has the corrected camera (PRs #1/#2 merged).
 
 ---
 

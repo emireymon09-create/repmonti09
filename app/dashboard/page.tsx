@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useBaby } from '@/lib/useBaby'
 import { NoBaby } from '@/components/NoBaby'
@@ -10,12 +10,17 @@ import {
   endNursing,
   endSleep,
   logDiaper,
-  logFeeding,
   keepLastGood,
   mergePending,
   pendingWrites,
   familySettings,
+  lastBottleFeeding,
   listAppointments,
+  listContainers,
+  listDiscards,
+  listDrawdowns,
+  logBottleFeed,
+  milkErrorText,
   recentDiapers,
   recentFeedings,
   recentNursing,
@@ -30,7 +35,18 @@ import {
 import { useSync } from '@/lib/useSync'
 import { SeenNote, SyncBar, SyncErrorBanner } from '@/components/SyncStatus'
 import { lastGood, seenKey, type LastGood, type SeenState } from '@/lib/lastSeen'
-import { AmountUnit } from '@/components/AmountUnit'
+import { BottleBuilder, sameAsPlan, type BottleValue } from '@/components/BottleBuilder'
+import { LeftoverField, type LeftoverValue } from '@/components/LeftoverField'
+import { validateLeftover } from '@/lib/milkBottles'
+import {
+  applyPendingInventory,
+  stashMl,
+  suggestPlan,
+  suggestedTotalMl,
+  rereadsInventory,
+  usableContainers,
+  type BottlePlan,
+} from '@/lib/milk'
 import { useT } from '@/lib/i18n/react'
 import {
   lastFeedingEvent,
@@ -53,10 +69,12 @@ import type {
   DiaperType,
   DoctorAppointment,
   Feeding,
+  MilkContainer,
+  MilkDiscard,
+  MilkDrawdown,
   NursingSession,
   Side,
   SleepSession,
-  VolumeUnit,
   WithPending,
 } from '@/lib/types'
 import { looksOffline, type PendingWrite } from '@/lib/queue'
@@ -65,6 +83,7 @@ import {
   apptWhen,
   clockTime,
   DISPLAY_UNIT,
+  formatMilkOz,
   dueRelative,
   durationBetween,
   elapsed,
@@ -73,7 +92,6 @@ import {
   lbOzToKg,
   longDate,
   timeAgo,
-  unitToMl,
 } from '@/lib/format'
 
 /** Newest first, after queued rows have been folded in out of order. */
@@ -95,8 +113,28 @@ type ServerRows = {
    * horas. Habían salido el 22 sep, cuando Today se redujo a tres tarjetas.
    */
   appt: DoctorAppointment[]
+  /**
+   * El inventario de leche (0014): lo que hay, para la sugerencia del
+   * biberón, y la última toma de biberón — que puede no estar entre las
+   * pocas más nuevas — de la que sale cuánto sugerir.
+   */
+  containers: MilkContainer[]
+  drawdowns: MilkDrawdown[]
+  /** Discarded milk (0015): a discarded bottle is free, not in what there is. */
+  discards: MilkDiscard[]
+  lastBottle: Feeding[]
 }
-const NO_ROWS: ServerRows = { feedings: [], diapers: [], nursing: [], sleep: [], appt: [] }
+const NO_ROWS: ServerRows = {
+  feedings: [],
+  diapers: [],
+  nursing: [],
+  sleep: [],
+  appt: [],
+  containers: [],
+  drawdowns: [],
+  discards: [],
+  lastBottle: [],
+}
 
 /**
  * Only the keys this page reads. A copy saved on this device by an older
@@ -110,6 +148,10 @@ function ownRows(rows: ServerRows): ServerRows {
     nursing: rows.nursing,
     sleep: rows.sleep,
     appt: rows.appt ?? [],
+    containers: rows.containers ?? [],
+    drawdowns: rows.drawdowns ?? [],
+    discards: rows.discards ?? [],
+    lastBottle: rows.lastBottle ?? [],
   }
 }
 
@@ -122,6 +164,8 @@ export default function Dashboard() {
   const [nursing, setNursing] = useState<WithPending<NursingSession>[]>([])
   const [sleep, setSleep] = useState<WithPending<SleepSession>[]>([])
   const [appointments, setAppointments] = useState<DoctorAppointment[]>([])
+  const [containers, setContainers] = useState<WithPending<MilkContainer>[]>([])
+  const [lastBottle, setLastBottle] = useState<Feeding[]>([])
   // Los umbrales de la familia (0012). Hasta que la lectura vuelva valen los
   // defaults, que son los mismos números que el DEFAULT de la columna: así la
   // cuenta regresiva funciona antes de que nadie entre a Settings.
@@ -132,10 +176,15 @@ export default function Dashboard() {
   const [birthOz, setBirthOz] = useState('')
   const [birthIn, setBirthIn] = useState('')
   const [birthBusy, setBirthBusy] = useState(false)
-  const [bottleAmount, setBottleAmount] = useState('')
-  // What the number in that field is in, for THIS bottle only: never saved,
-  // back to ounces on every mount (components/AmountUnit.tsx).
-  const [bottleUnit, setBottleUnit] = useState<VolumeUnit>(DISPLAY_UNIT)
+  // The bottle panel (0014): opened by the bottle button, inline under the
+  // three cards — this app has no overlay modals (design.md §4). Focus goes
+  // into it on open and back to the button on close.
+  const [bottleOpen, setBottleOpen] = useState(false)
+  const [built, setBuilt] = useState<BottleValue | null>(null)
+  // "Sobró" (V4-41): optional, for both "Log as is" and "Log with changes".
+  const [leftover, setLeftover] = useState<LeftoverValue>({ ml: null, bad: false })
+  const bottleBtn = useRef<HTMLButtonElement>(null)
+  const panelHead = useRef<HTMLHeadingElement>(null)
   // "She started five minutes before I hit the button": minutes to move a
   // running session's start back. One field per card, so a number typed in
   // one is never applied to the other.
@@ -202,6 +251,17 @@ export default function Dashboard() {
     // Los turnos no se editan desde acá, así que no pasan por mergePending:
     // la tarjeta solo los lee.
     setAppointments(rows.appt ?? [])
+    // The queue folded into what there is: a bottle given offline already
+    // came out of its containers, a session pumped offline is already in.
+    setContainers(
+      applyPendingInventory(
+        rows.containers ?? [],
+        rows.drawdowns ?? [],
+        rows.discards ?? [],
+        queued,
+      ).containers,
+    )
+    setLastBottle(rows.lastBottle ?? [])
   }, [])
 
   const refresh = useCallback(
@@ -228,12 +288,16 @@ export default function Dashboard() {
         setSeen(last.state(offline))
       }
 
-      const [f, d, n, s, a, queued] = await Promise.all([
+      const [f, d, n, s, a, c, dd, dc, lb, queued] = await Promise.all([
         recentFeedings(babyId),
         recentDiapers(babyId),
         recentNursing(babyId),
         recentSleep(babyId),
         listAppointments(babyId),
+        listContainers(babyId),
+        listDrawdowns(babyId),
+        listDiscards(babyId),
+        lastBottleFeeding(babyId),
         pendingWrites(),
       ])
       if (read !== latestRead.current) return
@@ -244,6 +308,10 @@ export default function Dashboard() {
         nursing: n,
         sleep: s,
         appt: a,
+        containers: c,
+        drawdowns: dd,
+        discards: dc,
+        lastBottle: { ...lb, data: lb.data ? [lb.data] : [] },
       })
       setSeen(last.settle(rows, error))
 
@@ -398,29 +466,84 @@ export default function Dashboard() {
     setBirthBusy(false)
   }
 
-  function onBottle() {
-    const raw = bottleAmount.trim()
-    const amount = raw === '' ? null : Number(raw)
-    if (amount !== null && (!Number.isFinite(amount) || amount <= 0)) {
-      setErr(t('dash.bottleNotNumber', { unit: t(`unit.${bottleUnit}`) }))
+  // ------------------------------------------------------------ the bottle
+
+  // How much to suggest: the last bottle's total (queued ones included), or
+  // the 3 oz starting value when there never was one (lib/milk.ts).
+  const suggestedMl = suggestedTotalMl([...feedings, ...lastBottle])
+  // Recomputed every second (the clock ticks), but they only CHANGE when the
+  // amount, the containers or an expiry do. The builder gets the same objects
+  // while they are equal: a new one each second would make it redo its work
+  // (or, without its own guard, re-render with this page forever).
+  const usableSig = JSON.stringify(usableContainers(containers, now))
+  const usable = useMemo<WithPending<MilkContainer>[]>(() => JSON.parse(usableSig), [usableSig])
+  const planSig = JSON.stringify(suggestPlan(suggestedMl, usable, now))
+  const plan = useMemo<BottlePlan>(() => JSON.parse(planSig), [planSig])
+
+  function planLine(p: BottlePlan): string {
+    const parts = p.portions.map((x) => `${x.label} ${formatMilkOz(x.ml)}`)
+    if (p.formulaMl > 0) parts.push(t('bottle.planFormula', { amount: formatMilkOz(p.formulaMl) }))
+    return `${parts.join(' + ')} = ${formatMilkOz(p.totalMl)}`
+  }
+
+  function openBottle() {
+    setErr(null)
+    setBottleOpen(true)
+    // After the panel is painted.
+    setTimeout(() => panelHead.current?.focus(), 0)
+  }
+
+  function closeBottle() {
+    setBottleOpen(false)
+    setTimeout(() => bottleBtn.current?.focus(), 0)
+  }
+
+  function logBottle(value: {
+    portions: { container_id: string; amount_ml: number }[]
+    formulaMl: number
+    containersPending: boolean
+  }) {
+    // "Sobró" is checked against what this bottle serves (V4-43, D-10).
+    const total = value.portions.reduce((sum, p) => sum + p.amount_ml, 0) + value.formulaMl
+    const leftoverProblem = leftover.bad ? 'number' : validateLeftover(leftover.ml, total)
+    if (leftoverProblem) {
+      setErr(
+        t(leftoverProblem === 'number' ? 'bottle.leftoverNotNumber' : 'bottle.leftoverTooMuch'),
+      )
       return
     }
-    // The column is ml and always was: the toggle only says what the typed
-    // number means. Nothing is converted to ounces on the way in — a
-    // ml → oz → ml round trip would lose precision and buy nothing, since
-    // every screen already renders ml as ounces (lib/format.ts).
-    const ml = amount === null ? null : unitToMl(amount, bottleUnit)
     run(t('dash.label.bottle'), async () => {
-      const res = await logFeeding(baby!.id, userId, 'bottle', ml)
-      if (!res.error) {
-        setBottleAmount('')
-        // Back to ounces with the field, not just on remount. A unit left
-        // stuck from the last bottle is the expensive failure here: a "4"
-        // typed after a save in ml is logged as 4 ml — 0.1 oz — and looks
-        // like a real entry. One bottle, one unit.
-        setBottleUnit(DISPLAY_UNIT)
-      }
-      return res
+      const res = await logBottleFeed(
+        baby!.id,
+        userId,
+        {
+          fed_at: new Date().toISOString(),
+          notes: null,
+          formula_ml: value.formulaMl,
+          portions: value.portions,
+          leftover_ml: leftover.ml,
+        },
+        { containersPending: value.containersPending },
+      )
+      if (!res.error) closeBottle()
+      // Refused because what's on screen is out of date (the other phone
+      // served from that container, it ran out or expired): read what there
+      // is again, so the panel stops offering the same impossible bottle.
+      // Rows the person typed stay; the builder says the suggestion changed.
+      else if (rereadsInventory(res.error)) refresh(baby!.id)
+      // The rejection in words: "M3 doesn't have that much milk left…"
+      return res.error ? { ...res, error: milkErrorText(res.error, lang) } : res
+    })
+  }
+
+  /** "Log as is": exactly the suggestion shown, one tap. */
+  function logAsIs() {
+    logBottle({
+      portions: plan.portions.map((p) => ({ container_id: p.containerId, amount_ml: p.ml })),
+      formulaMl: plan.formulaMl,
+      containersPending: plan.portions.some(
+        (p) => containers.find((c) => c.id === p.containerId)?.pending,
+      ),
     })
   }
 
@@ -745,26 +868,26 @@ export default function Dashboard() {
               </div>
             </>
           )}
-          {/* El biberón se carga cuando NO hay una toma de pecho corriendo:
-              ahí esta fila es la corrección del inicio. `row-wrap` porque a
-              390px el campo, el toggle de unidad y el botón no entran en una
-              sola línea. Sólidos salió de acá el 23 sep 2026: se sigue
-              viendo y corrigiendo lo ya registrado, pero no se crea más. */}
+          {/* El biberón (0014): una línea con cuánto dar y el botón de la
+              mamila, que abre el panel de abajo. Se carga cuando NO hay una
+              toma de pecho corriendo: ahí esta fila es la corrección del
+              inicio. Sólidos salió de acá el 23 sep 2026. */}
           {!activeNursing && (
-            <div className="row-tight row-wrap">
-              <input
-                className="input narrow"
-                value={bottleAmount}
-                onChange={(e) => setBottleAmount(e.target.value)}
-                inputMode="decimal"
-                placeholder={t(`unit.${bottleUnit}`)}
-                aria-label={t('dash.bottleAmount', { unit: t(`unit.${bottleUnit}`) })}
-              />
-              <AmountUnit value={bottleUnit} onChange={setBottleUnit} disabled={busy} />
-              <Btn disabled={busy} onClick={onBottle}>
-                {t('dash.bottle')}
-              </Btn>
-            </div>
+            <>
+              <div className="meta">{t('dash.give', { amount: formatMilkOz(suggestedMl) })}</div>
+              <div className="row-tight">
+                <Btn
+                  icon="milk"
+                  ref={bottleBtn}
+                  disabled={busy}
+                  ariaExpanded={bottleOpen}
+                  ariaControls="bottle-panel"
+                  onClick={() => (bottleOpen ? closeBottle() : openBottle())}
+                >
+                  {t('dash.bottle')}
+                </Btn>
+              </div>
+            </>
           )}
         </Card>
 
@@ -897,6 +1020,63 @@ export default function Dashboard() {
           )}
         </Card>
       </Grid>
+
+      {/* El panel del biberón (0014), inline y de ancho completo, debajo de
+          las tres tarjetas: en la pared no estira la de Comida (el grid las
+          iguala) y en el teléfono queda justo debajo del botón. */}
+      {bottleOpen && !activeNursing && (
+        <Card spanAll>
+          <div
+            id="bottle-panel"
+            className="stack"
+            onKeyDown={(e) => {
+              // Escape on an open <select> closes the select, not the panel.
+              if (e.key === 'Escape' && (e.target as HTMLElement).tagName !== 'SELECT') {
+                closeBottle()
+              }
+            }}
+          >
+            <h2 className="label" tabIndex={-1} ref={panelHead}>
+              {t('bottle.panelTitle')}
+            </h2>
+            <div className="value">{planLine(plan)}</div>
+            <div className="meta">
+              {t('bottle.stashLeft', { amount: formatMilkOz(stashMl(containers, now)) })}
+            </div>
+            {containers.some((c) => c.pending) && (
+              <div className="pending-tag">{t('milk.stashPending')}</div>
+            )}
+            {/* "Sobró", for both buttons below. Mounted with the panel:
+                closing it (after a save, too) starts it over, empty and in oz. */}
+            <LeftoverField id="dash-bottle-leftover" disabled={busy} onChange={setLeftover} />
+            <div className="row-tight">
+              <Btn disabled={busy} onClick={logAsIs}>
+                {t('bottle.logAsIs')}
+              </Btn>
+            </div>
+            <p className="meta">{t('bottle.changeHint')}</p>
+            <BottleBuilder
+              usable={usable}
+              plan={plan}
+              disabled={busy}
+              onChange={setBuilt}
+              idPrefix="dash-bottle"
+            />
+            <div className="row-tight row-wrap">
+              <Btn
+                variant="quiet"
+                disabled={busy || !built || !!built.problem || sameAsPlan(built, plan)}
+                onClick={() => built && logBottle(built)}
+              >
+                {t('bottle.logChanges')}
+              </Btn>
+              <Btn variant="quiet" disabled={busy} onClick={closeBottle}>
+                {t('bottle.close')}
+              </Btn>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* La próxima cita médica, DEBAJO de las tres tarjetas y solo dentro de
           las 36 horas previas. Se agrega, no reemplaza nada.

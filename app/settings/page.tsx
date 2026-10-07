@@ -30,7 +30,30 @@ import { useBaby } from '@/lib/useBaby'
 import { Btn, Card, Grid, Label, Nav, Page } from '@/components/ui'
 import { Banner } from '@/components/Banner'
 import { NursingAlerts } from '@/components/NursingAlerts'
-import { calendarFeed, familySettings, saveFamilySettings, type CalendarFeedInfo } from '@/lib/db'
+import {
+  calendarFeed,
+  familySettings,
+  listContainers,
+  milkErrorText,
+  milkRules,
+  saveFamilySettings,
+  saveMilkRules,
+  type CalendarFeedInfo,
+} from '@/lib/db'
+import {
+  DEFAULT_MILK_RULES,
+  MILK_RULE_LIMITS,
+  validateMilkRules,
+  type MilkRulesField,
+} from '@/lib/milk'
+import {
+  DEFAULT_BOTTLE_COUNT,
+  MAX_BOTTLE_COUNT,
+  MIN_BOTTLE_COUNT,
+  isOccupied,
+  labelNumber,
+  validateBottleCount,
+} from '@/lib/milkBottles'
 import { timeAgo } from '@/lib/format'
 import {
   DEFAULT_FAMILY_SETTINGS,
@@ -145,6 +168,7 @@ export default function Settings() {
         </Card>
 
         <ScheduleSettings familyId={familyId} />
+        <MilkStorageSettings babyId={baby?.id ?? null} />
         <CalendarFeedSettings familyId={familyId} />
 
         <Card>
@@ -290,6 +314,198 @@ function ScheduleSettings({ familyId }: { familyId: string | null }) {
         {t('settings.thresholdRange', { min: MIN_THRESHOLD_MINUTES, max: MAX_THRESHOLD_MINUTES })}
       </p>
       {flash && <Banner kind="ok">{flash}</Banner>}
+      {err && <Banner kind="error">{err}</Banner>}
+    </Card>
+  )
+}
+
+/**
+ * Conservación de la leche (0014): las tres reglas del pediatra — ambiente,
+ * refrigerador, congelador. Como los umbrales de arriba, son **de la familia**
+ * (viven en `babies`, los dos padres ven lo mismo) y **no pasan por la cola
+ * offline**: sin conexión no se guarda nada y la tarjeta lo dice.
+ *
+ * Se validan las tres JUNTAS y se guardan con un botón, no campo por campo al
+ * salir: un campo vacío nunca se guarda como 0 (con 0 días de refrigerador,
+ * cada extracción caducaría al guardarla), y el error se lee como una frase,
+ * no como un CHECK de Postgres. Cambiarlas afecta a las extracciones que se
+ * registren de acá en adelante: la caducidad se calcula al guardar cada una.
+ *
+ * v4 (0015): en la misma tarjeta y con el mismo botón (AJ-17), cuántos
+ * biberones físicos hay — N, 1 a 30, el selector de Leche ofrece M1…MN. Y
+ * ambiente y congelador quedan a la vista con "Todavía no se usa" (D-12): hoy
+ * toda la leche se cuenta en el refrigerador, pero esos valores son los que
+ * va a usar una fase siguiente, así que no se esconden ni se borran.
+ */
+function MilkStorageSettings({ babyId }: { babyId: string | null }) {
+  const { t, lang } = useT()
+  const [room, setRoom] = useState(String(DEFAULT_MILK_RULES.milk_room_hours))
+  const [fridge, setFridge] = useState(String(DEFAULT_MILK_RULES.milk_fridge_days))
+  const [freezer, setFreezer] = useState(String(DEFAULT_MILK_RULES.milk_freezer_months))
+  const [bottles, setBottles] = useState(String(DEFAULT_BOTTLE_COUNT))
+  const [err, setErr] = useState<string | null>(null)
+  const [flash, setFlash] = useState<string | null>(null)
+  // D-2: N lowered under bottles that still have milk — saved anyway, and said.
+  const [above, setAbove] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (!babyId) return
+    let cancelled = false
+    milkRules(babyId).then((res) => {
+      if (cancelled) return
+      if (res.error) {
+        setErr(t('milkRules.couldNotLoad', { error: res.error }))
+        return
+      }
+      if (res.data) {
+        setRoom(String(res.data.milk_room_hours))
+        setFridge(String(res.data.milk_fridge_days))
+        setFreezer(String(res.data.milk_freezer_months))
+        setBottles(String(res.data.milk_bottle_count))
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [babyId, t])
+
+  const NAMES: Record<MilkRulesField, MessageKey> = {
+    room: 'milkRules.room',
+    fridge: 'milkRules.fridge',
+    freezer: 'milkRules.freezer',
+  }
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault()
+    if (!babyId || busy) return
+    setErr(null)
+    setFlash(null)
+    setAbove(null)
+    const checked = validateMilkRules({ room, fridge, freezer })
+    if (!checked.rules) {
+      const field = t(NAMES[checked.field])
+      setErr(
+        t(`milkRules.problem.${checked.problem}`, {
+          field,
+          max: MILK_RULE_LIMITS[checked.field].max,
+        }),
+      )
+      return
+    }
+    // N, checked with the rules, before anything is sent (V4-10 CA1).
+    const count = validateBottleCount(bottles)
+    if (count.problem) {
+      const field = t('milkRules.bottles')
+      setErr(
+        count.problem === 'empty'
+          ? t('milkRules.problem.empty', { field })
+          : t('milkRules.problem.bottles', {
+              field,
+              min: MIN_BOTTLE_COUNT,
+              max: MAX_BOTTLE_COUNT,
+            }),
+      )
+      return
+    }
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      setErr(t('milkRules.offline'))
+      return
+    }
+    setBusy(true)
+    const res = await saveMilkRules(babyId, {
+      ...checked.rules,
+      milk_bottle_count: count.n,
+    })
+    if (res.error) {
+      setBusy(false)
+      setErr(t('milkRules.couldNotSave', { error: milkErrorText(res.error, lang) }))
+      return
+    }
+    setFlash(t('milkRules.saved'))
+    // D-2: bottles above the new N that still have milk keep showing in Milk
+    // until they are used or discarded. Nothing is blocked or touched; it is
+    // just said. A failed read says nothing rather than guess.
+    const list = await listContainers(babyId)
+    setBusy(false)
+    if (!list.error) {
+      const labels = list.data
+        .filter((c) => isOccupied(c))
+        .map((c) => c.label)
+        .filter((label) => {
+          const num = labelNumber(label)
+          return num === null || num > count.n
+        })
+        .sort((a, b) => (labelNumber(a) ?? Infinity) - (labelNumber(b) ?? Infinity))
+      if (labels.length > 0) setAbove(t('milkRules.bottlesAbove', { labels: labels.join(', ') }))
+    }
+  }
+
+  const field = (
+    id: string,
+    name: MilkRulesField,
+    value: string,
+    set: (v: string) => void,
+    unit: MessageKey,
+    notUsed = false,
+  ) => (
+    <div className="setting-group">
+      <label className="label" htmlFor={id}>
+        {t(NAMES[name])}
+        {/* D-12: kept, editable, and honest about doing nothing yet. */}
+        {notUsed && <span className="meta"> · {t('milkRules.notUsedYet')}</span>}
+      </label>
+      <div className="row-tight">
+        <input
+          id={id}
+          className="input narrow"
+          inputMode="decimal"
+          value={value}
+          disabled={!babyId || busy}
+          onChange={(e) => set(e.target.value)}
+        />
+        <span className="meta">{t(unit)}</span>
+      </div>
+    </div>
+  )
+
+  return (
+    <Card>
+      <Label>{t('milkRules.title')}</Label>
+      <p className="setting-note">{t('milkRules.note')}</p>
+      <p className="setting-note">{t('milkRules.fridgeOnlyNote')}</p>
+      <form onSubmit={save}>
+        {field('milk-room', 'room', room, setRoom, 'milkRules.hours', true)}
+        {field('milk-fridge', 'fridge', fridge, setFridge, 'milkRules.days')}
+        {field('milk-freezer', 'freezer', freezer, setFreezer, 'milkRules.months', true)}
+        <div className="setting-group">
+          <label className="label" htmlFor="milk-bottles">
+            {t('milkRules.bottles')}
+          </label>
+          <div className="row-tight">
+            <input
+              id="milk-bottles"
+              className="input narrow"
+              inputMode="numeric"
+              value={bottles}
+              disabled={!babyId || busy}
+              aria-describedby="milk-bottles-hint"
+              onChange={(e) => setBottles(e.target.value)}
+            />
+            <span className="meta">{t('milkRules.bottlesUnit')}</span>
+          </div>
+          <p className="setting-note" id="milk-bottles-hint">
+            {t('milkRules.bottlesHint')}
+          </p>
+        </div>
+        <div className="row-tight">
+          <Btn type="submit" disabled={!babyId || busy}>
+            {busy ? t('common.saving') : t('common.save')}
+          </Btn>
+        </div>
+      </form>
+      {flash && <Banner kind="ok">{flash}</Banner>}
+      {above && <Banner kind="warn">{above}</Banner>}
       {err && <Banner kind="error">{err}</Banner>}
     </Card>
   )

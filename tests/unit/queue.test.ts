@@ -615,3 +615,141 @@ describe('newId', () => {
     expect(a).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
   })
 })
+
+// ------------------------------------------------------------- milk (0014)
+
+describe('operaciones rpc del inventario de leche', () => {
+  const pump: PendingOp = {
+    kind: 'rpc',
+    fn: 'log_pumping_session',
+    args: { p_id: 's1' },
+    table: 'pumping_sessions',
+    id: 's1',
+    effect: 'insert',
+    creates: ['c1'],
+  }
+  const pumpEdit: PendingOp = {
+    kind: 'rpc',
+    fn: 'update_pumping_session',
+    args: { p_id: 's1' },
+    table: 'pumping_sessions',
+    id: 's1',
+    effect: 'update',
+  }
+  const feed: PendingOp = {
+    kind: 'rpc',
+    fn: 'log_bottle_feed',
+    args: { p_id: 'f1' },
+    table: 'feedings',
+    id: 'f1',
+    effect: 'insert',
+    refs: ['c1', 'c-server'],
+  }
+  const feedTime: PendingOp = {
+    kind: 'update',
+    table: 'feedings',
+    id: 'f1',
+    patch: { fed_at: '2026-01-15T10:30:00Z' },
+  }
+  const feedVoid: PendingOp = {
+    kind: 'rpc',
+    fn: 'void_bottle_feed',
+    args: { p_feeding_id: 'f1' },
+    table: 'feedings',
+    id: 'f1',
+    effect: 'delete',
+  }
+  const unrelated: PendingOp = {
+    kind: 'rpc',
+    fn: 'log_bottle_feed',
+    args: { p_id: 'f2' },
+    table: 'feedings',
+    id: 'f2',
+    effect: 'insert',
+    refs: ['c-server'],
+  }
+  const w = {
+    pump: write('w-pump', '2026-01-15T10:00:00Z', pump),
+    pumpEdit: write('w-pumpEdit', '2026-01-15T10:01:00Z', pumpEdit),
+    feed: write('w-feed', '2026-01-15T10:02:00Z', feed),
+    feedTime: write('w-feedTime', '2026-01-15T10:03:00Z', feedTime),
+    feedVoid: write('w-feedVoid', '2026-01-15T10:04:00Z', feedVoid),
+    unrelated: write('w-unrelated', '2026-01-15T10:05:00Z', unrelated),
+  }
+
+  it('se reenvían en orden, junto con las altas y ediciones comunes', async () => {
+    const s = store([w.feedVoid, w.feed, w.pump, w.feedTime, w.pumpEdit])
+    const seen: string[] = []
+    const result = await flushQueue(s, 'public', async (op) => {
+      seen.push(op.kind === 'rpc' ? op.fn : `${op.kind}:${op.table}`)
+      return { error: null }
+    })
+    expect(seen).toEqual([
+      'log_pumping_session',
+      'update_pumping_session',
+      'log_bottle_feed',
+      'update:feedings',
+      'void_bottle_feed',
+    ])
+    expect(result).toEqual({ sent: 5, dropped: 0, remaining: 0, error: null })
+  })
+
+  it('una rpc que no contesta vence como TIMED_OUT, queda en la cola y suelta el lock', async () => {
+    const s = store([w.pump, w.feed])
+    const result = await flushQueue(s, 'public', () => new Promise(() => {}), 20)
+    expect(result.error).toBe(TIMED_OUT)
+    expect(looksOffline(result.error)).toBe(true)
+    expect(result.remaining).toBe(2)
+    expect(s.rows.map((r) => r.id)).toEqual(['w-pump', 'w-feed'])
+  })
+
+  it('un rechazo del servidor frena la cola en esa rpc y no se trata como offline', async () => {
+    const s = store([w.pump, w.feed, w.unrelated])
+    const result = await flushQueue(s, 'public', async (op) =>
+      op.kind === 'rpc' && op.fn === 'log_bottle_feed'
+        ? { error: 'milk_overdraw:M1' }
+        : { error: null },
+    )
+    expect(result.failed?.id).toBe('w-feed')
+    expect(looksOffline(result.error)).toBe(false)
+    expect(s.rows.map((r) => r.id)).toEqual(['w-feed', 'w-unrelated'])
+  })
+
+  it('descartar una extracción encolada arrastra la toma servida de su contenedor, y lo que cuelga de esa toma', async () => {
+    const s = store([w.pump, w.pumpEdit, w.feed, w.feedTime, w.feedVoid, w.unrelated])
+    expect(dependentsOf(w.pump, s.rows).map((x) => x.id)).toEqual([
+      'w-pumpEdit',
+      'w-feed',
+      'w-feedTime',
+      'w-feedVoid',
+    ])
+    const plan = await discardPlan(s, 'w-pump')
+    expect(plan.map((x) => x.id)).toEqual([
+      'w-pump',
+      'w-pumpEdit',
+      'w-feed',
+      'w-feedTime',
+      'w-feedVoid',
+    ])
+    await discardWrites(
+      s,
+      plan.map((x) => x.id),
+    )
+    // La toma que sirve de un contenedor que el servidor ya tiene se queda.
+    expect(s.rows.map((r) => r.id)).toEqual(['w-unrelated'])
+  })
+
+  it('descartar una toma encolada se lleva su edición de hora y su anulación, y nada más', () => {
+    const all = [w.pump, w.feed, w.feedTime, w.feedVoid, w.unrelated]
+    expect(dependentsOf(w.feed, all).map((x) => x.id)).toEqual(['w-feedTime', 'w-feedVoid'])
+    // Una edición o una anulación no crea nada: no arrastra nada.
+    expect(dependentsOf(w.feedVoid, all)).toEqual([])
+    expect(dependentsOf(w.pumpEdit, all)).toEqual([])
+  })
+
+  it('isDeletion: una rpc que anula es un borrado; una que da de alta o edita, no', () => {
+    expect(isDeletion(w.feedVoid)).toBe(true)
+    expect(isDeletion(w.feed)).toBe(false)
+    expect(isDeletion(w.pumpEdit)).toBe(false)
+  })
+})

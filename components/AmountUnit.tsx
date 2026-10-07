@@ -27,14 +27,21 @@ export function AmountUnit({
   value,
   onChange,
   disabled,
+  label,
 }: {
   value: VolumeUnit
   onChange: (unit: VolumeUnit) => void
   disabled?: boolean
+  /**
+   * The accessible name of the group, when one page has more than one toggle
+   * (left and right on /pumping, "left over" next to a bottle): two radio
+   * groups with the same name can't be told apart (V4-01 CA5).
+   */
+  label?: string
 }) {
   const { t } = useT()
   return (
-    <div className="seg seg-inline" role="radiogroup" aria-label={t('amountUnit.label')}>
+    <div className="seg seg-inline" role="radiogroup" aria-label={label ?? t('amountUnit.label')}>
       {UNITS.map((unit) => (
         <button
           key={unit}
