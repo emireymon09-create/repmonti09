@@ -248,7 +248,7 @@ stack local, **N** usuario real en chrome-headless-shell 390×844 (ES y EN),
 | D5-5 | `fridge_at` = hora de "Registrar" (acotada); caducidad sigue desde `pumped_at` | Enfriado: lo prudente es tarde; caducidad: temprano (D-3) |
 | D5-6 | Enfriando: aviso en la toma; la Receta no la usa; Combinar la rechaza | "Es aviso, no bloqueo"; "nunca mezclar caliente con fría" |
 | D5-7 | Combinar solo fría + fría, en refri, mismo bebé, ninguna vencida | Pedido por defecto |
-| D5-8 | Deshacer combinar solo si el destino conserva lo recibido | Si se sirvió, la leche ya no es separable |
+| D5-8 | Deshacer combinar solo si al destino le queda al menos lo que recibió | Lo servido se cuenta de lo propio del destino |
 | D5-9 | Biberón empezado = el "Sobró", 60 min desde `fed_at` | No existe "preparado"; la toma se anota al darla |
 | D5-10 | Desechar el empezado es manual (botón), no automático | Papá: "se ofrece Desechar" |
 | D5-11 | "Leche desechada" en Milk = solo caducada; el empezado se ve en Historial | No mezclar leche materna con mezcla |
@@ -273,7 +273,10 @@ stack local, **N** usuario real en chrome-headless-shell 390×844 (ES y EN),
 6. Combinar con M6 enfriando → `milk_not_cold:M6`.
 7. Dos celulares combinan M5+M6 a la vez con ops distintos → uno entra; el
    otro `milk_combine_conflict` (o `milk_container_unusable`).
-8. Deshacer después de servir 1 oz del destino → `milk_combine_used:M6`.
+8. Deshacer cuando al destino le queda MENOS de lo que recibió (se sirvió o
+   desechó de más) → `milk_combine_used:M6`. Si le queda al menos lo recibido
+   (M6 = 3 oz propias + 3 recibidas, se sirve 1 oz → quedan 5), deshacer se
+   permite y lo servido sale de lo propio del destino (decisión de H2/H3).
 9. Deshacer con M5 ya ocupado por otra extracción → `milk_label_taken:M5`.
 10. Si llora a 119 min → 1 oz; a 120 min → completa.
 11. Sin leche fría → receta "3.5 oz Similac"; con 2 oz fría → "2 oz leche +
