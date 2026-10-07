@@ -277,12 +277,13 @@ describe.skipIf(!ready)('v4 · guarda de tomas, columnas y N (I-93…I-100, I-10
 })
 
 describe.skipIf(!docker)('v4 · esquema por SQL (I-101…I-103, I-106)', () => {
-  it('I-101 19 tablas en public, las 19 con RLS; grants de las dos nuevas sin anon ni DELETE', () => {
+  it('I-101 22 tablas en public (19 hasta 0015 + 3 de 0016), todas con RLS; grants de las dos nuevas sin anon ni DELETE', () => {
     expect(
       psql(`select count(*), count(*) filter (where c.relrowsecurity)
               from pg_class c join pg_namespace n on n.oid = c.relnamespace
              where n.nspname = 'public' and c.relkind = 'r'`).trim(),
-    ).toBe('19|19')
+      // 0016 (v5) suma milk_ops, milk_transfers y formula_containers.
+    ).toBe('22|22')
     const grants = psql(`
       select table_name || ':' || grantee || ':' || string_agg(privilege_type, ',' order by privilege_type)
         from information_schema.role_table_grants
