@@ -23,6 +23,7 @@ export const MILK_INVARIANT_CHECKS = [
   'INV-10',
   'INV-11',
   'INV-12',
+  'INV-13',
 ] as const
 // INV-7 (sobró ≤ total) es una constraint de la tabla, no una consulta: los
 // "nueve chequeos" de §2.4 son estos ocho más la constraint.
@@ -42,6 +43,7 @@ type Container = {
   released_at: string | null
   voided_at: string | null
   source_session_id: string | null
+  expires_at: string
 }
 
 async function readAll<T>(table: string, columns: string, familyIds?: string[]): Promise<T[]> {
@@ -72,7 +74,7 @@ export async function milkInvariantFailures(familyIds?: string[]): Promise<Failu
     await Promise.all([
       readAll<Container>(
         'milk_containers',
-        'id, baby_id, label, amount_ml, remaining_ml, lost_ml, released_at, voided_at, source_session_id',
+        'id, baby_id, label, amount_ml, remaining_ml, lost_ml, released_at, voided_at, source_session_id, expires_at',
         familyIds,
       ),
       readAll<{
@@ -83,14 +85,20 @@ export async function milkInvariantFailures(familyIds?: string[]): Promise<Failu
       }>('milk_drawdowns', 'container_id, feeding_id, amount_ml, voided_at', familyIds),
       readAll<{
         id: string
+        baby_id: string
         container_id: string | null
         feeding_id: string | null
         reason: string
         amount_ml: number
         voided_at: string | null
-      }>('milk_discards', 'id, container_id, feeding_id, reason, amount_ml, voided_at', familyIds),
+      }>(
+        'milk_discards',
+        'id, baby_id, container_id, feeding_id, reason, amount_ml, voided_at',
+        familyIds,
+      ),
       readAll<{
         id: string
+        baby_id: string
         feeding_type: string
         amount_ml: number | null
         breast_milk_ml: number | null
@@ -99,7 +107,7 @@ export async function milkInvariantFailures(familyIds?: string[]): Promise<Failu
         voided_at: string | null
       }>(
         'feedings',
-        'id, feeding_type, amount_ml, breast_milk_ml, formula_ml, leftover_ml, voided_at',
+        'id, baby_id, feeding_type, amount_ml, breast_milk_ml, formula_ml, leftover_ml, voided_at',
         familyIds,
       ),
       readAll<{ id: string; amount_ml: number | null; voided_at: string | null }>(
@@ -201,8 +209,8 @@ export async function milkInvariantFailures(familyIds?: string[]): Promise<Failu
     const f = feedingById.get(d.feeding_id)
     if (f?.voided_at) out.push({ check: 'INV-9', id: d.feeding_id, detail: 'porción huérfana' })
   }
-  // INV-10: un biberón empezado desechado vivo ⇒ su toma viva, biberón y con el
-  // mismo sobró.
+  // INV-10: un biberón empezado desechado vivo ⇒ su toma viva, biberón, del
+  // mismo bebé y con el mismo sobró.
   for (const x of discards) {
     if (x.voided_at || x.reason !== 'started_bottle_expired') continue
     const f = x.feeding_id ? feedingById.get(x.feeding_id) : undefined
@@ -210,6 +218,7 @@ export async function milkInvariantFailures(familyIds?: string[]): Promise<Failu
       !f ||
       f.voided_at ||
       f.feeding_type !== 'bottle' ||
+      f.baby_id !== x.baby_id ||
       f.leftover_ml === null ||
       Math.abs(n(f.leftover_ml) - n(x.amount_ml)) > TOL
     )
@@ -233,6 +242,9 @@ export async function milkInvariantFailures(familyIds?: string[]): Promise<Failu
       to.voided_at
     )
       out.push({ check: 'INV-11', id: t.id, detail: 'transferencia incoherente' })
+    // INV-13: el destino (no anulado) vence a más tardar cuando vence el origen.
+    if (from && to && !to.voided_at && Date.parse(to.expires_at) > Date.parse(from.expires_at))
+      out.push({ check: 'INV-13', id: t.id, detail: `${to.label} vence después que ${from.label}` })
   }
   // INV-12: una Similac abierta viva por bebé; terminada no antes de abierta.
   const open = new Map<string, number>()

@@ -125,7 +125,8 @@ describe.skipIf(!ready)('v5 · combinar (I-M1)', () => {
       ...base,
       p_op_id: randomUUID(),
       p_source_ids: [ghost],
-      p_expected: { ...base.p_expected, [ghost]: 10 },
+      // Exactamente destino + orígenes (una clave de más es milk_bad_input, H5).
+      p_expected: { [t.containerId]: base.p_expected[t.containerId], [ghost]: 10 },
     })
     expect(unknown.error).toBe('milk_container_unusable')
     expect(await milkSnapshot(f.babyId)).toEqual(snap)
@@ -504,5 +505,97 @@ describe.skipIf(!ready)('v5 · combinar e interacción (I-M3)', () => {
     expect((await rpc(f.client, 'milk_uncombine', uncombineArgs(first.opId))).error).toBe(
       'milk_combine_used:M2',
     )
+  })
+})
+
+describe.skipIf(!ready)('v5 · combinar, correcciones de auditoría (H1, H2, H5)', () => {
+  beforeAll(async () => {
+    fx = await seedV4('mv5-audit')
+  })
+  afterAll(async () => {
+    await fx.cleanup()
+  })
+  afterEach(async () => {
+    await assertMilkInvariant(fx.familyIds)
+  })
+
+  it('H1 deshacer después de adelantar la hora del DESTINO: vence según su hora nueva, no la vieja', async () => {
+    const [f] = await newBaby(fx.a)
+    const m5 = await coldPump(f, 60, 'M5', 2 * DAY)
+    const at6 = Date.now() - HOUR - 5 * MIN
+    const m6 = await pumpOk(f, 90, 'M6', at6)
+    const { opId } = await combineOk(f, m6.containerId, [m5.containerId])
+    const earlier = at6 - 3 * DAY
+    const up = await rpc(
+      f.client,
+      'update_pumping_session',
+      updatePumpArgs(m6.sessionId, { left: 90, at: earlier }),
+    )
+    expect(up.error).toBeNull()
+    expect((await rpc(f.client, 'milk_uncombine', uncombineArgs(opId))).error).toBeNull()
+    const c6 = await containerV5(m6.containerId)
+    expect(Date.parse(c6.stored_at)).toBe(earlier)
+    expect(Date.parse(c6.expires_at)).toBe(earlier + FRIDGE_MS)
+  })
+
+  it('H2 cadena S→D→E: adelantar la hora de S baja la caducidad de D y también la de E', async () => {
+    const [f] = await newBaby(fx.a)
+    const at = Date.now() - 2 * HOUR
+    const s = await pumpOk(f, 20, 'M1', at)
+    const d = await coldPump(f, 30, 'M2', HOUR + 10 * MIN)
+    const e = await coldPump(f, 40, 'M3', HOUR + 5 * MIN)
+    await combineOk(f, d.containerId, [s.containerId])
+    await combineOk(f, e.containerId, [d.containerId])
+    const earlier = at - DAY
+    const r = await rpc(
+      f.client,
+      'update_pumping_session',
+      updatePumpArgs(s.sessionId, { left: 20, at: earlier }),
+    )
+    expect(r.error).toBeNull()
+    expect(Date.parse((await containerV5(d.containerId)).expires_at)).toBe(earlier + FRIDGE_MS)
+    expect(Date.parse((await containerV5(e.containerId)).expires_at)).toBe(earlier + FRIDGE_MS)
+  })
+
+  it('H2 cadena: si el acortamiento deja a E vencido antes de su propia hora → milk_combined y nada cambia', async () => {
+    // D es de hace 3 días (el acortamiento le cabe); E, de hace una hora (no).
+    const [f] = await newBaby(fx.a)
+    const s = await pumpOk(f, 20, 'M1', Date.now() - 3 * DAY - HOUR)
+    const d = await coldPump(f, 30, 'M2', 3 * DAY)
+    const e = await coldPump(f, 40, 'M3', HOUR + 5 * MIN)
+    await combineOk(f, d.containerId, [s.containerId])
+    await combineOk(f, e.containerId, [d.containerId])
+    const snap = await milkSnapshot(f.babyId)
+    // S a hace 5 días: vence hace 1 día — después de D, antes de que E existiera.
+    const r = await rpc(
+      f.client,
+      'update_pumping_session',
+      updatePumpArgs(s.sessionId, { left: 20, at: Date.now() - 5 * DAY }),
+    )
+    expect(r.error).toBe('milk_combined:M1')
+    expect(await milkSnapshot(f.babyId)).toEqual(snap)
+  })
+
+  it('H5 más de 24 orígenes → milk_bad_input; p_expected con una clave de más → milk_bad_input', async () => {
+    const [f] = await newBaby(fx.a)
+    const t = await coldPump(f, 50, 'M1')
+    const s = await coldPump(f, 30, 'M2')
+    const many = Array.from({ length: 25 }, () => randomUUID())
+    const tooMany = await rpc(f.client, 'milk_combine', {
+      p_op_id: randomUUID(),
+      p_baby_id: f.babyId,
+      p_target_id: t.containerId,
+      p_source_ids: many,
+      p_expected: Object.fromEntries([t.containerId, ...many].map((id) => [id, 10])),
+    })
+    expect(tooMany.error).toBe('milk_bad_input')
+    const snap = await milkSnapshot(f.babyId)
+    const base = await combineArgs(f, t.containerId, [s.containerId])
+    const extra = await rpc(f.client, 'milk_combine', {
+      ...base,
+      p_expected: { ...base.p_expected, [randomUUID()]: 1 },
+    })
+    expect(extra.error).toBe('milk_bad_input')
+    expect(await milkSnapshot(f.babyId)).toEqual(snap)
   })
 })

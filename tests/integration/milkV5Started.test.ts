@@ -244,4 +244,28 @@ describe.skipIf(!ready)('v5 · biberón empezado (I-B1)', () => {
       { reason: 'started_bottle_expired', container_id: null, feeding_id: feed },
     ])
   })
+
+  it('H6 la app vieja pasa la toma a otro bebé: el desecho del biberón empezado se anula', async () => {
+    const [f] = await newBaby(fx.a)
+    const [g] = await newBaby(fx.a)
+    const at = Date.now() - 2 * 60 * MIN
+    const { data, error } = await f.client
+      .from('feedings')
+      .insert({
+        baby_id: f.babyId,
+        feeding_type: 'bottle',
+        fed_at: iso(at),
+        amount_ml: 90,
+        leftover_ml: 30,
+        logged_by: f.userId,
+      })
+      .select('id')
+      .single()
+    expect(error).toBeNull()
+    const id = data!.id as string
+    expect((await rpc(f.client, 'discard_started_bottle', startedArgs(id))).error).toBeNull()
+    const moved = await f.client.from('feedings').update({ baby_id: g.babyId }).eq('id', id)
+    expect(moved.error).toBeNull()
+    expect((await startedDiscards(id))[0].voided_at).not.toBeNull()
+  })
 })

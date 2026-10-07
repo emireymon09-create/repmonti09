@@ -1072,7 +1072,7 @@ describe('milkInvariantFailures (U-42 and the checks themselves)', () => {
     const more = milkInvariantFailures({
       containers: [
         box('M6', { remaining_ml: 2 * OZ, amount_ml: 3 * OZ }), // a source NOT released
-        box('M7', { remaining_ml: 4 * OZ }),
+        box('M7', { remaining_ml: 4 * OZ, expires_at: iso(MON + 5 * DAY) }), // INV-13: vence después que M6
       ],
       drawdowns: [],
       discards: [
@@ -1168,6 +1168,43 @@ describe('U-I1 rebalance y la invariante con transferencias (0016)', () => {
         transfers: [t1(2 * OZ)],
       }).map((f) => f.check),
     ).toContain('INV-4')
+  })
+
+  it('INV-13: un destino con entradas vivas no vence después que ninguno de sus orígenes', () => {
+    const run = (dstExp: number, over: Partial<MilkTransfer> = {}) =>
+      milkInvariantFailures({
+        containers: [src, { ...dst, expires_at: iso(dstExp) }],
+        drawdowns: [],
+        discards: [],
+        transfers: [t1(2 * OZ, over)],
+      }).map((f) => f.check)
+    // src vence a MON + 4 d (box).
+    expect(run(MON + 4 * DAY)).toEqual([])
+    expect(run(MON + 3 * DAY)).toEqual([])
+    expect(run(MON + 4 * DAY + 1)).toEqual(['INV-13'])
+    // Una transferencia deshecha ya no ata la caducidad.
+    expect(run(MON + 5 * DAY, { voided_at: iso(NOW) })).not.toContain('INV-13')
+  })
+
+  it('INV-10: el desecho del biberón empezado es del mismo bebé que su toma', () => {
+    const x = {
+      id: 'x-s',
+      container_id: null,
+      feeding_id: 'fs',
+      amount_ml: 20,
+      discarded_at: iso(NOW),
+      reason: 'started_bottle_expired' as const,
+    }
+    const fs = { ...feed('fs', WED, 0, 60), leftover_ml: 20 }
+    const run = (discardBaby: string, feedingBaby: string) =>
+      milkInvariantFailures({
+        containers: [],
+        drawdowns: [],
+        discards: [{ ...x, baby_id: discardBaby }],
+        feedings: [{ ...fs, baby_id: feedingBaby }],
+      }).map((f) => f.check)
+    expect(run('b1', 'b1')).toEqual([])
+    expect(run('b1', 'b2')).toEqual(['INV-10'])
   })
 
   it("leche que vuelve por 'return' o 'amount' a un origen volcado → lost 'combined' (D5-19)", () => {

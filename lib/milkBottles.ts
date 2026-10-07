@@ -728,6 +728,8 @@ export const MILK_INVARIANT_IDS = [
   'INV-10',
   'INV-11',
   'INV-12',
+  // Audit H2: a combined bottle never outlives the milk poured into it.
+  'INV-13',
 ] as const
 export type MilkInvariantId = (typeof MILK_INVARIANT_IDS)[number]
 
@@ -737,7 +739,7 @@ type Voidable = { voided_at?: string | null }
 
 /**
  * §2.1–§2.2 in TypeScript, the same arithmetic as the SQL of §2.4 — and of
- * 0016's closing block (INV-1 with transfers, INV-10…INV-12): every row that
+ * 0016's closing block (INV-1 with transfers, INV-10…INV-13): every row that
  * breaks a rule, empty when it all adds up. Pass EVERY row, voided ones
  * included (the voided ones are what INV-4 and INV-9 look at). Usable by the
  * integration helper (reading with the admin client) and by unit tests.
@@ -746,13 +748,13 @@ type Voidable = { voided_at?: string | null }
 export function milkInvariantFailures(input: {
   containers: readonly (MilkContainer & { baby_id?: string })[]
   drawdowns: readonly MilkDrawdown[]
-  discards: readonly MilkDiscard[]
+  discards: readonly (MilkDiscard & { baby_id?: string })[]
   feedings?: readonly (Pick<
     Feeding,
     'id' | 'amount_ml' | 'breast_milk_ml' | 'formula_ml' | 'leftover_ml'
   > &
     Partial<Pick<Feeding, 'feeding_type'>> &
-    Voidable)[]
+    Voidable & { baby_id?: string })[]
   sessions?: readonly (Pick<PumpingSession, 'id' | 'amount_ml'> & Voidable)[]
   transfers?: readonly (MilkTransfer & { baby_id?: string })[]
   formula?: readonly (Pick<FormulaContainer, 'id' | 'opened_at' | 'finished_at'> &
@@ -855,8 +857,8 @@ export function milkInvariantFailures(input: {
     if (voidedFeedings.has(d.feeding_id))
       out.push({ check: 'INV-9', id: d.feeding_id, detail: `portion ${d.id} on a voided bottle` })
 
-  // INV-10: a live started-bottle discard ⇒ its feeding is live, a bottle, and
-  // has the same "sobró".
+  // INV-10: a live started-bottle discard ⇒ its feeding is live, a bottle, of
+  // the same baby (when both say), and has the same "sobró".
   const feedingById = new Map(feedings.map((f) => [f.id, f]))
   for (const x of input.discards) {
     if (x.voided_at || x.reason !== 'started_bottle_expired') continue
@@ -865,6 +867,7 @@ export function milkInvariantFailures(input: {
       !f ||
       f.voided_at ||
       (f.feeding_type !== undefined && f.feeding_type !== 'bottle') ||
+      (x.baby_id !== undefined && f.baby_id !== undefined && x.baby_id !== f.baby_id) ||
       f.leftover_ml == null ||
       Math.abs(Number(f.leftover_ml) - Number(x.amount_ml)) > eps
     )
@@ -889,6 +892,10 @@ export function milkInvariantFailures(input: {
       to.voided_at
     )
       out.push({ check: 'INV-11', id: t.id, detail: `transfer ${t.op_id}` })
+    // INV-13: a target that is not voided expires no later than each source of
+    // its live transfers (its milk is in there).
+    if (from && to && !to.voided_at && Date.parse(to.expires_at) > Date.parse(from.expires_at))
+      out.push({ check: 'INV-13', id: t.id, detail: `${to.label} outlives ${from.label}` })
   }
 
   // INV-12: one live open Similac per baby; never finished before it opened.

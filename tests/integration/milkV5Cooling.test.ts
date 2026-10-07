@@ -175,4 +175,20 @@ describe.skipIf(!ready)('v5 · enfriado (I-C1)', () => {
       expect(psql(sql).trim()).toBe('true|false|true|false|true|false')
     },
   )
+
+  it('milk_mark_cold desde dos teléfonos a la vez con ops distintos: un solo cold_at', async () => {
+    const [f, f2] = await newBaby(fx.a, fx.a2)
+    const p = await pumpOk(f, 50, 'M1', Date.now() - 20 * MIN)
+    const [r1, r2] = await Promise.all([
+      rpc(f.client, 'milk_mark_cold', markArgs(p.containerId, Date.now() - 5 * MIN)),
+      rpc(f2.client, 'milk_mark_cold', markArgs(p.containerId, Date.now() - 2 * MIN)),
+    ])
+    expect(r1.error).toBeNull()
+    expect(r2.error).toBeNull()
+    const cold = (await containerV5(p.containerId)).cold_at!
+    expect(cold).not.toBeNull()
+    // Los dos dicen la misma hora: la que quedó guardada.
+    for (const r of [r1, r2])
+      expect(Date.parse((r.data as { cold_at: string }).cold_at)).toBe(Date.parse(cold))
+  })
 })

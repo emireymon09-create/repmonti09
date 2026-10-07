@@ -1,9 +1,16 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
+import { adminClient } from '../helpers/supabase'
+import { formulaStock } from '@/lib/formulaStock'
+import type { FormulaContainer } from '@/lib/types'
 import {
+  DAY,
   HOUR,
   MIN,
+  OZ,
   assertMilkInvariant,
+  editArgs,
+  feedOk,
   iso,
   newBaby,
   rpc,
@@ -271,5 +278,95 @@ describe.skipIf(!ready)('v5 · fórmula (I-F1)', () => {
     await startedFeed(f, 0, Date.now() - HOUR, 120)
     await rpc(f.client, 'formula_open', formulaOpenArgs(f, randomUUID(), Date.now() - 50 * HOUR))
     await startedFeed(f, 0, Date.now() - MIN, 120)
+  })
+
+  it('H4 horas viejas: compra o apertura de hace más de 30 días, o -infinity → milk_bad_input', async () => {
+    const [f] = await newBaby(fx.a)
+    const old = Date.now() - 31 * DAY
+    const add = (at: string) =>
+      rpc(f.client, 'formula_add', {
+        p_op_id: randomUUID(),
+        p_baby_id: f.babyId,
+        p_ids: [randomUUID()],
+        p_size_ml: BOTTLE,
+        p_added_at: at,
+      })
+    expect((await add(iso(old))).error).toBe('milk_bad_input')
+    expect((await add('-infinity')).error).toBe('milk_bad_input')
+    const open = (at: string) =>
+      rpc(f.client, 'formula_open', {
+        p_op_id: randomUUID(),
+        p_baby_id: f.babyId,
+        p_container_id: randomUUID(),
+        p_opened_at: at,
+      })
+    expect((await open(iso(old))).error).toBe('milk_bad_input')
+    expect((await open('-infinity')).error).toBe('milk_bad_input')
+    expect(await formulaRows(f.babyId)).toEqual([])
+    // 29 días sí entra.
+    expect((await add(iso(Date.now() - 29 * DAY))).error).toBeNull()
+  })
+
+  it('H4 abrir una cerrada con una hora anterior a su compra: opened_at = added_at', async () => {
+    const [f] = await newBaby(fx.a)
+    const addedAt = Date.now() - HOUR
+    const { ids } = await formulaAddOk(f, 1, addedAt)
+    const r = await rpc(f.client, 'formula_open', formulaOpenArgs(f, ids[0], addedAt - 2 * HOUR))
+    expect(r.error).toBeNull()
+    const [row] = await formulaRows(f.babyId)
+    expect(Date.parse(row.opened_at!)).toBe(addedAt)
+  })
+
+  it('V5-03 editar la fórmula de una toma (1 → 2 oz) dentro de la abierta: lo que queda baja 1 oz', async () => {
+    const [f] = await newBaby(fx.a)
+    const r = await rpc(
+      f.client,
+      'formula_open',
+      formulaOpenArgs(f, randomUUID(), Date.now() - 3 * HOUR),
+    )
+    expect(r.error).toBeNull()
+    const feed = await feedOk(f, [], { formula: OZ, at: Date.now() - HOUR })
+    const stock = async () => {
+      const [{ data: feedings, error: e1 }, { data: containers, error: e2 }] = await Promise.all([
+        adminClient()
+          .from('feedings')
+          .select('id, fed_at, feeding_type, formula_ml, voided_at')
+          .eq('baby_id', f.babyId),
+        adminClient().from('formula_containers').select('*').eq('baby_id', f.babyId),
+      ])
+      expect(e1).toBeNull()
+      expect(e2).toBeNull()
+      return formulaStock({
+        containers: containers as FormulaContainer[],
+        feedings: feedings!,
+        nowMs: Date.now(),
+      })
+    }
+    const before = await stock()
+    expect(before.open!.usedMl).toBeCloseTo(OZ, 9)
+    expect(before.remainingMl).toBeCloseTo(BOTTLE - OZ, 9)
+    const e = await rpc(f.client, 'edit_bottle_feed', await editArgs(feed, { formula: 2 * OZ }))
+    expect(e.error).toBeNull()
+    const after = await stock()
+    expect(after.open!.usedMl).toBeCloseTo(2 * OZ, 9)
+    expect(before.remainingMl - after.remainingMl).toBeCloseTo(OZ, 9)
+  })
+
+  it('formula_add doble a la vez con ops distintos: filas = suma, sin choque', async () => {
+    const [f, f2] = await newBaby(fx.a, fx.a2)
+    const args = (n: number) => ({
+      p_op_id: randomUUID(),
+      p_baby_id: f.babyId,
+      p_ids: Array.from({ length: n }, () => randomUUID()),
+      p_size_ml: BOTTLE,
+      p_added_at: iso(Date.now() - HOUR),
+    })
+    const [r1, r2] = await Promise.all([
+      rpc(f.client, 'formula_add', args(3)),
+      rpc(f2.client, 'formula_add', args(4)),
+    ])
+    expect(r1).toEqual({ data: { added: 3 }, error: null })
+    expect(r2).toEqual({ data: { added: 4 }, error: null })
+    expect(await formulaRows(f.babyId)).toHaveLength(7)
   })
 })

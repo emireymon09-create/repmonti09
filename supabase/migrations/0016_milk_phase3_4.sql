@@ -28,7 +28,7 @@
 --     void_pumping_session cambian el cuerpo; log_pumping_session se recrea con
 --     un parámetro más CON default (p_fridge_at), como 0015 hizo con
 --     log_bottle_feed.
---   · Al final, la invariante INV-1…INV-12: si los datos no cierran, la
+--   · Al final, la invariante INV-1…INV-13: si los datos no cierran, la
 --     migración entera se aborta con `milk_invariant_broken`.
 --
 -- Aditiva salvo UNA relajación, a propósito: se quita la CHECK
@@ -545,7 +545,10 @@ $$;
 --   · la caducidad = least(la propia, la de los orígenes de sus entradas
 --     vivas) — editar la hora del destino no le alarga la vida (V5-31); y si
 --     el contenedor es ORIGEN, un acortamiento de su caducidad baja también la
---     de sus destinos (su leche está ahí);
+--     de todos sus destinos, transitivamente (S→D→E: su leche está en D y en
+--     E; INV-13);
+--   · el contenedor y sus destinos transitivos se bloquean JUNTOS, en orden de
+--     id, como en milk_combine/milk_uncombine (sin abrazo mortal con ellas);
 --   · fridge_at nunca antes de la hora de la extracción;
 --   · sacar la cantidad (total 0) de un contenedor combinado → milk_combined:M#.
 create or replace function update_pumping_session(
@@ -576,6 +579,9 @@ declare
   v_expires timestamptz;
   v_src_min timestamptz;
   v_bad text;
+  v_cid uuid;
+  v_set uuid[];
+  v_again uuid[];
 begin
   if v_uid is null then
     raise exception 'milk_not_signed_in';
@@ -616,9 +622,32 @@ begin
     raise exception 'milk_bad_input';
   end if;
 
+  -- El contenedor y sus destinos transitivos (por transferencias vivas), todos
+  -- FOR UPDATE en orden de id. Bloqueado el conjunto, no puede crecer: una
+  -- transferencia nueva que salga de uno de ellos necesita bloquearlo. Si
+  -- cambió entre la lectura y el bloqueo, se vuelve a leer y a bloquear.
+  select id into v_cid from milk_containers
+    where source_session_id = p_id and voided_at is null;
+  if v_cid is not null then
+    loop
+      with recursive down(id) as (
+        select v_cid
+        union
+        select t.to_container_id from milk_transfers t join down on t.from_container_id = down.id
+         where t.voided_at is null
+      ) select array_agg(id order by id) into v_set from down;
+      perform 1 from milk_containers where id = any (v_set) order by id for update;
+      with recursive down(id) as (
+        select v_cid
+        union
+        select t.to_container_id from milk_transfers t join down on t.from_container_id = down.id
+         where t.voided_at is null
+      ) select array_agg(id order by id) into v_again from down;
+      exit when v_again <@ v_set;
+    end loop;
+  end if;
   select * into v_container from milk_containers
-    where source_session_id = p_id and voided_at is null
-    for update;
+    where id = v_cid and voided_at is null;
 
   if found then
     v_served := milk_served_ml(v_container.id);
@@ -654,24 +683,20 @@ begin
       where id = v_container.id;
       perform milk_rebalance(v_container.id, 'amount');
 
-      -- Origen de una combinación: su leche está en los destinos. Si su
-      -- caducidad se acortó, la de ellos también (nunca se alarga por acá).
+      -- Origen de una combinación: su leche está en los destinos, y en los
+      -- destinos de ellos (S→D→E). Si su caducidad se acortó, la de todos
+      -- también (nunca se alarga por acá). Ya están bloqueados (arriba).
       if v_out > 0 then
         select d.label into v_bad
-          from milk_transfers t join milk_containers d on d.id = t.to_container_id
-         where t.from_container_id = v_container.id and t.voided_at is null
+          from milk_containers d
+         where d.id = any (v_set) and d.id <> v_container.id
            and d.voided_at is null and least(d.expires_at, v_expires) <= d.stored_at
          order by d.id limit 1;
         if v_bad is not null then
           raise exception 'milk_combined:%', v_container.label;
         end if;
-        perform 1 from milk_containers d
-          where d.id in (select to_container_id from milk_transfers
-                          where from_container_id = v_container.id and voided_at is null)
-          order by d.id for update;
         update milk_containers d set expires_at = v_expires
-          where d.id in (select to_container_id from milk_transfers
-                          where from_container_id = v_container.id and voided_at is null)
+          where d.id = any (v_set) and d.id <> v_container.id
             and d.voided_at is null and d.expires_at > v_expires;
       end if;
     else
@@ -849,12 +874,20 @@ begin
   end if;
   perform set_config('amelia.milk_rpc', 'on', true);
 
+  -- El tamaño primero, antes de cualquier trabajo caro: 1–24 orígenes.
   v_n := coalesce(cardinality(p_source_ids), 0);
+  if v_n < 1 or v_n > 24 then
+    raise exception 'milk_bad_input';
+  end if;
   if p_op_id is null or p_baby_id is null or p_target_id is null
-     or v_n < 1 or array_position(p_source_ids, null) is not null
+     or array_position(p_source_ids, null) is not null
      or (select count(distinct x) from unnest(p_source_ids) x) <> v_n
      or p_target_id = any (p_source_ids)
      or p_expected is null or jsonb_typeof(p_expected) <> 'object' then
+    raise exception 'milk_bad_input';
+  end if;
+  -- p_expected trae exactamente destino + orígenes: ni una clave de más.
+  if (select count(*) from jsonb_object_keys(p_expected)) <> v_n + 1 then
     raise exception 'milk_bad_input';
   end if;
   select array_agg(x order by x) into v_ids from unnest(p_source_ids) x;
@@ -946,7 +979,9 @@ end;
 $$;
 
 -- "Deshacer" una combinación (V5-35). Devuelve a cada origen lo suyo (vuelve a
--- ocupar su número) y restaura la caducidad del destino. Rechazos: el destino
+-- ocupar su número) y restaura la caducidad del destino, acotada por la que
+-- le da HOY su propia hora (si se adelantó después de combinar) y por los
+-- orígenes de sus otras entradas vivas. Rechazos: el destino
 -- ya no tiene lo que recibió → milk_combine_used:M#; el número de un origen lo
 -- ocupa otra extracción → milk_label_taken:M#. Ya deshecha → no-op.
 create or replace function milk_uncombine(p_op_id uuid, p_combine_op_id uuid)
@@ -971,6 +1006,7 @@ declare
   v_id uuid;
   v_fridge numeric;
   v_freezer numeric;
+  v_own timestamptz;
 begin
   if v_uid is null then
     raise exception 'milk_not_signed_in';
@@ -1049,17 +1085,20 @@ begin
     perform milk_rebalance(t.id, 'transfer');
 
     -- La caducidad de antes de esta combinación, sin alargarla por encima de
-    -- lo que el destino todavía tenga de OTRAS combinaciones vivas.
+    -- la propia recalculada desde su stored_at de HOY (H1: la hora del destino
+    -- se pudo adelantar después de combinar) ni de lo que el destino todavía
+    -- tenga de OTRAS combinaciones vivas.
     select min(o.expires_at) into v_src_min
       from milk_transfers x join milk_containers o on o.id = x.from_container_id
      where x.to_container_id = t.id and x.voided_at is null;
-    v_exp := least(v_prev, coalesce(v_src_min, v_prev));
+    select milk_fridge_days, milk_freezer_months into v_fridge, v_freezer
+      from babies where id = t.baby_id;
+    v_own := milk_expires_at(t.stored_at, t.location, v_fridge, v_freezer);
+    v_exp := least(v_prev, v_own, coalesce(v_src_min, 'infinity'::timestamptz));
     if v_exp <= t.stored_at then
-      -- La hora del destino se corrió después de combinar: su caducidad propia.
-      select milk_fridge_days, milk_freezer_months into v_fridge, v_freezer
-        from babies where id = t.baby_id;
-      v_exp := least(milk_expires_at(t.stored_at, t.location, v_fridge, v_freezer),
-                     coalesce(v_src_min, 'infinity'::timestamptz));
+      -- La hora del destino se corrió hacia adelante después de combinar (la
+      -- de antes ya no le cabe): su caducidad propia.
+      v_exp := least(v_own, coalesce(v_src_min, 'infinity'::timestamptz));
     end if;
     update milk_containers set expires_at = v_exp
       where id = t.id and expires_at is distinct from v_exp;
@@ -1145,8 +1184,8 @@ end;
 $$;
 
 -- Editar el sobró de una toma después de desecharlo sincroniza el desecho
--- (INV-10): sobró > 0 → mismo monto; nulo/0, toma anulada o que dejó de ser
--- biberón → desecho anulado. Corre también para la app vieja, que edita el
+-- (INV-10): sobró > 0 → mismo monto; nulo/0, toma anulada, que dejó de ser
+-- biberón o que pasó a OTRO bebé → desecho anulado. Corre también para la app vieja, que edita el
 -- sobró de una toma SIN desglose por UPDATE directo (D-11b): por eso prende la
 -- bandera solo para su propio UPDATE y deja la que había.
 create or replace function milk_sync_started_discard()
@@ -1162,6 +1201,7 @@ begin
   end if;
   perform set_config('amelia.milk_rpc', 'on', true);
   if new.voided_at is not null or new.feeding_type <> 'bottle'
+     or new.baby_id is distinct from old.baby_id
      or new.leftover_ml is null or new.leftover_ml <= 0 then
     update milk_discards set voided_at = coalesce(new.voided_at, now())
       where feeding_id = new.id and voided_at is null;
@@ -1175,12 +1215,13 @@ end;
 $$;
 
 create trigger milk_sync_started_discard
-  after update of leftover_ml, voided_at, feeding_type on feedings
+  after update of leftover_ml, voided_at, feeding_type, baby_id on feedings
   for each row execute function milk_sync_started_discard();
 
 -- ================================================================ FÓRMULA (RPC)
 
 -- "Anotar compra" (V5-01): 1–24 botellas cerradas con ids del dispositivo.
+-- La hora: ni del futuro (> now()+10 min) ni de hace más de 30 días.
 create or replace function formula_add(
   p_op_id uuid,
   p_baby_id uuid,
@@ -1205,6 +1246,7 @@ begin
   perform set_config('amelia.milk_rpc', 'on', true);
 
   if p_op_id is null or p_baby_id is null or p_added_at is null
+     or not isfinite(p_added_at)
      or v_n < 1 or v_n > 24 or array_position(p_ids, null) is not null
      or (select count(distinct x) from unnest(p_ids) x) <> v_n
      or p_size_ml is null or not (p_size_ml > 0 and p_size_ml < 100000) then
@@ -1234,6 +1276,9 @@ begin
   if p_added_at > now() + interval '10 minutes' then
     raise exception 'milk_future_time';
   end if;
+  if p_added_at < now() - interval '30 days' then
+    raise exception 'milk_bad_input';
+  end if;
 
   begin
     insert into formula_containers (id, family_id, baby_id, size_ml, added_at, logged_by)
@@ -1254,7 +1299,9 @@ $$;
 -- "Abrí una Similac" (V5-02). Abre la cerrada `p_container_id`; si no existe,
 -- crea una abierta de 8 oz con ese id (nunca bloquea, V5-06). La abierta
 -- anterior pasa a 'replaced'. Bajo el lock de fórmula del bebé: dos celulares
--- a la vez → una sola abierta.
+-- a la vez → una sola abierta. La hora: nunca de hace más de 30 días
+-- (milk_bad_input), acotada a now()+10 min, y la de una cerrada nunca antes
+-- de su compra (added_at).
 create or replace function formula_open(
   p_op_id uuid,
   p_baby_id uuid,
@@ -1279,7 +1326,8 @@ begin
   end if;
   perform set_config('amelia.milk_rpc', 'on', true);
 
-  if p_op_id is null or p_baby_id is null or p_container_id is null then
+  if p_op_id is null or p_baby_id is null or p_container_id is null
+     or (p_opened_at is not null and not isfinite(p_opened_at)) then
     raise exception 'milk_bad_input';
   end if;
   select family_id into v_family from babies where id = p_baby_id;
@@ -1301,6 +1349,10 @@ begin
     raise exception 'milk_idempotency_conflict';
   end if;
 
+  if p_opened_at < now() - interval '30 days' then
+    raise exception 'milk_bad_input';
+  end if;
+
   perform pg_advisory_xact_lock(hashtext('amelia_formula:' || p_baby_id::text));
   v_at := least(coalesce(p_opened_at, now()), now() + interval '10 minutes');
 
@@ -1308,6 +1360,10 @@ begin
   v_found := found;
   if v_found and (x.baby_id <> p_baby_id or x.voided_at is not null or x.opened_at is not null) then
     raise exception 'milk_bad_input';
+  end if;
+  -- Una cerrada no se abrió antes de comprarla.
+  if v_found then
+    v_at := greatest(v_at, x.added_at);
   end if;
 
   select * into v_prev from formula_containers
@@ -1540,7 +1596,8 @@ grant execute on function milk_sync_started_discard() to authenticated;
 
 -- ================================================================ INVARIANTE
 
--- La de 0015 con transferencias, el biberón empezado y la fórmula. La misma
+-- La de 0015 con transferencias, el biberón empezado y la fórmula (INV-13: un
+-- destino no vence después que la leche que recibió). La misma
 -- que reconstruye tests/helpers/milkInvariant.ts. Si devuelve algo, la
 -- migración no se aplica. INV-7 es constraint.
 do $$
@@ -1614,6 +1671,7 @@ begin
       from milk_discards x left join feedings f on f.id = x.feeding_id
      where x.voided_at is null and x.reason = 'started_bottle_expired'
        and (f.id is null or f.voided_at is not null or f.feeding_type <> 'bottle'
+            or f.baby_id <> x.baby_id
             or f.leftover_ml is distinct from x.amount_ml)
     union all
     select 'INV-11 transferencia incoherente', t.id
@@ -1633,6 +1691,12 @@ begin
     select 'INV-12 fórmula', x.id
       from formula_containers x
      where x.finished_at < x.opened_at
+    union all
+    select 'INV-13 caducidad combinada', t.id
+      from milk_transfers t
+      join milk_containers o on o.id = t.from_container_id
+      join milk_containers d on d.id = t.to_container_id
+     where t.voided_at is null and d.voided_at is null and d.expires_at > o.expires_at
   )
   select count(*), min(falla || ' ' || id::text) into v_n, v_first from fallas;
   if v_n > 0 then
