@@ -128,3 +128,9 @@ H4 `expected null to be 'milk_bad_input'` → pasa · H5 `expected 'milk_combine
 to be 'milk_bad_input'` → pasa · H6 `expected null not to be null` → pasa · H3
 sin test (no determinista), locks del conjunto `order by id`. Suites (rol DB):
 test:tz 685 × 4, integración 27/385, `milkV5Migration` corrió (no skipped).
+
+### Re-auditoría de `2dafaff` [VERIFICADO]
+Auditor: H1–H6 **CERRADOS**; CTE de H2 termina (`union`) y no admite ciclos;
+INV-13 no la rompe ningún flujo legítimo. **VEREDICTO: APROBADO. Bloqueantes:
+ninguno.** INFO: un futuro "pasar al freezer" o recálculo por Ajustes debe
+respetar INV-13.
