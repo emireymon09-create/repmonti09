@@ -62,7 +62,7 @@ import {
   combineProblem,
   isCombinable,
 } from '@/lib/milkCombine'
-import { formulaReadSince, formulaStock } from '@/lib/formulaStock'
+import { formulaReadSince, formulaStock, wholeDaysLeft } from '@/lib/formulaStock'
 import {
   FORMULA_BOTTLE_ML,
   FORMULA_OPEN_MAX_H,
@@ -1092,8 +1092,8 @@ export default function PumpingPage() {
           {stock.perDayMl > 0 && (
             <div className="meta">
               {t('formula.perDay', { amount: formatMilkOz(stock.perDayMl) })}
-              {stock.daysLeft !== null &&
-                ` ${t('formula.daysLeft', { count: Math.floor(stock.daysLeft) })}`}
+              {wholeDaysLeft(stock) !== null &&
+                ` ${t('formula.daysLeft', { count: wholeDaysLeft(stock)! })}`}
             </div>
           )}
           {stock.low && (stock.closed.length > 0 || stock.open) && (

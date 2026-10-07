@@ -172,3 +172,13 @@ export function formulaReadSince(
   }
   return new Date(since).toISOString()
 }
+
+/**
+ * The whole days the stock lasts, to say as "Lasts about N days" — or null
+ * when there is less than one (or no consumption): "0 days" with 8 oz on the
+ * shelf reads as "none left" (QA-2). The low warning already speaks then.
+ */
+export function wholeDaysLeft(stock: Pick<FormulaStock, 'daysLeft'>): number | null {
+  if (stock.daysLeft === null || !(stock.daysLeft >= 1)) return null
+  return Math.floor(stock.daysLeft)
+}

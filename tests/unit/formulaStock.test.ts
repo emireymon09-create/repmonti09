@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formulaOpenState, formulaStock } from '@/lib/formulaStock'
+import { formulaOpenState, formulaStock, wholeDaysLeft } from '@/lib/formulaStock'
 import { FORMULA_BOTTLE_ML } from '@/lib/milkParams'
 import { ML_PER_FL_OZ } from '@/lib/format'
 import type { Feeding, FormulaContainer } from '@/lib/types'
@@ -221,5 +221,21 @@ describe('U-F1 caducidad de la abierta (V5-05, V5-07, caso límite 2)', () => {
     const s = formulaStock({ containers: [a, b], feedings: [feed(NOW - HOUR, 1)], nowMs: NOW })
     expect(s.open?.container.id).toBe(b.id)
     expect(s.open?.usedMl).toBeCloseTo(OZ, 9)
+  })
+})
+
+// QA-2 (QA v5, 7 oct 2026): con 8 oz y ~8.3 oz por día la tarjeta Similac decía
+// "Alcanza para unos 0 días". Menos de un día entero no se dice como "0 días".
+describe('QA-2 wholeDaysLeft — días enteros que se pueden decir', () => {
+  it('menos de un día no es "0 días"', () => {
+    expect(wholeDaysLeft({ daysLeft: 0.96 })).toBeNull()
+    expect(wholeDaysLeft({ daysLeft: 0 })).toBeNull()
+  })
+  it('uno o más: los días enteros', () => {
+    expect(wholeDaysLeft({ daysLeft: 1 })).toBe(1)
+    expect(wholeDaysLeft({ daysLeft: 2.7 })).toBe(2)
+  })
+  it('sin consumo: nada que decir', () => {
+    expect(wholeDaysLeft({ daysLeft: null })).toBeNull()
   })
 })
