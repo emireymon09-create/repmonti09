@@ -26,7 +26,8 @@
     "db:env": "bash scripts/local-stack.sh env",
     "db:psql": "bash scripts/local-stack.sh psql",
     "db:status": "bash scripts/local-stack.sh status",
-    "device-token": "node --env-file=.env.local scripts/device-token.mts"
+    "device-token": "node --env-file=.env.local scripts/device-token.mts",
+    "test:layout": "vitest run --config vitest.e2e.config.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.1",
@@ -44,6 +45,7 @@
     "eslint": "^8.57.1",
     "eslint-config-next": "15.5.26",
     "eslint-config-prettier": "^9.1.2",
+    "playwright-core": "1.60.0",
     "prettier": "^3.9.8",
     "typescript": "^5.5.0",
     "vitest": "^3.2.7"
