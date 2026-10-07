@@ -419,7 +419,13 @@ public/sw.js       Service worker: que la app ABRA sin conexión. Nunca cachea
                    /statistics con la red cortada). **Sin verificar:** la
                    actualización desde un navegador que ya tenía `amelia-v5`.
 tests/             Vitest. unit/ no necesita nada; integration/ necesita el
-                   stack local levantado.
+                   stack local levantado. e2e/ (7 oct 2026) es la matriz de
+                   layout en Chromium (`pnpm test:layout`, fuera de test:all):
+                   nada encimado, tapado ni fuera de la ventana. tests/e2e/README.md.
+lib/popover.ts     PURO (7 oct 2026): la política de capas — un popup a la vez
+                   (`popoverBus`) y si abre arriba o abajo (`placePopover`).
+                   lib/usePopover.ts es el hook que usan Nav y RowMenu.
+                   La política entera: docs/politica-capas.md.
 supabase/migrations/0010_push_forbidden_streak.sql  La columna consecutive_403.
 supabase/migrations/0011_push_cron.sql  pg_cron + pg_net: el job que llama a
                    /api/push/nursing-check cada minuto DESDE la base de la nube.

@@ -172,7 +172,7 @@ Sigue sin cumplir, sin cambios porque no se usa:
 
 | Par | Ratio | Mínimo | Dónde |
 |---|---|---|---|
-| `--c-danger` como texto | 2.78:1 sobre elevado | 4.5 | solo `.nav-menu-item.is-danger`, que hoy no usa ningún componente |
+| `--c-danger` como texto | 2.78:1 sobre elevado | 4.5 | **Ya no se usa como texto (7 oct 2026).** Lo usaba "Borrar" del ⋯ de Historial (`.row-menu-item.is-danger`), que esta tabla daba por inexistente: ahora es `--c-text` sobre `--c-danger-soft` (el par de los `Banner` de error) |
 
 Informativo (1.4.11 no lo exige porque el botón se identifica por su texto):
 el relleno de `--c-action` contra la tarjeta es 1.83:1.
@@ -401,7 +401,7 @@ entrada se edita, el Editar/Borrar de las demás queda deshabilitado, así
 nunca se abre un segundo formulario ni un `confirm` encima de cambios sin
 guardar. Al cerrar el panel (Cancel o Save) **el foco vuelve al botón Edit de
 esa fila** (`lib/useReturnFocus.ts`, 21 sep 2026; cada Edit lleva
-`data-edit-for`). Antes quedaba en `<body>`. No hay modales con overlay en la app: la edición es inline y la
+`data-edit-for`). Antes quedaba en `<body>`. No hay modales con overlay en la app (política de capas, con sus tokens `--z-bar`/`--z-popover` y la regla de un popup a la vez: `docs/politica-capas.md`, 7 oct 2026): la edición es inline y la
 confirmación es `window.confirm`.
 
 ---
@@ -747,8 +747,16 @@ esquina abre esa sección; va en gris y solo se acentúa al tocarlo o enfocarlo.
 Lleva `aria-label` porque no tiene texto. **Desde el 23 sep 2026 es la única
 puerta**: el pie que lo decía con palabras ("Totals and log →") se sacó —
 repetía en las tres tarjetas algo que la flecha ya dice y empujaba los botones
-hacia abajo. El área táctil del ícono sigue siendo `--tap` entera (52px medidos
-en teléfono) y el `aria-label` no cambió ("Feeding: totals and log").
+hacia abajo. El `aria-label` no cambió ("Feeding: totals and log").
+
+> **Corregido el 7 oct 2026.** El área táctil era `--tap` entera (52 px) desde
+> `--s-2`, y solo el título le dejaba lugar a la derecha: el área bajaba más que
+> el título y pisaba la primera línea. En `/pumping` tapaba "3.04 oz · M4"
+> (36,8×18 px medidos, `tests/e2e`). Ahora el ícono va en la esquina con el piso
+> de los controles secundarios (`--tap-min`, 44 px, §1) y **el primer elemento de
+> la tarjeta reserva ese alto y ese ancho** (`.card.has-quick > .card-quick + *`).
+> Costo: el renglón del título pasa a medir `--tap-min − --s-4` (32 px en el
+> teléfono). Ver `docs/politica-capas.md` §6.
 
 Lo de "medir lo mismo" no es un alto fijo elegido a ojo: el grid las iguala con
 `align-items: stretch` y el pie se apoya abajo con `margin-top: auto`. Las tres
@@ -1478,8 +1486,11 @@ exportados. **Por definir.**
   con retraso y fundido (§5.13), así que en una carga normal no se ve. Un
   skeleton con la forma del contenido sigue **por definir**.
 - **Contraste:** medido en ambos temas (§2). Los cuatro pares del oscuro bajo
-  AA se corrigieron el 21 sep 2026; sólo queda `--c-danger` como texto sobre
-  elevado (2.78:1), en una clase que hoy no usa nada.
+  AA se corrigieron el 21 sep 2026. El 7 oct 2026 la matriz de `tests/e2e`
+  encontró dos más, los dos ya corregidos: el ítem de la pantalla actual en el
+  menú (acento sobre `--c-accent-soft`: 4.02:1 oscuro, 4.45:1 claro → ahora
+  `--c-text`, con el acento en el ícono) y "Borrar" del ⋯ (`--c-danger` como texto,
+  2.78:1 → `--c-text` sobre `--c-danger-soft`).
 - **Íconos del nav:** **trece** SVG dibujados a mano en `components/ui.tsx`; no
   son una librería, y este repo no tiene ninguna instalada (se confirmó el 23
   sep 2026 contra `package.json`). El de `menu` —tres líneas verticales del
