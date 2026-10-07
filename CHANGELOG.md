@@ -4,6 +4,34 @@ Every version of Amelia, newest first. The current version is the `version`
 field in `package.json`; this file is the history. A test fails if the two
 disagree. Shown in the app under the settings gear → Version history.
 
+## [0.13.0] - 2026-10-06
+
+Breast milk is now kept in the app bottle by bottle, in your reusable bottles.
+
+- **Log each pumping session left and right**, each side in oz or ml on its own. A side that
+  gave nothing stays empty. Then pick which bottle the milk went into, M1 to M6: none is picked
+  for you, and a bottle that still has milk in it can't be chosen until it's used up, thrown out
+  or its session is deleted. How many bottles you have is in Settings → Milk storage → Milk
+  bottles.
+- **See what there is:** the Milk page shows the breast milk that can still be used, bottle by
+  bottle, with when it was put in the fridge and when to use it by. Fridge milk lasts 4 days from
+  when pumping started (you can change that in Settings → Milk storage).
+- **Expired and Discard:** once a bottle's milk is past its time it says "Expired", stops
+  counting and isn't offered for feeds. "Discard" throws all of it out, frees the bottle and adds
+  it to the "Discarded milk" total on the Milk page; each one is listed in History too. It asks
+  first, because it can't be undone.
+- **Each bottle suggests itself on Today:** the amount of the last bottle, using the oldest milk
+  first and topping up with formula. You can change it before logging.
+- **Note what was left over.** Bottles have an optional "Left over" field, in oz or ml. It's only
+  for the numbers: that milk doesn't go back to any bottle and isn't counted as discarded.
+- **Correct a past bottle from History or Feeding:** time, breast milk, formula and left over.
+  Before saving it tells you which bottles the milk goes back to or comes out of; if there isn't
+  enough, or that milk had already expired at that time, it says so and saves nothing.
+- **Older bottles show an estimated split**, like "≈ 1.5 oz breast milk + 1.5 oz formula
+  (estimated)", worked out from the pumping logged back then.
+- **Works offline like the rest of the app**, marked "Not synced yet" until it syncs. If two
+  phones put milk in the same bottle, the second one is told so and can log it again in another.
+
 ## [0.12.3] - 2026-10-06
 
 - **Nothing in the app changed.** The project notes now say the phone comes first, then the
