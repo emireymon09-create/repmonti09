@@ -107,3 +107,24 @@ llamaban igual.
 
 Suites después (director): lint 0, format 0, `test:tz` 683 × 4 husos,
 integración 27 archivos / 375.
+
+## H6 — auditorías [primera vuelta VERIFICADA]
+
+- **Revisor de cobertura:** APROBADO CON OBSERVACIONES, 0 bloqueantes. MAYOR:
+  compatibilidad C-1…C-5 y scripts de reversa/verificación sin hacer (→ H5b);
+  V5-03 sin integración (cerrado en `2dafaff`). MENOR: +1 ms de 4 d y 60 min,
+  121 min en U, concurrencia de `mark_cold`/`formula_add` (cerrada en `2dafaff`).
+- **Auditor de seguridad:** APROBADO CON OBSERVACIONES, 0 bloqueantes; RLS,
+  permisos, guardas, aditividad y cliente OK. MAYOR H1 (deshacer combinar
+  alargaba la caducidad), MAYOR H2 (caducidad de un origen no bajaba en cadenas),
+  MENOR H3 (orden de locks), H4 (horas sin cota inferior), H5 (topes de
+  combinar), H6 (desecho empezado y cambio de bebé).
+
+### Correcciones `2dafaff` (rol DB), cada una falla → pasa
+H1 `expected 1791703834594 to be 1791444634594` → pasa · H2 `expected 1791700534641
+to be 1791614134641` y `expected null to be 'milk_combined:M1'` → pasan · INV-13
+nueva (destino no vence después que sus orígenes) en 0016, helper SQL y TS ·
+H4 `expected null to be 'milk_bad_input'` → pasa · H5 `expected 'milk_combine_conflict'
+to be 'milk_bad_input'` → pasa · H6 `expected null not to be null` → pasa · H3
+sin test (no determinista), locks del conjunto `order by id`. Suites (rol DB):
+test:tz 685 × 4, integración 27/385, `milkV5Migration` corrió (no skipped).
