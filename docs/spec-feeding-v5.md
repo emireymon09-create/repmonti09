@@ -259,6 +259,7 @@ stack local, **N** usuario real en chrome-headless-shell 390×844 (ES y EN),
 | D5-16 | Stock nunca negativo en pantalla (0 + aviso "más de lo anotado") | Regla 14 |
 | D5-17 | Desecho parcial / volcada: fuera de alcance | Pedido |
 | D5-18 | Ambiente/congelador en Ajustes: dentro de "Todavía no se usan" (plegado) | Aclarar sin perder valores |
+| D5-19 | Leche que "vuelve" (toma anulada/bajada, extracción subida) a un biberón que ya se volcó en otro va a `lost_ml`, no al destino | Igual que D-9: nunca aparece leche en un biberón que físicamente está vacío |
 
 ## 5. Casos límite
 
