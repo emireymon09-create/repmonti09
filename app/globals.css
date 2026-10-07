@@ -277,6 +277,19 @@ body {
   --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
+/* ------------------------------------------------------------- capas
+   El orden de apilado de la app, ENTERO, en un solo lugar (7 oct 2026). Ningún
+   z-index suelto en esta hoja: todo `z-index` usa uno de estos tokens.
+   Política (docs/politica-capas.md, lib/popover.ts): no hay modales con
+   overlay — lo que bloquea es un window.confirm nativo —; lo que flota es la
+   barra de abajo y, por encima de ella, UN popup abierto a la vez (el menú o
+   el "⋯" de una fila). Un popup que no entra arriba de la barra abre hacia
+   arriba del botón, así que nunca queda debajo de ella. */
+:root {
+  --z-bar: 20;
+  --z-popover: 30;
+}
+
 @keyframes enter {
   from {
     opacity: 0;
@@ -369,13 +382,13 @@ body {
 }
 .card-quick {
   position: absolute;
-  top: var(--s-2);
-  right: var(--s-2);
+  top: 0;
+  right: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: var(--tap);
-  height: var(--tap);
+  width: var(--tap-min);
+  height: var(--tap-min);
   border-radius: var(--r-control);
   color: var(--c-muted);
   text-decoration: none;
@@ -394,9 +407,17 @@ body {
   width: 1.4em;
   height: 1.4em;
 }
-/* El título de la tarjeta no se mete debajo del ícono. */
-.card.has-quick > .label {
-  padding-right: var(--tap);
+/* NADA del contenido se mete debajo del ícono (7 oct 2026). Hasta acá solo
+   el título le dejaba lugar a la derecha, y el área táctil (52×52, desde
+   --s-2) bajaba más que el título: en /pumping tapaba "3.04 oz · M4" de la
+   primera fila (36,8×18 px medidos) — un toque ahí iba al Historial. Ahora el
+   ícono es del piso táctil de los controles secundarios (--tap-min, design.md
+   §1), va pegado a la esquina, y el PRIMER elemento de la tarjeta, sea cual
+   sea, tiene el alto que el ícono ocupa dentro del padding (--tap-min menos
+   --s-4) y su lado derecho libre. */
+.card.has-quick > .card-quick + * {
+  padding-right: var(--tap-min);
+  min-height: calc(var(--tap-min) - var(--s-4));
 }
 
 .stack {
@@ -928,7 +949,7 @@ select.input {
   position: absolute;
   top: calc(100% + var(--s-2));
   right: 0;
-  z-index: 10;
+  z-index: var(--z-popover);
   min-width: 15em;
   background: var(--c-surface-raised);
   border: 1px solid var(--c-line);
@@ -980,6 +1001,12 @@ select.input {
 /* La pantalla en la que ya estás, marcada igual que la pestaña activa. */
 .nav-menu-link[aria-current='page'] {
   background: var(--c-accent-soft);
+  color: var(--c-text);
+}
+/* El acento va en el ícono, que es gráfico (3:1). Como texto, el acento sobre
+   --c-accent-soft encima de --c-surface-raised medía 4,02:1 en oscuro — por
+   debajo de AA (medido el 7 oct 2026, matriz de tests/e2e). */
+.nav-menu-link[aria-current='page'] .nav-icon {
   color: var(--c-accent);
 }
 /* El ícono acá se dibuja siempre — en la barra ancha los .nav-icon están
@@ -1244,7 +1271,7 @@ select.input {
   .nav {
     position: sticky;
     bottom: 0;
-    z-index: 20;
+    z-index: var(--z-bar);
     order: 1;
     width: 100vw;
     margin: auto calc(50% - 50vw) 0;
@@ -1449,7 +1476,7 @@ select.input {
   position: absolute;
   top: calc(100% + var(--s-1));
   right: 0;
-  z-index: 10;
+  z-index: var(--z-popover);
   min-width: 9em;
   background: var(--c-surface-raised);
   border: 1px solid var(--c-line);
@@ -1459,6 +1486,14 @@ select.input {
   flex-direction: column;
   gap: var(--s-1);
   box-shadow: var(--shadow-menu);
+}
+/* Sin lugar entre el botón y la barra de abajo: el ⋯ abre hacia ARRIBA. Lo
+   decide lib/usePopover.ts midiendo antes de pintar. Sin esto, el de la
+   última fila de Historial quedaba debajo de la barra (medido a 390×844: los
+   dos ítems tapados por la pestaña "Datos"). */
+.row-menu-list.opens-up {
+  top: auto;
+  bottom: calc(100% + var(--s-1));
 }
 .row-menu-item {
   display: flex;
@@ -1479,8 +1514,13 @@ select.input {
 .row-menu-item:focus-visible {
   background: var(--c-surface);
 }
+/* "Borrar": el rojo va de FONDO suave, no de tinta. --c-danger como texto sobre
+   --c-surface-raised mide 2,78:1 en oscuro (design.md §2 lo anotaba como "no se
+   usa": dejó de ser cierto con este menú). Texto sobre --c-danger-soft es el par
+   de los Banner de error, >=9,5:1. Medido el 7 oct 2026 (tests/e2e). */
 .row-menu-item.is-danger {
-  color: var(--c-danger);
+  color: var(--c-text);
+  background: var(--c-danger-soft);
 }
 .edit-panel {
   display: flex;

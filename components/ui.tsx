@@ -11,11 +11,12 @@
  * Destined for `packages/ui` when the monorepo lands.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { APP_VERSION } from '@/lib/version'
 import { useT } from '@/lib/i18n/react'
+import { usePopover } from '@/lib/usePopover'
 
 export function Page({ children }: { children: React.ReactNode }) {
   return <div className="page">{children}</div>
@@ -245,32 +246,17 @@ export function RowMenu({
   disabled?: boolean
 }) {
   const { t } = useT()
-  const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    function onPointerDown(e: PointerEvent) {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false)
-    }
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key !== 'Escape') return
-      setOpen(false)
-      btnRef.current?.focus()
-    }
-    document.addEventListener('pointerdown', onPointerDown)
-    document.addEventListener('keydown', onKeyDown)
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown)
-    }
-  }, [open])
+  const listRef = useRef<HTMLDivElement>(null)
+  // Uno a la vez, Escape, toque afuera, y hacia arriba si abajo la barra lo
+  // taparía (lib/popover.ts — la última fila de Historial quedaba debajo).
+  const { open, setOpen, placement } = usePopover({ wrapRef, buttonRef: btnRef, listRef })
 
   // Si la fila se deshabilita con el menú abierto (otra fila guardando), se cierra.
   useEffect(() => {
     if (disabled) setOpen(false)
-  }, [disabled])
+  }, [disabled, setOpen])
 
   return (
     <div
@@ -294,7 +280,12 @@ export function RowMenu({
         <NavIcon name="more" />
       </button>
       {open && (
-        <div className="row-menu-list" role="menu" aria-label={label}>
+        <div
+          ref={listRef}
+          className={placement === 'up' ? 'row-menu-list opens-up' : 'row-menu-list'}
+          role="menu"
+          aria-label={label}
+        >
           {onEdit && (
             <button
               type="button"
@@ -378,31 +369,15 @@ const SECTIONS = [
 
 export function Nav() {
   const pathname = usePathname()
-  const [menuOpen, setMenuOpen] = useState(false)
   const { t } = useT()
   const settingsRef = useRef<HTMLDivElement>(null)
   const menuBtnRef = useRef<HTMLButtonElement>(null)
-
-  // onBlur alone can't close the menu: Safari on iOS never focuses a tapped
-  // button, so a tap elsewhere wouldn't blur anything. Close on any press
-  // outside, and on Escape (focus back to the button, where it came from).
-  useEffect(() => {
-    if (!menuOpen) return
-    function onPointerDown(e: PointerEvent) {
-      if (!settingsRef.current?.contains(e.target as Node)) setMenuOpen(false)
-    }
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key !== 'Escape') return
-      setMenuOpen(false)
-      menuBtnRef.current?.focus()
-    }
-    document.addEventListener('pointerdown', onPointerDown)
-    document.addEventListener('keydown', onKeyDown)
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown)
-    }
-  }, [menuOpen])
+  // Uno a la vez, Escape (el foco vuelve al botón) y toque afuera — onBlur solo
+  // no alcanza: Safari de iOS nunca enfoca un botón tocado (lib/usePopover.ts).
+  const { open: menuOpen, setOpen: setMenuOpen } = usePopover({
+    wrapRef: settingsRef,
+    buttonRef: menuBtnRef,
+  })
 
   return (
     <nav className="nav">
