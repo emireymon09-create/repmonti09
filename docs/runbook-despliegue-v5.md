@@ -123,9 +123,9 @@ Lo que hay para hacer:
    servidor o más nueva. **Sin ese archivo, no sigas.**
    **Límite [ensayo]:** se restauró por primera vez un dump así (de la réplica)
    en un Postgres limpio de la misma imagen: `pg_restore` sale con **exit 1 y
-   ~370 errores**, todos de esquemas de Supabase (`auth`, grants, privilegios por
+   365 errores**, todos de esquemas de Supabase (`auth`, grants, privilegios por
    defecto) — eso es **normal** y no significa que falló —; **las 19 tablas de
-   `public` quedan idénticas** (conteo y md5). Pero los **usuarios** (`auth.users`)
+   `public` quedan con los datos idénticos** (conteo y md5; los `GRANT` a `anon` pueden quedar distintos — RLS sigue protegiendo). Pero los **usuarios** (`auth.users`)
    no entran en una base limpia y 10 claves foráneas a `auth.users` no se
    recrean: un proyecto nuevo restaurado "tal cual" tiene los datos pero nadie
    puede iniciar sesión. Sirve para recuperar **datos**, no para levantar la app
@@ -170,7 +170,7 @@ SQL Editor → New query → pegá **el archivo entero**
   `false`). No sigas.
 - **Bloqueos [ensayo]:** mientras corre, `milk_containers` y `milk_discards`
   quedan con `AccessExclusiveLock`: una pantalla de Leche que lea en ese momento
-  espera hasta el `commit` (~0,1 s). Pañales, sueño y lactancia no esperan.
+  espera hasta el `commit` (~0,1 s). Quien registre una toma o edite el bebé en ese instante también espera (`ShareRowExclusiveLock` en `feedings` y `babies`); pañales, sueño y lactancia no.
 
 ### 3.2 Comprobar, objeto por objeto
 
@@ -398,9 +398,9 @@ borrá la Similac de prueba con su ⋯). No a mano en SQL.
 | 0, 1, 2 | Nada que deshacer | Nada |
 | 3.1 con `ERROR` | No quedó aplicada (una transacción). `rollback;` y consulta 1 | Nada |
 | Después del push, problema de la **app** | Vercel → Deployments → el de 0.13.0 → **Promote to Production** (o `git revert` del rango + push con su propio bump, §0.1). La base **puede quedar en 0016**: 0.13.0 convive (paso 4) | Nada en la base. Lo encolado por 0.14.0 en un teléfono (combinar, Similac, "ya está fría", desechar el empezado) se sigue aplicando, porque las funciones siguen en la base [por lectura de `66462fa:lib/db.ts`, no probado en un teléfono] |
-| Hay que sacar **0016** | **[ensayo]** El SQL Editor **no muestra los `NOTICE`** de la reversa (cuántas combinaciones vivas, "Lo que hay" antes/después): antes, corré `select count(*) filter (where voided_at is null) as combinaciones_vivas from milk_transfers;` y `select count(*) from formula_containers where voided_at is null;` para saber qué se va a perder. Primero la app (fila anterior) y cerrar/abrir las PWA. Si se puede, **deshacé las combinaciones vivas desde 0.14.0** antes. Para conservar lo que se pierde, descomentá el bloque `milk_backup_v5` de `docs/rollback-leche-v5.sql` (va antes de su `begin;`). Después el archivo entero en el SQL Editor (trae su `begin`/`commit` y el `notify`) | **La Similac** (compras y abierta), **los desechos del biberón empezado**, **el enfriado** ("ya está fría"), **el registro de operaciones** y **las combinaciones**. La leche recibida y no servida de una combinación viva **sale de "Lo que hay"** (el NOTICE dice cuánto). Probado: invariante de 0015 = 0, esquema idéntico a 0001–0015, re-ejecutable, 0016 vuelve a entrar (`compatibilidad-v5.md` §4) |
+| Hay que sacar **0016** | **[ensayo]** El SQL Editor **no muestra los `NOTICE`** de la reversa (cuántas combinaciones vivas, "Lo que hay" antes/después): antes, corré `select count(*) filter (where voided_at is null) as combinaciones_vivas from milk_transfers;` y `select count(*) from formula_containers where voided_at is null;` para saber qué se va a perder, y **cuántos ml salen de "Lo que hay"** por bebé (lo recibido por una combinación viva y no servido; validado contra la reversa en seco: 88,7 ml predichos = 277,35 − 188,63 medidos): `begin transaction read only; select c.baby_id, round(sum(greatest(0, c.remaining_ml - (c.amount_ml - c.lost_ml - coalesce((select sum(x.amount_ml) from milk_discards x where x.container_id = c.id and x.voided_at is null), 0)))), 1) as ml_que_salen from milk_containers c where c.voided_at is null and exists (select 1 from milk_transfers t where t.to_container_id = c.id and t.voided_at is null) group by 1; rollback;` — si da > 0, deshacé esas combinaciones desde la app antes. Primero la app (fila anterior) y cerrar/abrir las PWA. Si se puede, **deshacé las combinaciones vivas desde 0.14.0** antes. Para conservar lo que se pierde, descomentá el bloque `milk_backup_v5` de `docs/rollback-leche-v5.sql` (va antes de su `begin;`). Después el archivo entero en el SQL Editor (trae su `begin`/`commit` y el `notify`) | **La Similac** (compras y abierta), **los desechos del biberón empezado**, **el enfriado** ("ya está fría"), **el registro de operaciones** y **las combinaciones**. La leche recibida y no servida de una combinación viva **sale de "Lo que hay"** (el NOTICE dice cuánto). Probado: invariante de 0015 = 0, esquema idéntico a 0001–0015, re-ejecutable, 0016 vuelve a entrar (`compatibilidad-v5.md` §4) |
 | También 0015 o 0014 | Después del anterior, `docs/rollback-leche-v4.sql` y `docs/rollback-leche.sql` (runbook v4 §12) | Todo el inventario de leche |
-| Todo salió mal | Restaurar el dump del paso 2 | Todo lo registrado después del dump. **Nunca se probó una restauración de este proyecto** |
+| Todo salió mal | Restaurar el dump del paso 2 | Todo lo registrado después del dump. **[ensayo]** Restauración probada en local (§2): los datos vuelven; las cuentas (`auth.users`) no en un proyecto nuevo |
 
 ## 8. Lo que NO está verificado
 

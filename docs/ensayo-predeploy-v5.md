@@ -45,7 +45,7 @@ extraída hace < 60 min, 1 toma de la última hora con "Sobró".
 **Paso 2 del runbook ensayado:** `pg_dump -Fc` (393 KB, 0,17 s) → `pg_restore -l`
 lista `milk_containers`, `milk_drawdowns`, `milk_discards` y ninguna de 0016.
 **Primera restauración probada de este proyecto** (Postgres efímero de la misma
-imagen, `--network none`): `pg_restore` sale con **exit 1 y 370 errores**, todos
+imagen, `--network none`): `pg_restore` sale con **exit 1 y 365 errores** (`errors ignored on restore: 365`), todos
 de esquemas de Supabase (`auth`, grants, privilegios por defecto); **las 19 tablas
 de `public` quedan idénticas** (mismo conteo y md5 por tabla que la réplica). Pero
 `auth.users` **no** entra (columnas distintas en una imagen limpia) y por eso
@@ -160,7 +160,7 @@ contextos = dos teléfonos). Después de **cada** paso, la invariante de 0016.
 Nota (no es defecto, es **D5-5** pendiente de firma): una extracción cargada desde
 v5 **con hora pasada** queda "Enfriando" una hora desde que se tocó "Registrar"
 (`fridge_at` = 08:25 para una extracción de las 06:15). La misma cargada desde
-0.13.0 queda fría al instante (`fridge_at = pumped_at`, spec caso 15).
+0.13.0 queda con `fridge_at = pumped_at` (spec caso 15): fría al instante solo si se extrajo hace más de 60 min; si no, v5 la muestra "Enfriando" hasta cumplirla (lo midió el revisor).
 
 ## E5 — flujos de usuario real de v5 (390×844, ES y EN)
 
@@ -342,7 +342,7 @@ aplicar 0016 por el Editor, `supabase_migrations.schema_migrations` sigue en
 
 | # | Hallazgo | Corrección |
 |---|---|---|
-| H-R1 | "Nunca se probó una restauración": probada; `pg_restore` da exit 1 y ~370 errores de esquemas de Supabase, `public` queda idéntico, `auth.users` y 10 FK no | §2 explica qué esperar y el límite (recupera datos, no cuentas) |
+| H-R1 | "Nunca se probó una restauración": probada; `pg_restore` da exit 1 y 365 errores de esquemas de Supabase, `public` queda idéntico, `auth.users` y 10 FK no | §2 explica qué esperar y el límite (recupera datos, no cuentas) |
 | H-R2 | 0016 en el Editor **no** muestra "Success. No rows returned": muestra una tabla `set_config` vacía | §3.1, con el mensaje exacto |
 | H-R3 | Consulta 7 ("mejor esperar") ambigua: lactancia/sueño abiertos no afectan 0016 | §1, fila 7 |
 | H-R4 | 6.3 pedía "cambiar `do` por `select`" a mano | `docs/invariante-v5.sql` nuevo, solo lectura, probado por el Editor |
@@ -400,3 +400,38 @@ simulado: 2,0 s. Teléfono reabierto con red → v0.14.0 en pantalla: 792 ms.
 - Una restauración del dump **en la nube** (acá: Postgres local de la misma
   imagen).
 - Las esperas reales (60 min, 48 h): se probaron con horas pasadas y reloj fijo.
+
+## E9 — revisor independiente (solo lectura, réplica propia)
+
+Un subagente que no implementó nada rehizo E2, E3 y el núcleo de E4 en **otra**
+réplica (`revisor-e9-pg`, `--network none`, restaurada del dump de E1, `psql`
+con `postgres` no superusuario). **Veredicto: CONFIRMA el núcleo de E2, E3 y E4.
+Bloqueantes: ninguno.**
+
+Confirmado con su propia medida: consultas 1/2/3/6 antes y después; 0016 en
+40,7 ms dentro de la sesión; los locks; 42701 en la segunda corrida; corte sin
+`commit` (líneas 729 y 1714) → `on` y nada aplicado; datos de 0.13.0 idénticos;
+backfill; `invariante-v5.sql` igual token por token a la de 0016 **y detecta una
+falla sembrada a propósito**; reversa (pierde Similac, ops, combinaciones,
+enfriado y el desecho de empezado; re-ejecutable; 0016 vuelve a entrar dos veces);
+E4 a nivel base en 11 pasos con firmas viejas y nuevas sobre los mismos biberones
+(`milk_combined:M5`, `milk_served_exceeds_amount:M5`, `milk_combine_used:M2`
+donde corresponde), invariante 0 en todos. Lo que dejó NO VERIFICADO por su
+cuenta: la salida exacta del Editor (`postgres-meta`), la interrupción con
+`pg_terminate_backend` y E4 en pantallas (todo eso sí lo midió el ensayo, E2–E4).
+
+Sus observaciones, todas atendidas en `docs/runbook-despliegue-v5.md`:
+
+1. §7 seguía diciendo "Nunca se probó una restauración" → corregido.
+2. Eran **365** errores de restauración, no 370 → corregido acá y en el runbook.
+3. Los `GRANT` a `anon` no quedan idénticos tras restaurar → aclarado en §2.
+4. **La reversa con una combinación viva NO servida resta lo recibido de "Lo que
+   hay"** (él midió −60 ml; el ensayo solo había pasado por el caso servido, 0 ml)
+   → §7 ahora trae una consulta de solo lectura que dice **cuántos ml** se van a
+   perder por bebé; validada contra la reversa en seco en la réplica del ensayo:
+   predijo 88,7 ml y la reversa midió 277,35 → 188,63 ml en cada uno de los dos
+   bebés con combinaciones vivas.
+5. Durante 0016 también esperan quien registre una toma o edite el bebé (~0,1 s)
+   → §3.1.
+6. La nota de E4 sobre extracciones de 0.13.0 "frías al instante" era cierta solo
+   para horas pasadas de > 60 min → corregida arriba.
