@@ -286,3 +286,52 @@ app **con conexión**: en < 1 s muestra v0.14.0 y en esa misma apertura re-guard
 las pantallas para usar sin conexión. Mientras un teléfono no se reabra con red,
 sigue en 0.13.0 (sin conexión, o con la pestaña abierta) — compatible con la
 base en 0016, pero con los riesgos de ventana del runbook §4.
+
+## E8 — push en seco (worktree descartable `../amelia_app-ensayo`)
+
+Desacoplado, en la punta de la rama (`41f0e7c`) + el bump como lo hará Luis
+(`9dd1d4a Release 0.14.0 with the bottle recipe, cooling, combining and Similac
+stock`: `package.json` 0.14.0 y la entrada de CHANGELOG del runbook **con las
+etiquetas corregidas**). La rama v5 **no** lleva el bump.
+
+| Comando (en el worktree de ensayo) | Resultado |
+|---|---|
+| `node -v` · `.nvmrc` · `engines` | `v24.16.0` · `24` · `"node":">=24"` |
+| `pnpm install --frozen-lockfile` | exit 0 |
+| `pnpm exec tsc --noEmit` · `pnpm lint` · `pnpm format:check` | 0 · 0 (sin warnings) · 0 |
+| `pnpm build` **sin ningún `.env`** | exit 0 — y el bundle queda sin URL de Supabase (`supabaseUrl is required.` en el navegador): verde no es suficiente, ver runbook §5 |
+| `pnpm build` (con el `.env` local) | exit 0 |
+| `pnpm test:all` | 691 × 4 husos; integración **28 / 391**, contra la réplica con datos tipo producción; `changelog.test.ts` pasa con 0.14.0 |
+| `pnpm test:layout` (matriz por defecto) | **508 celdas, 0 FAIL** (5 min 43 s) |
+
+Variables: el código de 0.13.0 y el de v5 leen **las mismas 6** (`git grep
+process.env`): `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+`NEXT_PUBLIC_VAPID_PUBLIC_KEY` (públicas, al compilar), `SUPABASE_SERVICE_ROLE_KEY`,
+`VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (servidor). Ninguna nueva.
+
+Git (sin red: se usa la ref local de `origin/main`; **no** se hizo push):
+
+```
+$ git rev-parse origin/main
+66462fae208a4786eb69befb0d838652e407c5bc
+$ git merge-base --is-ancestor origin/main HEAD && echo "avance rápido OK"
+avance rápido OK
+$ git diff origin/main -- package.json | grep '^+.*"version"'
++  "version": "0.14.0",
+$ git rev-list --count origin/main..HEAD
+34
+$ git diff --stat origin/main | tail -1
+ 70 files changed, 14954 insertions(+), 481 deletions(-)
+```
+
+Lo que Luis va a ejecutar (runbook §5.3), **no ejecutado**:
+`git fetch origin` → `git rev-parse origin/main` (66462fa…) → `git merge-base
+--is-ancestor origin/main HEAD` → el `grep` del version → `git push origin
+feat/milk-inventory-v5:main`.
+
+Archivos que **no** se cuelan: ningún `output*.txt` versionado;
+`docs/handoff-2026-09-25.md` está versionado pero idéntico a `origin/main`;
+`CLAUDE.md` cambia solo por commits de la rama (`557c924`, `5482ea1`,
+`76649d1`), no por el working tree sucio de `main` (sha distinto). Nota: tras
+aplicar 0016 por el Editor, `supabase_migrations.schema_migrations` sigue en
+`0015` (igual pasará en la nube): por eso el runbook verifica por objetos.
