@@ -161,3 +161,40 @@ Nota (no es defecto, es **D5-5** pendiente de firma): una extracción cargada de
 v5 **con hora pasada** queda "Enfriando" una hora desde que se tocó "Registrar"
 (`fridge_at` = 08:25 para una extracción de las 06:15). La misma cargada desde
 0.13.0 queda fría al instante (`fridge_at = pumped_at`, spec caso 15).
+
+## E5 — flujos de usuario real de v5 (390×844, ES y EN)
+
+`e5.mjs <es|en>` contra el build de v5 en `127.0.0.1:3114`: una familia nueva por
+idioma (dos padres = dos teléfonos), textos sacados de `lib/i18n/{es,en}.ts`,
+preparación por las RPC con horas pasadas, `page.clock` para los bordes (59/61
+min) y cada aserción contra SQL; invariante de 0016 después de cada escenario.
+
+| Escenario | ES | EN | Evidencia (ES) |
+|---|---|---|---|
+| S6 caducada → Desechar | PASS | PASS | "Caducada"; confirm "¿Desechar M1 (3.38 oz)?…"; 1 desecho `expired` |
+| S1 extraer y enfriar | PASS | PASS | "Enfriando · lista ~9:…"; "M1 ya está fría" → `cold_at` |
+| S3 biberón empezado 59/61 min (reloj fijo) | PASS | PASS | 59 min "Sobró 0.68 oz · sirve hasta 8:…"; 61 min "· ya no sirve"; Desechar → `started_bottle_expired` |
+| S2 receta sin / con "Si llora" | PASS | PASS | "Próximo biberón: 3.5 oz de leche" → con llanto "1 oz de leche" + "Para completar: pasaron menos de 2 h…"; registrado 3.50 oz |
+| S4 Similac: compra, abrir, agotamiento, 48 h | PASS | PASS | compra 1 y abrir; tras 200 ml, Leche "Queda poca: 1.24 oz o menos"; Hoy lo avisa cuando la receta lleva Similac (con fija 1 oz: "Queda poca Similac: 1.…"); abierta hace 48 h 01 → "Caducada" + Desechar → `finish_reason = expired` |
+| S5 combinar y deshacer | PASS | PASS | transferencias vivas 0→1→0; "lo que hay" 315.213 igual en los tres momentos |
+| S7 editar toma pasada (Historial) | PASS | PASS | fórmula +0.5 oz; `milk_feeding_edits` +1 |
+| S8 estimación de toma vieja + correr el inicio | PASS | PASS | "≈ 3.04 oz de leche + 1.01 oz de fórmula (estimado)"; inicio de la lactancia corrido 600 s |
+| S9 sin conexión: cola rpc → sincronizar | PASS | PASS | offline la base no cambia; cola IDB `log_pumping_session:rpc`, `log_bottle_feed:rpc`, `insert:diaper_changes`; tras sync +1/+1/+1 y 4 s después igual |
+| S10 dos teléfonos combinan a la vez | PASS | PASS | 1 sola transferencia; el otro ve "Estos biberones cambiaron desde otro teléfono… No se combinó nada" |
+| S10b dos teléfonos sirven del mismo biberón | PASS | PASS | +1 toma; el otro: "No se pudo guardar (biberón) — A M3 no le queda tanta leche…" |
+| S12 regresión: /dashboard /history /growth /appointments /settings /statistics /pumping /feeding /diapers /sleep /version, /login, ruta privada sin sesión → /login | PASS ×13 | PASS ×13 | h1 correcto, sin error de carga; /version dice 0.13.0 (la rama no lleva el bump) |
+| Errores JS (2 teléfonos) | 0 | 0 | |
+| **Total** | **37/37** | **37/37** | invariante 0 en todos |
+
+**Cola vieja de 0.13.0 reproducida por v5** (mismo origen `127.0.0.1:3115`,
+mismo IndexedDB `amelia-pending`: 0.13.0 encola sin conexión, se baja su
+servidor, se levanta v5 en el mismo puerto y se abre con conexión): 4 operaciones
+(extracción con la firma de **10** argumentos, pañal, biberón "tal cual", edición
+de una toma) → base `100/117/1101/13` → `101/118/1102/14`, igual 4 s después
+(sin duplicar), cola restante 0, invariante 0. La extracción reproducida quedó con
+`fridge_at = stored_at`: viajó la firma vieja (sin `p_fridge_at`) y la base usó
+el default. 0 errores JS.
+
+Observación de producto (no defecto, coincide con la spec V5-04/V5-05): Hoy avisa
+"Queda poca Similac" **solo si la receta lleva Similac**; si hay leche de sobra, el
+aviso de comprar está solo en Leche. Para confirmar con mamá y papá (D5-14).
