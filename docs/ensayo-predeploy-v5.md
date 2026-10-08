@@ -132,3 +132,32 @@ B 65 → 65 ml.
 | Segunda reversa | sin error, datos idénticos |
 | Tercera, con el bloque de respaldo | HTTP 400 `42P01 relation "public.formula_containers" does not exist` (el bloque solo sirve con 0016 puesta); nada cambia |
 | 0016 de nuevo encima | entra (`[{"set_config":""}]`), 21/21, invariante 0, datos de 0015 idénticos |
+
+## E4 — la ventana: 0.13.0 y v5 sobre la misma base (ya en 0016)
+
+Builds de producción servidos en `127.0.0.1:3113` (0.13.0, worktree
+desacoplado `../amelia_app-c013` en `66462fa`) y `127.0.0.1:3114` (v5), contra la
+réplica en 0016. Chromium headless 390×844, ES; Ana en 0.13.0 y Luis en v5 (dos
+contextos = dos teléfonos). Después de **cada** paso, la invariante de 0016.
+
+| Paso | App | Resultado |
+|---|---|---|
+| A1 extracción | 0.13.0 | PASS · sesiones 96→97; contenedor M1 59.15 ml, `fridge_at = stored_at`, `cold_at` nulo · INV 0 |
+| A2 biberón "tal cual" | 0.13.0 | PASS · 120 ml = M2 68 + M5 30 + **M3 22 (M3 estaba "Enfriando" para v5)** · INV 0 |
+| A3 desechar caducada | 0.13.0 | PASS · M4, desechos 18→19, `reason = expired` · INV 0 |
+| A4 editar toma pasada | 0.13.0 | PASS · fórmula 0→1 oz, `milk_feeding_edits` 10→11 · INV 0 |
+| A5 sin conexión → sincronizar | 0.13.0 | PASS · aviso de pendiente; base sin cambios offline; al volver 113/1100 → 114/1101 y 3 s después igual (sin duplicar) · INV 0 |
+| B1 extracción + "ya está fría" | v5 | PASS · "Enfriando" en pantalla; `cold_at` puesto · INV 0 |
+| B2 biberón con la receta | v5 | PASS · 104 ml = M1 89 + fórmula 15 · INV 0 |
+| D1 combinar M2 → M1 | v5 | PASS · 44.4 ml; destino 103.5 (extracción 59.1); "lo que hay" igual · INV 0 |
+| D2 Leche, origen combinado | 0.13.0 | muestra "Ya se sirvieron 1.5 oz de acá" en M2 (riesgo 1, esperado) |
+| D3 servir 3 oz del destino (más que su extracción) | 0.13.0 | PASS · 88.7 ml de M1 (extracción 59.1, le quedan 14.8) · INV 0 |
+| D4 borrar la extracción del origen | 0.13.0 | PASS · banner crudo `milk_combined:M2` (riesgo 2, esperado), nada anulado · INV 0 |
+| D5 deshacer con el destino servido de más | v5 | PASS · no ofrece "Deshacer"; transferencias 1→1 · INV 0 |
+| D6 0.13.0 anula la toma → v5 deshace | ambas | PASS · transferencias 1→0; M1 59.1 y M2 44.4 de vuelta · INV 0 |
+| Errores JS (`pageerror`) | ambas | 0 y 0 |
+
+Nota (no es defecto, es **D5-5** pendiente de firma): una extracción cargada desde
+v5 **con hora pasada** queda "Enfriando" una hora desde que se tocó "Registrar"
+(`fridge_at` = 08:25 para una extracción de las 06:15). La misma cargada desde
+0.13.0 queda fría al instante (`fridge_at = pumped_at`, spec caso 15).
