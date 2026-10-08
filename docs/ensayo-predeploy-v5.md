@@ -335,3 +335,68 @@ Archivos que **no** se cuelan: ningún `output*.txt` versionado;
 `76649d1`), no por el working tree sucio de `main` (sha distinto). Nota: tras
 aplicar 0016 por el Editor, `supabase_migrations.schema_migrations` sigue en
 `0015` (igual pasará en la nube): por eso el runbook verifica por objetos.
+
+## Hallazgos
+
+### Del runbook (corregidos en `docs/runbook-despliegue-v5.md`, commit `41f0e7c`)
+
+| # | Hallazgo | Corrección |
+|---|---|---|
+| H-R1 | "Nunca se probó una restauración": probada; `pg_restore` da exit 1 y ~370 errores de esquemas de Supabase, `public` queda idéntico, `auth.users` y 10 FK no | §2 explica qué esperar y el límite (recupera datos, no cuentas) |
+| H-R2 | 0016 en el Editor **no** muestra "Success. No rows returned": muestra una tabla `set_config` vacía | §3.1, con el mensaje exacto |
+| H-R3 | Consulta 7 ("mejor esperar") ambigua: lactancia/sueño abiertos no afectan 0016 | §1, fila 7 |
+| H-R4 | 6.3 pedía "cambiar `do` por `select`" a mano | `docs/invariante-v5.sql` nuevo, solo lectura, probado por el Editor |
+| H-R5 | **0016 pegada incompleta (cortada en fin de sentencia) da HTTP 200 y `on`, y no aplica nada** | §3.1: `on` = pegado incompleto; volver a pegar entero |
+| H-R6 | La reversa informa por `NOTICE`, que el Editor no muestra | §7: dos consultas previas para saber qué se pierde |
+| H-R7 | El CHANGELOG sugerido nombraba botones que no existen ("If crying", "It's cold now", "I opened a Similac") | §5.2 con "Crying", "It’s cold", "Open a Similac" |
+| H-R8 | `pnpm build` sale verde sin variables y deja la app rota en el navegador | §5: las 6 variables y cuáles se leen al compilar |
+| H-R9 | Segunda ejecución de 0016 (`42701 … fridge_at … already exists`) y pestaña abierta durante el deploy que sigue en 0.13.0 | §3.1 y §6.2 |
+
+### De v5
+
+**Ninguno.** Ningún flujo de v5 falló en E4–E7 y ninguna falla de pantalla es
+nueva de v5 (medido contra 0.13.0). Observaciones de producto, no defectos:
+Hoy avisa "Queda poca Similac" solo si la receta lleva Similac (V5-04/V5-05,
+D5-14); una extracción cargada desde v5 con hora pasada queda "Enfriando" una
+hora desde que se registra (D5-5). Las dos van a la firma de mamá y papá.
+
+### Preexistentes (0.13.0 o antes), reportados aparte, sin tocar
+
+| # | Qué | Evidencia |
+|---|---|---|
+| P-1 | Con texto grande (zoom 130–150 %): selector de semana, Izquierdo/Derecho de lactancia, filas del registro de /diapers, fila de /growth y selector de idioma se salen de su caja | 0.13.0 con el mismo banco: 88 y 102 celdas con falla (v5: 16 y 56) |
+| P-2 | A 200 % de texto las dos versiones quedan más anchas que la pantalla y la barra cae fuera de lo visible | ventana de diseño 286 px (0.13.0) / 241 px (v5) contra 197 visibles |
+| P-3 | Con un teclado que achica la ventana (`resizes-content`) y desplazamiento al borde, la barra `sticky` tapa el campo con foco | 0.13.0: 4 y 5 campos; v5: 2 y 6. Arreglo sugerido (no aplicado): `scroll-padding-bottom` con el alto de la barra, o `interactive-widget=resizes-visual` explícito |
+| P-4 | En apaisado 568 px la barra de borde a borde sobresale 24 px de `.page` (sin scroll horizontal) | idéntico en 0.13.0; por diseño (CLAUDE.md §6) |
+| P-5 | `docs/compatibilidad-v5.md` §7 dice que en local `postgres` "es superusuario" | `rolsuper = f` en el stack local (igual que en la nube) |
+
+## Cambios hechos (commits locales en `feat/milk-inventory-v5`, sin push)
+
+`3dd66f5` E0 · `74695e1` E1 · `dfa78b2` E2 · `11f605f` E3 · `bf17e55` E4 ·
+`61c8344` E5 · `35e0e72` banco `tests/e2e` con perfiles de teléfono (único cambio
+de código: herramienta de prueba, comportamiento por defecto igual: 508/0) ·
+`12158e0` E7 · `41f0e7c` runbook + `docs/invariante-v5.sql` · `c376ae3` E8 ·
+y este documento. Ninguna migración tocada (`git diff 66462fa -- supabase/migrations`
+= solo 0016, sin cambios en este ensayo).
+
+## Tiempos medidos
+
+0016 por el Editor: 92 ms (réplica con 128 tomas / 108 contenedores / 1160
+pañales); reversa: 103 ms; 0016 otra vez: ~90 ms. Corte del servidor en el deploy
+simulado: 2,0 s. Teléfono reabierto con red → v0.14.0 en pantalla: 792 ms.
+`pnpm test:layout` completo: 5 min 43 s.
+
+## NO VERIFICADO
+
+- **La nube**: 0016 en el SQL Editor real de Supabase (acá: `postgres-meta`
+  v0.99.0, el mismo servicio, y rol `postgres` no superusuario), permisos del
+  proyecto, plan, Node 24 elegido en Vercel, variables cargadas, `max_rows`.
+- **WebKit / Safari / iPhone real / Firefox**: no corren en este VPS (sin
+  bibliotecas del sistema). Todo lo de pantallas es Chromium emulando.
+- **El encimado de Inicio que vio Luis**: no reproducido en Chromium con ningún
+  perfil; sigue abierto para el iPhone (y la barra elevada de `CLAUDE.md` §6).
+- El teclado real (modo `resizes-visual` de Chrome Android y de Safari no se
+  puede emular en headless); el Atrás de Android; notificaciones.
+- Una restauración del dump **en la nube** (acá: Postgres local de la misma
+  imagen).
+- Las esperas reales (60 min, 48 h): se probaron con horas pasadas y reloj fijo.

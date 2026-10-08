@@ -208,3 +208,23 @@ y tabla de la matriz: `docs/revision-ui-v5.md`. Política: `docs/politica-capas.
 - `pnpm test:all`: 691 × 4 husos + integración 28 archivos / 391 (igual que
   antes: sin regresión de lógica). tsc, lint, format, build: exit 0.
 - Sin cambios de lógica de negocio ni RPCs; migraciones 0001–0016 intactas.
+
+## H9 — ensayo general pre-deploy 0.13.0 → 0.14.0 (8 oct 2026)
+
+Detalle, tablas y comandos: `docs/ensayo-predeploy-v5.md`. Todo local, sin push.
+
+| Hito | Resultado |
+|---|---|
+| E0 línea base | tsc/lint/format/build 0; `test:all` 691 × 4 + 28/391 |
+| E1 réplica 0001–0015 con volumen real | 110 tomas, 93 extracciones, 345 lactancias, 91 sueños, 1100 pañales (bebé A); dos familias; casos incómodos; primera restauración de un dump probada |
+| E2 runbook por el camino del SQL Editor | 0 discrepancias de datos; 9 hallazgos de texto/procedimiento corregidos en el runbook (H-R1…H-R9); 0016 = 92 ms |
+| E3 integridad | 19 tablas idénticas antes/después; INV 0; doble/cortada/interrumpida limpias; reversa: pierde Similac, ops, combinaciones, enfriado y desechos de empezado, "Lo que hay" igual |
+| E4 0.13.0 y v5 alternando | 38 pasos, INV 0 tras cada uno |
+| E5 flujos v5 | ES 37/37, EN 37/37; cola de 0.13.0 reproducida por v5 sin duplicar |
+| E6 teléfonos | 11 perfiles 0 FAIL; texto grande y teclado: preexistentes (medidos contra 0.13.0); WebKit/Firefox NO VERIFICADOS |
+| E7 PWA | 0.13.0 → 0.14.0 en el mismo origen: < 1 s con red, cola sin pérdidas |
+| E8 push en seco | 0.14.0 en worktree descartable: todo verde, avance rápido posible, sin push |
+| E9 revisor independiente | ver la sección de E9 de `ensayo-predeploy-v5.md` |
+
+Cambio de código: solo el banco `tests/e2e` (perfiles de teléfono). Defectos de
+v5 encontrados: ninguno. Migraciones intactas.
