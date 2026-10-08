@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core'
+import { chromium, devices, type Browser, type BrowserContext, type Page } from 'playwright-core'
 import { exposeEnvToRouteHandlers } from '../helpers/supabase'
 import { hasMilkV5 } from '../helpers/milkV5'
 import { cleanupUiFamily, seedUiFamily, type UiFamily } from './seed'
@@ -26,6 +26,16 @@ const PAGES = (
   process.env.E2E_PAGES ??
   '/dashboard,/feeding,/diapers,/sleep,/pumping,/statistics,/growth,/appointments,/history,/settings,/version,/login'
 ).split(',')
+
+// Perfiles de teléfono (README): descriptor de Playwright, zoom de texto,
+// safe-area "arriba,derecha,abajo,izquierda" en px y la PWA instalada.
+const DEVICE = process.env.E2E_DEVICE ?? ''
+if (DEVICE && !devices[DEVICE]) throw new Error(`E2E_DEVICE desconocido: ${DEVICE}`)
+const ZOOM = Number(process.env.E2E_ZOOM ?? 1)
+const SAFE_AREA = process.env.E2E_SAFE_AREA
+  ? (process.env.E2E_SAFE_AREA.split(',').map(Number) as [number, number, number, number])
+  : null
+const STANDALONE = process.env.E2E_STANDALONE === '1'
 
 const AUDIT_SRC = readFileSync(join(__dirname, 'audit.browser.js'), 'utf8')
 const DICT = { en, es } as const
@@ -176,22 +186,50 @@ afterAll(async () => {
 })
 
 async function newContext(lang: string, theme: string, vp: [number, number]) {
+  // Perfil de teléfono (E2E_DEVICE): DPR, táctil, isMobile y user agent del
+  // descriptor de Playwright; el tamaño sigue saliendo de E2E_VIEWPORTS. El
+  // texto grande del sistema llega a la página como zoom (E2E_ZOOM): la misma
+  // pantalla con menos px CSS y más DPR.
+  const d = DEVICE ? devices[DEVICE] : null
   const ctx = await browser.newContext({
-    viewport: { width: vp[0], height: vp[1] },
-    deviceScaleFactor: 1,
+    viewport: { width: Math.round(vp[0] / ZOOM), height: Math.round(vp[1] / ZOOM) },
+    deviceScaleFactor: (d?.deviceScaleFactor ?? 1) * ZOOM,
+    ...(d ? { isMobile: d.isMobile, hasTouch: d.hasTouch, userAgent: d.userAgent } : {}),
     reducedMotion: 'reduce',
     locale: lang === 'es' ? 'es-AR' : 'en-US',
     timezoneId: 'America/Los_Angeles',
   })
   await ctx.addInitScript(
-    ([l, t]) => {
+    ([l, t, standalone]) => {
       try {
         localStorage.setItem('amelia:lang', l)
         localStorage.setItem('amelia:theme', t)
       } catch {}
+      if (standalone) {
+        // La PWA instalada: Chromium headless no emula display-mode.
+        const mm = window.matchMedia.bind(window)
+        window.matchMedia = (q: string) =>
+          /display-mode:\s*standalone/.test(q)
+            ? ({ ...mm('(min-width: 0px)'), matches: true, media: q } as MediaQueryList)
+            : mm(q)
+        Object.defineProperty(navigator, 'standalone', { value: true })
+      }
     },
-    [lang, theme],
+    [lang, theme, STANDALONE] as const,
   )
+  if (SAFE_AREA) {
+    // env(safe-area-inset-*) de un iPhone con muesca, en cada pestaña nueva.
+    const [top, right, bottom, left] = SAFE_AREA
+    const newPage = ctx.newPage.bind(ctx)
+    ctx.newPage = async () => {
+      const p = await newPage()
+      const cdp = await ctx.newCDPSession(p)
+      await cdp.send('Emulation.setSafeAreaInsetsOverride', {
+        insets: { top, right, bottom, left },
+      })
+      return p
+    }
+  }
   return ctx
 }
 

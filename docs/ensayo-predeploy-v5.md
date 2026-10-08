@@ -198,3 +198,65 @@ el default. 0 errores JS.
 Observación de producto (no defecto, coincide con la spec V5-04/V5-05): Hoy avisa
 "Queda poca Similac" **solo si la receta lleva Similac**; si hay leche de sobra, el
 aviso de comprar está solo en Leche. Para confirmar con mamá y papá (D5-14).
+
+## E6 — teléfonos simulados (y el encimado de Inicio que vio Luis)
+
+**Motores.** `playwright-core install webkit firefox`: *"Playwright does not
+support webkit/firefox on ubuntu26.04-x64"*. Con el build de Ubuntu 24.04 bajan,
+pero **no arrancan**: faltan bibliotecas del sistema (`libgtk-4.so.1`,
+`libcairo.so.2`, `libicu*.so.74`… para WebKit; GTK3/xcb para Firefox) que solo
+se instalan con `sudo apt-get`. No se instaló nada del sistema; los binarios
+bajados se borraron. **WebKit y Firefox: NO VERIFICADOS.** Todo lo de abajo es
+Chromium 148 emulando.
+
+**Banco extendido** (`tests/e2e/layout.e2e.ts` + README): `E2E_DEVICE`
+(descriptor de Playwright: DPR, táctil, `isMobile`, UA), `E2E_ZOOM` (texto
+grande del sistema = zoom de página), `E2E_SAFE_AREA` (CDP
+`Emulation.setSafeAreaInsetsOverride`: medido, `env(safe-area-inset-top)` =
+59 px) y `E2E_STANDALONE` (PWA instalada; `display-mode` sobrescrito porque
+headless no lo emula — la app solo lo usa en `lib/push/client.ts`).
+
+| Perfil (`pnpm test:layout`, ES/EN × oscuro/claro, 12 pantallas + combos de Inicio + menús) | Celdas | FAIL |
+|---|---|---|
+| iPhone 15 PWA 393×852, safe-area 59/0/34/0 | 124 | **0** |
+| iPhone SE (1.ª) 320×568 PWA · iPhone SE (3.ª) 375×667 PWA · iPhone 14 390×844 PWA | 124 · 124 · 124 | **0 · 0 · 0** |
+| Pixel 7 412×915 · Galaxy S24 360×780 · Galaxy S9+ 320×658 | 128 · 124 · 124 | **0 · 0 · 0** |
+| Apaisado: iPhone 15 852×393 (safe-area 0/59/21/59) · Pixel 7 915×412 | 124 · 124 | **0 · 0** |
+| Texto grande 130 % / 150 % (iPhone 15 PWA) | 124 / 124 | 16 / 56 |
+| **Mismo banco y zoom contra 0.13.0** | 124 / 122 | **88 / 102** |
+
+Clasificación del texto grande, elemento por elemento: a 130 % las 4 clases de
+v5 están también en 0.13.0; a 150 %, 46 de 50, y las 4 restantes (filas del
+registro de `/diapers`, "7:00 Mojado Editar Borrar" +11 px) **también** pasan en
+0.13.0 medidas una por una (200/200 filas, +11 px ES y +5 px EN, iguales en las
+dos versiones): el auditor solo lista 6 casos por medida y ahí quedaban tapadas.
+**Todas preexistentes** (selector de semana, Izquierdo/Derecho de lactancia,
+fila de /growth, selector de idioma). A 200 % las dos versiones quedan más anchas
+que la pantalla (ventana de diseño 241 px en v5, 286 px en 0.13.0, contra 197
+visibles) y la barra cae fuera de lo visible; v5 necesita 45 px menos.
+
+**Rotación en caliente, teclado y todos los estados de Inicio** (`e6-rot.mjs`:
+iPhone SE, iPhone 15, iPhone 15 al 150 % y Pixel 7; ES/EN; con lactancia+sueño
+abiertos y con la receta visible; biberón empezado vencido + Similac por vencer
++ enfriando + sueño abierto + fórmula fija + un pañal en cola sin conexión):
+**86 PASS / 11 FAIL**, y los 11 son las dos clases preexistentes/por diseño: (a)
+en apaisado 568 px la barra va de borde a borde a propósito (`width: 100vw`,
+CLAUDE.md §6) y sobresale de la caja de `.page` 24 px — idéntico en 0.13.0,
+cargando de cero o rotando, sin scroll horizontal; (b) Izquierdo/Derecho a 150 %.
+0 errores JS; invariante 0.
+
+**Teclado** (`kbd.mjs`, todos los campos de Inicio y Leche): en el modo en que el
+teclado achica la ventana (`resizes-content`) y el navegador lleva el campo al
+borde (`nearest`), la barra `sticky` tapa el campo con foco **en las dos
+versiones** (0.13.0: 4 campos en Pixel 7 y 5 en iPhone SE; v5: 2 y 6 — v5 suma
+"Fórmula fija", campo nuevo en la misma zona); centrado, 0 en las dos. La app no
+declara `interactive-widget`, así que en Chrome Android ≥ 108 (`resizes-visual`)
+y en Safari la barra queda detrás del teclado. **Preexistente**, reportado
+aparte (P-3), sin tocar.
+
+**El encimado de Inicio reportado por Luis: NO reproducido** en Chromium con
+ningún perfil, táctil, safe-area, PWA, texto grande, rotación ni teclado, con
+todos los estados nuevos a la vez. Lo único de Inicio que falla es preexistente y
+**anterior a v5** (Izquierdo/Derecho a 150 %). Queda **NO VERIFICADO en
+WebKit/iPhone real**, donde siguen en pie las hipótesis de `revision-ui-v5.md` §6
+(sobre todo la barra elevada del iPhone, `CLAUDE.md` §6, todavía abierta).

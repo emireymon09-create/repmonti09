@@ -25,6 +25,10 @@ Variables (todas opcionales):
 | `E2E_SHOTS` | — | carpeta: captura de cada celda que falla |
 | `E2E_SHOTS_ALL` | — | con `E2E_SHOTS`, captura de todas |
 | `E2E_PORT` | `3107` | puerto del `next start` |
+| `E2E_DEVICE` | — | descriptor de Playwright (`'iPhone 15'`, `'Pixel 7'`…): DPR, táctil, `isMobile` y user agent; el tamaño sigue saliendo de `E2E_VIEWPORTS` |
+| `E2E_ZOOM` | `1` | texto grande del sistema como zoom de página (`1.3`, `1.5`, `2`): menos px CSS, más DPR |
+| `E2E_SAFE_AREA` | — | `arriba,derecha,abajo,izquierda` en px para `env(safe-area-inset-*)` (CDP `Emulation.setSafeAreaInsetsOverride`), p. ej. `59,0,34,0` |
+| `E2E_STANDALONE` | — | `1` = PWA instalada (`display-mode: standalone` y `navigator.standalone`, sobrescritos: Chromium headless no los emula) |
 
 ## Qué arma
 
