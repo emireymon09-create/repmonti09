@@ -90,3 +90,45 @@ bloqueo). Qué locks toma, medido dentro de la transacción: E3.
 `column "fridge_at" of relation "milk_containers" already exists` (42701), y la
 base **sin cambios** (c1/c2 iguales, 0 sesiones `idle in transaction`). Es el
 mensaje que vería Luis si corre 0016 dos veces.
+
+## E3 — integridad de datos, doble ejecución, a medias y reversa
+
+**Antes/después de 0016** (`snapshot.sh`: por cada una de las 19 tablas de 0.13.0,
+conteo + md5 de **sus columnas de 0.13.0** ordenadas por PK; sumas de ml por bebé
+—extraído, "lo que hay", perdida, servido, desechado, tomas, fórmula— y md5 de
+cada contenedor): **`diff` vacío**. Ningún dato de 0.13.0 cambió.
+
+Backfill: `fridge_at = stored_at` en 108/108, `cold_at` nulo en 108/108, 19/19
+desechos con la forma de caducada (`container_id` sí, `feeding_id` no, `reason =
+'expired'`), `milk_ops`/`milk_transfers`/`formula_containers` vacías y con RLS;
+22/22 tablas de `public` con RLS. Invariante de 0016: **0 filas**.
+
+| Prueba | Resultado |
+|---|---|
+| 0016 dos veces (Editor) | HTTP 400 `42701 column "fridge_at" of relation "milk_containers" already exists`; base sin cambios |
+| 0016 pegada **cortada a mitad de una sentencia** | HTTP 400 `42601 syntax error at end of input`; nada aplicado |
+| 0016 pegada **cortada en un fin de sentencia** (línea 729, sin `commit`) | **HTTP 200 y el Editor muestra `on`** — parece éxito — y **nada aplicado** (0016 `false`, 0/21, datos idénticos, 0 sesiones `idle in transaction`) → **H-R5** |
+| 0016 **interrumpida** (pausa inyectada y `pg_terminate_backend`) | nada aplicado, datos idénticos |
+| Locks de 0016 (medidos a mitad) | `AccessExclusiveLock` en `milk_containers` y `milk_discards` hasta el `commit`; `ShareRowExclusiveLock` en `feedings`, `babies`, `families`. Una lectura de Leche espera a que termine: en la práctica ≤ ~92 ms |
+| Éxito real de 0016 | el Editor recibe `[{"set_config":""}]`: una tabla con la columna `set_config` **vacía** |
+
+**Reversa** (`docs/rollback-leche-v5.sql` por el Editor, con el bloque
+`milk_backup_v5` descomentado) sobre la réplica **con uso de v5** (2 extracciones
+de 11 argumentos, "ya está fría", una combinación viva con una toma de 120 ml
+servida de un destino de extracción 90, una combinación deshecha, 6 Similac con 1
+abierta, 1 desecho de biberón empezado). Ensayo en seco previo con `psql`
+(`commit` → `rollback`) para ver los NOTICE, que **el Editor no muestra** (H-R6):
+`1 combinación(es) viva(s), 6 Similac anotada(s) (1 abierta(s)), 1 desecho(s) de
+biberón empezado, 0 biberón(es) todavía enfriando`; "Lo que hay" A 343 → 343 ml,
+B 65 → 65 ml.
+
+| Qué | Resultado |
+|---|---|
+| Después | 0016 `false`, 0/21; invariante de 0015 (consulta 3): 8 × 0 |
+| Esquema `public` vs 0001–0015 | igual salvo 6 líneas de envoltorio de la herramienta (`CREATE SCHEMA public`, su `COMMENT` y 4 `GRANT USAGE ON SCHEMA`, que `pg_dump --schema` emite y `pg_restore -n` no) |
+| Contenedores | **0** con `remaining`/`lost`/liberado distinto |
+| La toma servida por encima de la extracción | igual (`120 | 120 | 0`); porciones `M5 120` → `M5 60 + M6 60` |
+| **Se pierde** | 6 Similac (1 abierta), 6 operaciones, 1 combinación viva + 1 deshecha, 1 "ya está fría", 1 desecho de empezado (el "Sobró" queda). "Lo que hay": 0 ml |
+| Segunda reversa | sin error, datos idénticos |
+| Tercera, con el bloque de respaldo | HTTP 400 `42P01 relation "public.formula_containers" does not exist` (el bloque solo sirve con 0016 puesta); nada cambia |
+| 0016 de nuevo encima | entra (`[{"set_config":""}]`), 21/21, invariante 0, datos de 0015 idénticos |
