@@ -260,3 +260,29 @@ todos los estados nuevos a la vez. Lo único de Inicio que falla es preexistente
 **anterior a v5** (Izquierdo/Derecho a 150 %). Queda **NO VERIFICADO en
 WebKit/iPhone real**, donde siguen en pie las hipótesis de `revision-ui-v5.md` §6
 (sobre todo la barra elevada del iPhone, `CLAUDE.md` §6, todavía abierta).
+
+## E7 — PWA y service worker: deploy simulado 0.13.0 → 0.14.0
+
+Mismo origen `127.0.0.1:3116` (mismo service worker y mismo IndexedDB): primero
+el build de 0.13.0; el "deploy" baja ese servidor y levanta el build de 0.14.0
+del worktree de ensayo (el corte local duró 2 046 ms). iPhone 15 emulado.
+`public/sw.js` es **idéntico byte a byte** en las dos (`cmp`).
+
+| Paso | Resultado |
+|---|---|
+| W1 0.13.0 instalada | PASS · menú "v0.13.0"; SW activo y controlando; cachés `amelia-v6-shell` 13 y `amelia-v6-assets` 30 |
+| W2 cola de 0.13.0 antes del deploy (sin conexión, un pañal) | PASS · cola 1, base sin cambios |
+| W3 sin conexión después del deploy | PASS · la app guardada abre y sigue en **v0.13.0** (HTML y JS del caché); la cola intacta |
+| W3b pestaña de 0.13.0 **abierta y con conexión** durante el deploy, toca "Leche" | sigue en **v0.13.0** (sin "Combinar"): el App Router usa lo que ya precargó y no recarga solo. No rompe nada (0.13.0 convive con 0016, E4), pero ese teléfono **no** pasa a 0.14.0 hasta cerrarse y reabrirse |
+| W4 vuelve la conexión y abre la app | PASS · menú "v0.14.0" a los **792 ms**; la cola de 0.13.0 entra una vez (pañales +1, 3 s después igual), cola 0 |
+| W5 `registration.update()` | PASS · sin worker nuevo (`waiting`/`installing` falsos): con `sw.js` idéntico no hay actualización de SW; mismas cachés, `assets` pasa de 30 a 51 (chunks viejos + nuevos; los viejos no se borran) |
+| W6 `/version` | PASS · 0.14.0 |
+| W7 después de **una** apertura con conexión, sin conexión: /growth, /history, /settings, /statistics | PASS · las cuatro en v0.14.0 (el `warm` de esa apertura las re-guarda) |
+| W8 "ya está fría" (op v5) sin conexión → vuelve la red | PASS · cola 1 → 0 |
+| Invariante / errores JS | 0 / 0 |
+
+**Cuándo es seguro refrescar**: después de que Vercel diga *Ready*, abriendo la
+app **con conexión**: en < 1 s muestra v0.14.0 y en esa misma apertura re-guarda
+las pantallas para usar sin conexión. Mientras un teléfono no se reabra con red,
+sigue en 0.13.0 (sin conexión, o con la pestaña abierta) — compatible con la
+base en 0016, pero con los riesgos de ventana del runbook §4.
