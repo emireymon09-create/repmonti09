@@ -10,6 +10,14 @@ archivo): `git diff 66462fa HEAD -- supabase/migrations/` = solo
 última); `0001`…`0015` idénticas a producción; `public/`, `lib/offlinePages.ts` y
 `middleware.ts` sin cambios; `.nvmrc` = `24` y `engines.node` = `>=24`.
 
+**Ensayado entero el 8 oct 2026** (`docs/ensayo-predeploy-v5.md`): sobre una
+réplica local de producción (0001–0015 + volumen real: 110 tomas, 93
+extracciones, 345 lactancias, 1100 pañales del bebé A, dos familias), cada paso
+mandado **por el mismo servicio que usa el SQL Editor** (`postgres-meta`,
+`POST /query`) con el rol `postgres` no superusuario, como en la nube. Lo que
+este archivo dice que "tiene que dar" es lo que dio ahí; donde el texto anterior
+decía otra cosa, se corrigió (marcado **[ensayo]**).
+
 | Qué | Valor |
 |---|---|
 | Producción hoy | **0.13.0** = `66462fa` (`origin/main`), con **0014 y 0015 aplicadas** (lo dice Luis; desde el VPS no hay credenciales de la nube: el paso 1 lo comprueba) |
@@ -34,6 +42,13 @@ de pantallas de esta rama), `docs/progreso-feeding-v5.md`.
 7. Vuelta atrás, por paso
 8. Lo que NO está verificado
 9. Decisiones a confirmar con mamá, papá y la pediatra
+
+**Orden exacto [ensayo]:** firmas (0) → verificación previa (1) → `pg_dump`
+(2) → 0016 entera en el SQL Editor (3.1: tabla `set_config` vacía) → objetos,
+volumen e `invariante-v5.sql` (3.2) → `notify` (3.3) → bump y CHANGELOG (5.1–5.2)
+→ push a `main` (5.3) → Vercel *Ready* con Node 24 (6.1) → cada teléfono:
+sincronizar, cerrar del todo y abrir con red (6.2) → prueba de humo e
+`invariante-v5.sql` otra vez (6.3).
 
 ---
 
@@ -67,10 +82,14 @@ una: pegá `begin transaction read only;` + **una** consulta numerada +
 | 4 | Qué va a tocar 0016 | conteos informativos | Cuántos biberones dirán "Enfriando" (los de la última hora) y cuántas tomas con "Sobró" de la última hora |
 | 5 | El historial de migraciones | informativo | No es la verdad: la verdad son 1 y 2 |
 | 6 | Volumen por tabla (`feedings`, `pumping_sessions`, `milk_containers`, `milk_drawdowns`, `babies`) | números | **Anotalos**: se comparan en 3.2 y en la prueba de humo |
-| 7 | Lactancia o sueño abiertos ahora | `0` y `0` | Mejor esperar a que se cierren |
+| 7 | Lactancia o sueño abiertos ahora | informativo | **[ensayo]** No bloquea: 0016 no toca lactancia ni sueño (en la réplica había 1 y 1 abiertas y la integridad dio idéntica). Lo que importa es que **no haya un biberón dándose** (paso 0.2) |
 
 Probado en el stack local (`compatibilidad-v5.md` §5): con 0001–0015 da 0016
 `false` y 0/21; con 0016, `true` y 21/21; después de la reversa, de nuevo `false`.
+
+Volumen de referencia del ensayo: la consulta 6 dio `feedings 128/126 ·
+pumping_sessions 110/110 · milk_containers 108/108 · milk_drawdowns 135/133 ·
+babies 2/2` y no cambió después de 0016.
 
 **`max_rows`:** si el proyecto corta las respuestas en menos de 1000 filas
 (Settings → API), las sumas salen cortas sin aviso (runbook v4 §1c).
@@ -102,8 +121,15 @@ Lo que hay para hacer:
    **ninguna** de 0016 (`milk_ops`, `milk_transfers`, `formula_containers`).
    **Si `pg_dump` se queja de versión**: tiene que ser de la misma versión del
    servidor o más nueva. **Sin ese archivo, no sigas.**
-   **Límite:** sigue sin estar probado que se pueda restaurar (nadie restauró
-   nunca un dump de este proyecto).
+   **Límite [ensayo]:** se restauró por primera vez un dump así (de la réplica)
+   en un Postgres limpio de la misma imagen: `pg_restore` sale con **exit 1 y
+   ~370 errores**, todos de esquemas de Supabase (`auth`, grants, privilegios por
+   defecto) — eso es **normal** y no significa que falló —; **las 19 tablas de
+   `public` quedan idénticas** (conteo y md5). Pero los **usuarios** (`auth.users`)
+   no entran en una base limpia y 10 claves foráneas a `auth.users` no se
+   recrean: un proyecto nuevo restaurado "tal cual" tiene los datos pero nadie
+   puede iniciar sesión. Sirve para recuperar **datos**, no para levantar la app
+   de cero sin rehacer las cuentas.
 2. **Si el dump no sale**, como mínimo exportá a CSV desde el Table Editor
    `milk_containers`, `milk_drawdowns`, `milk_discards`, `pumping_sessions` y
    `feedings`. **Límite:** parcial, a mano, y no se vuelve a cargar solo.
@@ -125,12 +151,26 @@ vieja no tiene) y toda función nueva da 404. Al revés —0.13.0 con la base en
 SQL Editor → New query → pegá **el archivo entero**
 `supabase/migrations/0016_milk_phase3_4.sql` tal cual → Run.
 
-- 0016 **trae su propio** `begin;` y `commit;`, y termina con
-  `notify pgrst, 'reload schema';`. No le agregues nada.
-- **Tiene que dar:** "Success. No rows returned" (o equivalente, sin `ERROR`).
-- **Si sale `ERROR`** (por ejemplo `milk_invariant_broken`): la transacción no
-  se aplicó. Corré `rollback;` por las dudas y confirmalo con la consulta 1 del
-  paso 1 (0016 `false`). No sigas.
+- 0016 **trae su propio** `begin;` y `commit;` (el `notify pgrst, 'reload
+  schema';` va justo antes del `commit`). No le agregues nada. Pegá **todo**:
+  1715 líneas, la última es `commit;`.
+- **Tiene que dar [ensayo]:** una tabla de **una fila** con la columna
+  **`set_config` vacía** (es el resultado de la última sentencia que devuelve
+  filas, `select set_config('amelia.milk_rpc', '', true)`). **No** dice
+  "Success. No rows returned". En la réplica tardó **92 ms**.
+- **Si la columna `set_config` dice `on`**: el pegado quedó **incompleto** (se
+  cortó antes del final). El Editor no da error, pero **no se aplicó nada**
+  (probado: 0016 `false`, 0/21). Volvé a pegar el archivo entero.
+- **Si sale `ERROR: 42701: column "fridge_at" of relation "milk_containers"
+  already exists`**: 0016 **ya estaba aplicada** (se corrió dos veces). No pasó
+  nada malo; seguí en 3.2.
+- **Si sale otro `ERROR`** (por ejemplo `milk_invariant_broken`, o `42601
+  syntax error at end of input` si se cortó a mitad de una línea): la
+  transacción no se aplicó. Confirmalo con la consulta 1 del paso 1 (0016
+  `false`). No sigas.
+- **Bloqueos [ensayo]:** mientras corre, `milk_containers` y `milk_discards`
+  quedan con `AccessExclusiveLock`: una pantalla de Leche que lea en ese momento
+  espera hasta el `commit` (~0,1 s). Pañales, sueño y lactancia no esperan.
 
 ### 3.2 Comprobar, objeto por objeto
 
@@ -163,6 +203,11 @@ anotá cuál y pará (0016 es una sola transacción: no debería poder quedar a
 medias).
 
 Y la consulta 6 del paso 1 otra vez: **los mismos números** que anotaste.
+
+Y la invariante nueva, entera: **`docs/invariante-v5.sql`** (solo lectura) →
+**"Success. No rows returned"**. **[ensayo]** Ojo: la consulta 3 de
+`verificar-antes-v5.sql` es la de **0015**; con combinaciones vivas da falsos
+positivos. Después de 0016 la que vale es `invariante-v5.sql`.
 
 ### 3.3 Recargar el esquema de la API
 
@@ -222,9 +267,20 @@ Todo exit 0. Números de la última corrida: `docs/revision-ui-v5.md` y
 
 ### 5.2 Bump
 
+**[ensayo] El build sale verde aunque falten variables** (probado: `pnpm
+build` sin ningún `.env` → exit 0), pero las `NEXT_PUBLIC_*` se incrustan al
+compilar y sin ellas la app tira `supabaseUrl is required.` en el navegador. v5
+**no agrega variables**: son las mismas 6 de 0.13.0, que en Vercel tienen que
+estar en **Production** (y en Preview, si se usa): `NEXT_PUBLIC_SUPABASE_URL`,
+`NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY` (públicas, se
+leen **al compilar**), `SUPABASE_SERVICE_ROLE_KEY`, `VAPID_PRIVATE_KEY`,
+`VAPID_SUBJECT` (secretas, solo servidor).
+
 1. `package.json`: `"version": "0.14.0",`
 2. `CHANGELOG.md`, **arriba** de `## [0.13.0]`, en inglés y para quien usa la app.
-   Texto sugerido (revisá cada etiqueta contra `lib/i18n/en.ts`):
+   Texto sugerido, **[ensayo]** ya revisado etiqueta por etiqueta contra
+   `lib/i18n/en.ts` (el anterior decía "If crying", "It's cold now" e "I opened a
+   Similac", que no son los textos de la app):
 
 ```
 ## [0.14.0] - 2026-MM-DD
@@ -232,16 +288,16 @@ Todo exit 0. Números de la última corrida: `docs/revision-ui-v5.md` y
 The next bottle now comes with a recipe, and the app keeps track of Similac.
 
 - **A recipe for the next bottle** on Today: how much breast milk and how much Similac, using
-  cold milk that hasn't expired, oldest first, and how many feeds the cold milk covers. "If
-  crying" asks for just 1 oz more when the last feed ended less than 2 hours ago. You can set a
-  fixed amount of formula. Everything can still be changed before logging.
+  cold milk that hasn't expired, oldest first, and how many feeds the cold milk covers. "Crying"
+  asks for just 1 oz more when the last feed ended less than 2 hours ago. You can set a fixed
+  amount of formula. Everything can still be changed before logging.
 - **Cooling:** freshly pumped milk shows "Cooling · ready ~HH:MM" for an hour. If you've
-  checked it, "It's cold now" marks it ready. It still expires 4 days after pumping.
+  checked it, "It’s cold" marks it ready. It still expires 4 days after pumping.
 - **Combine bottles:** pour cold, unexpired bottles into one. It takes the earliest expiry and
   the others become free. You can undo it while the milk it received is still there.
-- **Similac stock:** log a purchase (6 × 8 oz by default), "I opened a Similac", and see how
-  much is left, how much a day you use and when to buy more. An open bottle lasts 48 hours;
-  after that it says "Expired" with a Discard button. Formula never blocks a feed.
+- **Similac stock:** log a purchase (6 × 8 oz by default), "Open a Similac", and see how much
+  is left, how much a day you use and when to buy more. An open bottle lasts 48 hours; after
+  that it says "Expired" with a Discard button. Formula never blocks a feed.
 - **Started bottle:** what was left over in a bottle is good for an hour. After that Today says
   it's no longer good and offers to discard it.
 - **Menus no longer hide under the bottom bar:** the ⋯ menu on the last rows of History opens
@@ -298,6 +354,16 @@ git push origin feat/milk-inventory-v5:main
 `public/sw.js` no cambió (sigue `amelia-v6`): las páginas se piden primero a la
 red, así que una carga **con conexión** trae 0.14.0.
 
+**[ensayo, E7]** `sw.js` no cambia, así que **no hay actualización del service
+worker**: lo que cambia es el HTML (red primero) y los archivos de build. Medido
+con el mismo origen: abierta **con conexión** después del deploy, la app muestra
+v0.14.0 en < 1 s y en esa misma apertura re-guarda todas las pantallas para usar
+sin conexión. **Sin conexión** sigue abriendo 0.13.0 (del caché) y **una pestaña
+que quedó abierta durante el deploy sigue en 0.13.0 aunque navegue** (no se
+recarga sola). Las dos cosas son compatibles con la base en 0016, pero ese
+teléfono no está en 0.14.0 hasta cerrarlo y reabrirlo con red. La cola sin
+conexión que dejó 0.13.0 la manda 0.14.0 una sola vez (probado).
+
 1. Dejá sincronizar lo pendiente ("Todavía sin sincronizar") **antes** de cerrar.
 2. Cerrá la app **del todo** (también la instalada en la pantalla de inicio) y
    abrila **con conexión**.
@@ -319,8 +385,8 @@ red, así que una carga **con conexión** trae 0.14.0.
 | Abrir el Menú, y después tocar un ⋯ | nunca hay dos menús abiertos |
 | Hoy → un pañal | se registra |
 
-En el SQL Editor, solo lectura: la invariante del final de 0016 (el bloque `do`
-final, cambiando `do` por `select falla, id from fallas`) → **0 filas**.
+En el SQL Editor, solo lectura: **`docs/invariante-v5.sql`** entero → **"Success.
+No rows returned"** (0 filas).
 
 **Limpieza:** borrá desde la app lo que registraste (deshacé la combinación,
 borrá la Similac de prueba con su ⋯). No a mano en SQL.
@@ -332,11 +398,16 @@ borrá la Similac de prueba con su ⋯). No a mano en SQL.
 | 0, 1, 2 | Nada que deshacer | Nada |
 | 3.1 con `ERROR` | No quedó aplicada (una transacción). `rollback;` y consulta 1 | Nada |
 | Después del push, problema de la **app** | Vercel → Deployments → el de 0.13.0 → **Promote to Production** (o `git revert` del rango + push con su propio bump, §0.1). La base **puede quedar en 0016**: 0.13.0 convive (paso 4) | Nada en la base. Lo encolado por 0.14.0 en un teléfono (combinar, Similac, "ya está fría", desechar el empezado) se sigue aplicando, porque las funciones siguen en la base [por lectura de `66462fa:lib/db.ts`, no probado en un teléfono] |
-| Hay que sacar **0016** | Primero la app (fila anterior) y cerrar/abrir las PWA. Si se puede, **deshacé las combinaciones vivas desde 0.14.0** antes. Para conservar lo que se pierde, descomentá el bloque `milk_backup_v5` de `docs/rollback-leche-v5.sql` (va antes de su `begin;`). Después el archivo entero en el SQL Editor (trae su `begin`/`commit` y el `notify`) | **La Similac** (compras y abierta), **los desechos del biberón empezado**, **el enfriado** ("ya está fría"), **el registro de operaciones** y **las combinaciones**. La leche recibida y no servida de una combinación viva **sale de "Lo que hay"** (el NOTICE dice cuánto). Probado: invariante de 0015 = 0, esquema idéntico a 0001–0015, re-ejecutable, 0016 vuelve a entrar (`compatibilidad-v5.md` §4) |
+| Hay que sacar **0016** | **[ensayo]** El SQL Editor **no muestra los `NOTICE`** de la reversa (cuántas combinaciones vivas, "Lo que hay" antes/después): antes, corré `select count(*) filter (where voided_at is null) as combinaciones_vivas from milk_transfers;` y `select count(*) from formula_containers where voided_at is null;` para saber qué se va a perder. Primero la app (fila anterior) y cerrar/abrir las PWA. Si se puede, **deshacé las combinaciones vivas desde 0.14.0** antes. Para conservar lo que se pierde, descomentá el bloque `milk_backup_v5` de `docs/rollback-leche-v5.sql` (va antes de su `begin;`). Después el archivo entero en el SQL Editor (trae su `begin`/`commit` y el `notify`) | **La Similac** (compras y abierta), **los desechos del biberón empezado**, **el enfriado** ("ya está fría"), **el registro de operaciones** y **las combinaciones**. La leche recibida y no servida de una combinación viva **sale de "Lo que hay"** (el NOTICE dice cuánto). Probado: invariante de 0015 = 0, esquema idéntico a 0001–0015, re-ejecutable, 0016 vuelve a entrar (`compatibilidad-v5.md` §4) |
 | También 0015 o 0014 | Después del anterior, `docs/rollback-leche-v4.sql` y `docs/rollback-leche.sql` (runbook v4 §12) | Todo el inventario de leche |
 | Todo salió mal | Restaurar el dump del paso 2 | Todo lo registrado después del dump. **Nunca se probó una restauración de este proyecto** |
 
 ## 8. Lo que NO está verificado
+
+- **[ensayo] WebKit y Firefox**: no corren en este VPS (Playwright no los publica
+  para Ubuntu 26.04 y los de 24.04 piden bibliotecas del sistema que no se
+  instalaron). Todo lo de pantallas es Chromium emulando teléfonos (táctil, DPR,
+  safe-area, PWA, texto grande, rotación, teclado): 0 fallas nuevas de v5.
 
 - **iPhone / WebKit / la PWA instalada.** Todo lo de pantallas se midió en
   Chromium headless (`tests/e2e`, `docs/revision-ui-v5.md`): ni el menú que abre
