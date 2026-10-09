@@ -4,6 +4,28 @@ Every version of Amelia, newest first. The current version is the `version`
 field in `package.json`; this file is the history. A test fails if the two
 disagree. Shown in the app under the settings gear → Version history.
 
+## [0.14.0] - 2026-10-08
+
+The next bottle now comes with a recipe, and the app keeps track of Similac.
+
+- **A recipe for the next bottle** on Today: how much breast milk and how much Similac, using
+  cold milk that hasn't expired, oldest first, and how many feeds the cold milk covers. "Crying"
+  asks for just 1 oz more when the last feed ended less than 2 hours ago. You can set a fixed
+  amount of formula. Everything can still be changed before logging.
+- **Cooling:** freshly pumped milk shows "Cooling · ready ~HH:MM" for an hour. If you've
+  checked it, "It’s cold" marks it ready. It still expires 4 days after pumping.
+- **Combine bottles:** pour cold, unexpired bottles into one. It takes the earliest expiry and
+  the others become free. You can undo it while the milk it received is still there.
+- **Similac stock:** log a purchase (6 × 8 oz by default), "Open a Similac", and see how much
+  is left, how much a day you use and when to buy more. An open bottle lasts 48 hours; after
+  that it says "Expired" with a Discard button. Formula never blocks a feed.
+- **Started bottle:** what was left over in a bottle is good for an hour. After that Today says
+  it's no longer good and offers to discard it.
+- **Menus no longer hide under the bottom bar:** the ⋯ menu on the last rows of History opens
+  upwards, only one menu can be open at a time, and the shortcut arrow on a card no longer sits
+  on top of its first line. The current page in the menu and "Delete" are easier to read.
+- In Settings, the room-temperature and freezer rules moved under "Not used yet".
+
 ## [0.13.0] - 2026-10-06
 
 Breast milk is now kept in the app bottle by bottle, in your reusable bottles.

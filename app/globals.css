@@ -1236,6 +1236,20 @@ select.input {
   .nav .tab:not(.tab-phone) {
     display: none;
   }
+  /* Cuando el teclado achica la ventana, el navegador lleva el campo con foco
+     al borde de abajo, y ahí está la barra `sticky`: el campo quedaba debajo
+     de ella (medido: 11 campos de Today y Leche en Pixel 7 e iPhone SE).
+     El margen va en los CAMPOS (`scroll-margin-bottom`), no en `html`
+     (`scroll-padding-bottom`): la barra vive siempre dentro de esa franja, y
+     enfocarla —Escape de un menú devuelve el foco a "Menú"— hacía saltar la
+     página hasta el final (medido: el ⋯ de la primera fila quedaba en top
+     −674). Cubre el alto de la barra (tab de --tap + sus paddings + el borde)
+     con un poco de aire y suma el safe-area, igual que su padding. */
+  input,
+  select,
+  textarea {
+    scroll-margin-bottom: calc(var(--tap) + 2 * var(--s-3) + env(safe-area-inset-bottom, 0px));
+  }
   /* La página es una COLUMNA que llega al alto de la ventana, y la barra es
      su último ítem. Es lo que hace posible que la barra sea `sticky` en vez
      de `fixed` (ver .nav, abajo): sticky solo puede quedarse abajo si su
