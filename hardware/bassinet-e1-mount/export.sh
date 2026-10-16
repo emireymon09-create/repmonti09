@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
-# Re-export STLs from clamp.scad (needs openscad on PATH).
+# Regenerate STEP (CATIA/3DX) + STL (Bambu) from clamp.py
 set -euo pipefail
 cd "$(dirname "$0")"
-mkdir -p stl
-for p in top_half bottom_half tpu_liner; do
-  echo "exporting $p…"
-  openscad -o "stl/${p}.stl" -D "part=\"${p}\"" clamp.scad
-done
-echo "done → stl/"
+python3 clamp.py
+echo "STEP → step/   STL → stl/"

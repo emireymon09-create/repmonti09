@@ -4,73 +4,78 @@ Two-piece clamp for Amelia’s bassinet rail. Holds the **stock Reolink wall
 plate** so the camera twist-locks as designed. Power is the stock **5V barrel
 wall adapter** (no UPS) — unplug, move rooms, plug back in.
 
-## What you print
+## Files
 
-| File | Material | Notes |
+| Path | What |
+|---|---|
+| `clamp.py` | **Parametric source** (CadQuery). Edit `PARAMS`, re-run. |
+| `step/*.step` | BREP solids for **CATIA / 3DEXPERIENCE / SolidWorks** |
+| `step/params.json` | Every dimension used for the last export |
+| `stl/*.stl` | Mesh for Bambu (regenerated from the same script) |
+| `clamp.scad` | Older OpenSCAD twin (mesh only — prefer `clamp.py`) |
+
+## Open / edit in CATIA or 3DEXPERIENCE
+
+1. Import `step/top_half.step` and `step/bottom_half.step` (or `assembly.step`).
+2. You get a clean **MANIFOLD_SOLID_BREP** — real faces/edges, not an STL
+   tessellation. Use Direct Edit / modify solid tools as needed.
+3. **Feature tree:** STEP does **not** carry CadQuery history into CATIA.
+   The editable feature list lives in `clamp.py` → `PARAMS`. Change a number
+   there, re-export, re-import (or keep CATIA direct edits on a frozen solid).
+4. Use `step/params.json` as the dimension table if you rebuild the part
+   natively in Part Design.
+
+```bash
+# after editing PARAMS in clamp.py
+python3 clamp.py
+```
+
+Needs: `pip install cadquery` (once per machine).
+
+### Parameters you will actually touch
+
+| Key | Default | Meaning |
 |---|---|---|
-| `stl/top_half.stl` | PETG (or PLA indoors) | Camera pad + upper clamp |
-| `stl/bottom_half.stl` | same | Lower clamp |
-| `stl/tpu_liner.stl` | TPU 95A (optional) | Stops spin on the tube |
-
-Source of truth: `clamp.scad` (OpenSCAD Customizer parameters at the top).
-Open the STLs in Bambu Studio / OpenSCAD to inspect before printing.
+| `tube_od` | `19.05` | Measured ¾″ rail |
+| `bore_clearance` | `0.40` | Loosen/tighten fit |
+| `liner_thickness` | `0.80` | TPU sleeve; `0` disables |
+| `plate_hole_spacing` | `17.8` | **Measure your stock plate** (centre–centre) |
+| `plate_slot_extra` | `5.0` | Slot forgiveness each side (± mm) |
+| `pad_diameter` | `72` | Stock plate footprint |
 
 ## Hardware (BOM)
 
-- **2× M4×25** (or M4×30) socket-head screws + **2× M4 hex nuts** — clamp the tube
-- **2× M3×10** screws + **2× M3 hex nuts** — bolt the stock Reolink plate to the pad
+- **2× M4×25** (or M4×30) socket-head + **2× M4 hex nuts** — clamp the tube
+- **2× M3×10** + **2× M3 hex nuts** — bolt the stock Reolink plate to the pad
 - Stock **Reolink mounting plate** from the camera box
-- 2–3 zip ties for the power cable along the **outside** of the frame
+- Zip ties for the power cable on the **outside** of the frame
 
-## Before you print — measure the plate
+## Before you print / freeze the STEP
 
-1. Take the stock wall plate from the camera box.
-2. Measure **centre-to-centre** of its two screw holes with calipers.
-3. Open `clamp.scad`, set `plate_hole_spacing` to that number (default `17.8`).
-4. Re-export `top_half` (see below). The slots already forgive about ±5 mm.
-
-Tube bore defaults to your measured **¾″ / 19.05 mm** (`tube_od`). If the
-clamp is tight or loose, change `bore_clearance` (default `0.40`) or use the
-TPU liner.
-
-## Export STLs from OpenSCAD
-
-```bash
-openscad -o stl/top_half.stl    -D 'part="top_half"'    clamp.scad
-openscad -o stl/bottom_half.stl -D 'part="bottom_half"' clamp.scad
-openscad -o stl/tpu_liner.stl   -D 'part="tpu_liner"'   clamp.scad
-```
-
-Or: Customizer → set `part` → F6 → File → Export → STL.
+1. Measure the stock plate’s two screw-hole centres.
+2. Set `plate_hole_spacing` in `clamp.py`.
+3. Run `python3 clamp.py`.
+4. Open the new `.step` in 3DX and confirm hole alignment on the real plate.
 
 ## Print settings (Bambu)
 
 - **PETG**, 0.2 mm layer, **≥40%** infill, **4** walls
-- Orient: flat pad of `top_half` on the bed (camera face down), ears up
+- `top_half`: pad flat on the bed
 - `bottom_half`: split face on the bed
-- TPU liner: as oriented in the STL, 0% infill / 2–3 walls is enough
+- TPU liner optional, 95A
 
 ## Assembly
 
-1. (Optional) Snap the TPU liner onto the **¾″ tube** outside the sleep area.
-2. Place top + bottom halves around the tube; install M4 screws/nuts. Snug —
-   do not crush the tube.
-3. Drop M3 nuts into the traps under the pad. Bolt the **stock Reolink plate**
-   onto the pad with M3 screws.
-4. Twist the camera onto the plate until it locks.
-5. Zip-tie the barrel cable down the **outside** of the frame to the floor /
-   wall adapter. Nothing dangling into the bassinet.
-6. If the image is upside down: Reolink app → Device Settings → Display →
-   rotate / flip.
+1. (Optional) Snap TPU liner onto the **¾″ tube** outside the sleep area.
+2. Clamp top + bottom with M4; snug, don’t crush the tube.
+3. M3 nuts in the pad traps → bolt stock Reolink plate → twist camera on.
+4. Zip-tie barrel cable down the outside of the frame.
+5. If upside down: Reolink app → Display → rotate / flip.
 
 ## Safety
 
-- Camera, clamp, and cable stay **outside** the sleep surface and out of reach.
-- Do not mount over the baby’s head on a loose arm.
-- Recheck M4 tightness after the first day of moves.
+Camera, clamp, and cable stay **outside** the sleep surface and out of reach.
 
-## Out of scope (already decided)
+## Out of scope
 
-- No portable UPS — plug/unplug between rooms is fine.
-- Frigate / go2rtc / HA automations are separate (see
-  `proposals/nursery-camera-integration.md`).
+Frigate / go2rtc / HA — see `proposals/nursery-camera-integration.md`.
